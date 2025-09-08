@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Artillery - 砲撃シミュレーション</title>
+    <style>
+        /* Reset and base styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background-color: #000;
+            color: #00ff00;
+            overflow: hidden;
+        }
+        
+        /* Game container with 3-pane layout */
+        .game-container {
+            display: grid;
+            grid-template-columns: 25% 50% 25%;
+            height: 100vh;
+            gap: 2px;
+            background-color: #333;
+        }
+        
+        /* Left pane - Control Panel */
+        .control-panel {
+            background-color: #2a2a2a;
+            border: 2px solid #666;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .control-panel h2 {
+            color: #fff;
+            font-size: 14px;
+            text-align: center;
+            border-bottom: 1px solid #666;
+            padding-bottom: 5px;
+        }
+        
+        /* Center pane - Horizontal Radar */
+        .radar-horizontal {
+            background-color: #000;
+            border: 2px solid #00ff00;
+            position: relative;
+        }
+        
+        #horizontal-radar {
+            width: 100%;
+            height: 100%;
+            background-color: #001100;
+        }
+        
+        /* Right pane - Vertical Radar & Target Info */
+        .right-pane {
+            display: grid;
+            grid-template-rows: 60% 40%;
+            gap: 2px;
+        }
+        
+        .radar-vertical {
+            background-color: #000;
+            border: 2px solid #00ff00;
+            position: relative;
+        }
+        
+        #vertical-radar {
+            width: 100%;
+            height: 100%;
+            background-color: #001100;
+        }
+        
+        .target-info {
+            background-color: #2a2a2a;
+            border: 2px solid #666;
+            padding: 10px;
+            font-size: 12px;
+            color: #00ff00;
+        }
+        
+        .target-info h3 {
+            color: #fff;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        /* Control elements */
+        .control-group {
+            margin-bottom: 8px;
+        }
+        
+        .control-group label {
+            display: block;
+            font-size: 11px;
+            margin-bottom: 2px;
+            color: #ccc;
+        }
+        
+        .control-group input[type="range"] {
+            width: 100%;
+            margin-bottom: 2px;
+        }
+        
+        .control-group .value-display {
+            font-size: 10px;
+            color: #00ff00;
+            text-align: center;
+        }
+        
+        .fire-button {
+            background-color: #ff0000;
+            color: #fff;
+            border: none;
+            padding: 10px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        
+        .fire-button:hover {
+            background-color: #cc0000;
+        }
+        
+        .unlock-button {
+            background-color: #666;
+            color: #fff;
+            border: none;
+            padding: 6px;
+            font-size: 11px;
+            cursor: pointer;
+            border-radius: 3px;
+            width: 100%;
+        }
+        
+        .unlock-button:hover {
+            background-color: #555;
+        }
+        
+        /* Game time display */
+        .game-time {
+            background-color: #333;
+            padding: 5px;
+            text-align: center;
+            font-size: 12px;
+            color: #00ff00;
+            border: 1px solid #666;
+        }
+        
+        /* Target info styles */
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+        }
+        
+        .info-label {
+            color: #ccc;
+        }
+        
+        .info-value {
+            color: #00ff00;
+        }
+        
+        .status-locked {
+            color: #ff0000;
+            font-weight: bold;
+        }
+        
+        .status-tracking {
+            color: #ffff00;
+            font-weight: bold;
+        }
+        
+        .status-no-target {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <!-- Left Pane: Control Panel -->
+        <div class="control-panel">
+            <h2>CONTROL PANEL</h2>
+            
+            <!-- Azimuth Control -->
+            <div class="control-group">
+                <label>方位角 (Azimuth)</label>
+                <input type="range" id="azimuth-slider" min="0" max="360" value="180" step="1">
+                <div class="value-display" id="azimuth-value">180°</div>
+            </div>
+            
+            <!-- Elevation Control -->
+            <div class="control-group">
+                <label>仰角 (Elevation)</label>
+                <input type="range" id="elevation-slider" min="0" max="90" value="45" step="1">
+                <div class="value-display" id="elevation-value">45°</div>
+            </div>
+            
+            <!-- Lead Angle Display -->
+            <div class="control-group">
+                <label>リード角 (Lead)</label>
+                <div class="value-display">
+                    Az: <span id="lead-azimuth">---</span>° 
+                    El: <span id="lead-elevation">---</span>°
+                </div>
+            </div>
+            
+            <!-- Ammunition Display -->
+            <div class="control-group">
+                <label>装填弾頭</label>
+                <div class="value-display">HE 850m/s</div>
+            </div>
+            
+            <!-- Fire Button -->
+            <button class="fire-button" id="fire-button">FIRE</button>
+            
+            <!-- Unlock Button -->
+            <button class="unlock-button" id="unlock-button">ロックオン解除</button>
+            
+            <!-- Game Time -->
+            <div class="game-time" id="game-time">00:00</div>
+        </div>
+        
+        <!-- Center Pane: Horizontal Radar -->
+        <div class="radar-horizontal">
+            <canvas id="horizontal-radar"></canvas>
+        </div>
+        
+        <!-- Right Pane: Vertical Radar & Target Info -->
+        <div class="right-pane">
+            <!-- Vertical Radar -->
+            <div class="radar-vertical">
+                <canvas id="vertical-radar"></canvas>
+            </div>
+            
+            <!-- Target Information -->
+            <div class="target-info">
+                <h3>TARGET INFO</h3>
+                <div class="info-row">
+                    <span class="info-label">ステータス:</span>
+                    <span class="info-value status-no-target" id="target-status">NO TARGET</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">種別:</span>
+                    <span class="info-value" id="target-type">---</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">距離:</span>
+                    <span class="info-value" id="target-range">--- m</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">速度:</span>
+                    <span class="info-value" id="target-speed">--- m/s</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">高度:</span>
+                    <span class="info-value" id="target-altitude">--- m</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

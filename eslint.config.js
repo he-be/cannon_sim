@@ -18,6 +18,8 @@ export default [
         console: 'readonly',
         window: 'readonly',
         document: 'readonly',
+        setInterval: 'readonly',
+        Date: 'readonly',
       },
     },
     plugins: {
@@ -34,6 +36,7 @@ export default [
       ],
       '@typescript-eslint/explicit-function-return-type': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-non-null-assertion': 'off',
       'prefer-const': 'error',
     },
   },
