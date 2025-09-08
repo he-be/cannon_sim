@@ -60,7 +60,7 @@ function resizeCanvases(): void {
 }
 
 /**
- * Draw horizontal radar display (top-down view)
+ * Draw horizontal radar display (rectangular: horizontal=bearing, vertical=distance)
  */
 function drawHorizontalRadar(ctx: CanvasRenderingContext2D): void {
   const { width, height } = ctx.canvas;
@@ -74,53 +74,81 @@ function drawHorizontalRadar(ctx: CanvasRenderingContext2D): void {
   ctx.lineWidth = 1;
 
   const centerX = width / 2;
-  const centerY = height - 20; // Gun position at bottom center
-  const maxRange = Math.min(width, height) / 2 - 30;
+  const gunY = height - 20; // Gun position at bottom center
+  const maxRange = height - 40; // Maximum distance range
 
-  // Draw range circles
+  // Draw distance lines (horizontal - representing distance ranges)
   for (let i = 1; i <= 4; i++) {
-    const radius = (maxRange / 4) * i;
+    const y = gunY - (maxRange / 4) * i;
     ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.moveTo(20, y);
+    ctx.lineTo(width - 20, y);
     ctx.stroke();
 
-    // Range labels
+    // Distance labels
     ctx.fillStyle = '#00ff00';
     ctx.font = '10px Consolas';
-    ctx.fillText(`${i * 5}km`, centerX + radius - 20, centerY - 5);
+    ctx.fillText(`${i * 5}km`, 2, y - 2);
   }
 
-  // Draw bearing lines (every 30 degrees)
-  for (let angle = 0; angle < 360; angle += 30) {
-    const radians = (angle * Math.PI) / 180;
-    const x = centerX + Math.sin(radians) * maxRange;
-    const y = centerY - Math.cos(radians) * maxRange;
+  // Draw bearing lines (vertical - representing bearing angles)
+  // Show -180° to +180° range (or 0° to 360°), centered at 0°/360°
+  const bearingRange = 120; // Show ±60° range for visibility
+  const degreesPerPixel = bearingRange / (width - 40);
 
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.lineTo(x, y);
-    ctx.stroke();
+  for (let bearing = -60; bearing <= 60; bearing += 30) {
+    const x = centerX + bearing / degreesPerPixel;
+    if (x >= 20 && x <= width - 20) {
+      ctx.beginPath();
+      ctx.moveTo(x, 20);
+      ctx.lineTo(x, gunY);
+      ctx.stroke();
+
+      // Bearing labels
+      ctx.fillStyle = '#00ff00';
+      ctx.font = '10px Consolas';
+      const label =
+        bearing === 0 ? '0°' : `${bearing > 0 ? '+' : ''}${bearing}°`;
+      ctx.fillText(label, x - 10, gunY + 15);
+    }
   }
 
-  // Draw center crosshair
+  // Draw radar center line (vertical line at center bearing)
   ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffff00';
   ctx.beginPath();
-  ctx.moveTo(centerX - 10, centerY);
-  ctx.lineTo(centerX + 10, centerY);
-  ctx.moveTo(centerX, centerY - 10);
-  ctx.lineTo(centerX, centerY + 10);
+  ctx.moveTo(centerX, 20);
+  ctx.lineTo(centerX, gunY);
+  ctx.stroke();
+
+  // Draw distance cursor (horizontal line - will be controllable later)
+  const cursorY = gunY - maxRange / 2; // Default at mid-range
+  ctx.strokeStyle = '#ffff00';
+  ctx.beginPath();
+  ctx.moveTo(20, cursorY);
+  ctx.lineTo(width - 20, cursorY);
   ctx.stroke();
 
   // Draw gun position
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.arc(centerX, centerY, 3, 0, Math.PI * 2);
+  ctx.arc(centerX, gunY, 3, 0, Math.PI * 2);
   ctx.fill();
 
-  // Label
+  // Gun label
   ctx.fillStyle = '#00ff00';
   ctx.font = '12px Consolas';
-  ctx.fillText('GUN', centerX - 15, centerY + 15);
+  ctx.fillText('GUN', centerX - 15, gunY + 15);
+
+  // Add axis labels
+  ctx.fillStyle = '#00ff00';
+  ctx.font = '11px Consolas';
+  ctx.fillText('方位 (Bearing)', width - 80, 15);
+  ctx.save();
+  ctx.translate(10, height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('距離 (Distance)', -30, 0);
+  ctx.restore();
 }
 
 /**
