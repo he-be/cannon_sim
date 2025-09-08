@@ -3,13 +3,12 @@
  * A real-time artillery simulation game with realistic physics
  */
 
-// Canvas elements
-const horizontalRadar = document.getElementById(
-  'horizontal-radar'
-) as HTMLCanvasElement;
-const verticalRadar = document.getElementById(
-  'vertical-radar'
-) as HTMLCanvasElement;
+import { CanvasManager } from './rendering/CanvasManager';
+import { Vector2 } from './math/Vector2';
+
+// Canvas managers
+let horizontalRadarManager: CanvasManager;
+let verticalRadarManager: CanvasManager;
 
 // Control elements
 const azimuthSlider = document.getElementById(
@@ -25,53 +24,43 @@ const elevationValue = document.getElementById(
 const fireButton = document.getElementById('fire-button') as HTMLButtonElement;
 
 /**
- * Initialize canvas contexts and setup basic drawing
+ * Initialize canvas managers and setup basic drawing
  */
 function initializeCanvases(): void {
-  // Setup horizontal radar canvas
-  const hCtx = horizontalRadar.getContext('2d');
-  if (!hCtx) throw new Error('Could not get horizontal radar context');
-
-  // Setup vertical radar canvas
-  const vCtx = verticalRadar.getContext('2d');
-  if (!vCtx) throw new Error('Could not get vertical radar context');
-
-  // Resize canvases to fit their containers
-  resizeCanvases();
+  // Initialize canvas managers
+  horizontalRadarManager = new CanvasManager('horizontal-radar');
+  verticalRadarManager = new CanvasManager('vertical-radar');
 
   // Initial drawing
-  drawHorizontalRadar(hCtx);
-  drawVerticalRadar(vCtx);
+  drawHorizontalRadar();
+  drawVerticalRadar();
 }
 
 /**
- * Resize canvases to match their container size
+ * Resize canvases (handled automatically by CanvasManager)
  */
 function resizeCanvases(): void {
-  // Horizontal radar
-  const hParent = horizontalRadar.parentElement!;
-  horizontalRadar.width = hParent.clientWidth - 4; // Account for border
-  horizontalRadar.height = hParent.clientHeight - 4;
+  // Canvas managers handle resizing automatically
+  if (horizontalRadarManager && verticalRadarManager) {
+    horizontalRadarManager.resize();
+    verticalRadarManager.resize();
 
-  // Vertical radar
-  const vParent = verticalRadar.parentElement!;
-  verticalRadar.width = vParent.clientWidth - 4;
-  verticalRadar.height = vParent.clientHeight - 4;
+    // Redraw after resize
+    drawHorizontalRadar();
+    drawVerticalRadar();
+  }
 }
 
 /**
  * Draw horizontal radar display (rectangular: horizontal=bearing, vertical=distance)
  */
-function drawHorizontalRadar(ctx: CanvasRenderingContext2D): void {
-  const { width, height } = ctx.canvas;
+function drawHorizontalRadar(): void {
+  const canvas = horizontalRadarManager;
+  const width = canvas.width;
+  const height = canvas.height;
 
-  // Clear and set background
-  ctx.fillStyle = '#001100';
-  ctx.fillRect(0, 0, width, height);
-
-  // Draw radar grid
-  ctx.strokeStyle = '#00ff00';
-  ctx.lineWidth = 1;
+  // Clear canvas
+  canvas.clear('#001100');
 
   const centerX = width / 2;
   const gunY = height - 20; // Gun position at bottom center
@@ -80,145 +69,161 @@ function drawHorizontalRadar(ctx: CanvasRenderingContext2D): void {
   // Draw distance lines (horizontal - representing distance ranges)
   for (let i = 1; i <= 4; i++) {
     const y = gunY - (maxRange / 4) * i;
-    ctx.beginPath();
-    ctx.moveTo(20, y);
-    ctx.lineTo(width - 20, y);
-    ctx.stroke();
+    canvas.drawLine(new Vector2(20, y), new Vector2(width - 20, y), '#00ff00');
 
     // Distance labels
-    ctx.fillStyle = '#00ff00';
-    ctx.font = '10px Consolas';
-    ctx.fillText(`${i * 5}km`, 2, y - 2);
+    canvas.drawText(
+      `${i * 5}km`,
+      new Vector2(2, y - 2),
+      '#00ff00',
+      '10px Consolas'
+    );
   }
 
   // Draw bearing lines (vertical - representing bearing angles)
-  // Show -180° to +180° range (or 0° to 360°), centered at 0°/360°
   const bearingRange = 120; // Show ±60° range for visibility
   const degreesPerPixel = bearingRange / (width - 40);
 
   for (let bearing = -60; bearing <= 60; bearing += 30) {
     const x = centerX + bearing / degreesPerPixel;
     if (x >= 20 && x <= width - 20) {
-      ctx.beginPath();
-      ctx.moveTo(x, 20);
-      ctx.lineTo(x, gunY);
-      ctx.stroke();
+      canvas.drawLine(new Vector2(x, 20), new Vector2(x, gunY), '#00ff00');
 
       // Bearing labels
-      ctx.fillStyle = '#00ff00';
-      ctx.font = '10px Consolas';
       const label =
         bearing === 0 ? '0°' : `${bearing > 0 ? '+' : ''}${bearing}°`;
-      ctx.fillText(label, x - 10, gunY + 15);
+      canvas.drawText(
+        label,
+        new Vector2(x - 10, gunY + 15),
+        '#00ff00',
+        '10px Consolas'
+      );
     }
   }
 
   // Draw radar center line (vertical line at center bearing)
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#ffff00';
-  ctx.beginPath();
-  ctx.moveTo(centerX, 20);
-  ctx.lineTo(centerX, gunY);
-  ctx.stroke();
+  canvas.drawLine(
+    new Vector2(centerX, 20),
+    new Vector2(centerX, gunY),
+    '#ffff00',
+    2
+  );
 
   // Draw distance cursor (horizontal line - will be controllable later)
   const cursorY = gunY - maxRange / 2; // Default at mid-range
-  ctx.strokeStyle = '#ffff00';
-  ctx.beginPath();
-  ctx.moveTo(20, cursorY);
-  ctx.lineTo(width - 20, cursorY);
-  ctx.stroke();
+  canvas.drawLine(
+    new Vector2(20, cursorY),
+    new Vector2(width - 20, cursorY),
+    '#ffff00'
+  );
 
   // Draw gun position
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(centerX, gunY, 3, 0, Math.PI * 2);
-  ctx.fill();
+  canvas.drawCircle(new Vector2(centerX, gunY), 3, '#ffffff', true);
 
   // Gun label
-  ctx.fillStyle = '#00ff00';
-  ctx.font = '12px Consolas';
-  ctx.fillText('GUN', centerX - 15, gunY + 15);
+  canvas.drawText(
+    'GUN',
+    new Vector2(centerX - 15, gunY + 15),
+    '#00ff00',
+    '12px Consolas'
+  );
 
   // Add axis labels
-  ctx.fillStyle = '#00ff00';
-  ctx.font = '11px Consolas';
-  ctx.fillText('方位 (Bearing)', width - 80, 15);
-  ctx.save();
-  ctx.translate(10, height / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('距離 (Distance)', -30, 0);
-  ctx.restore();
+  canvas.drawText(
+    '方位 (Bearing)',
+    new Vector2(width - 80, 15),
+    '#00ff00',
+    '11px Consolas'
+  );
+
+  // Vertical text for distance axis
+  canvas.save();
+  canvas.translate(new Vector2(10, height / 2));
+  canvas.rotate(-Math.PI / 2);
+  canvas.drawText(
+    '距離 (Distance)',
+    new Vector2(-30, 0),
+    '#00ff00',
+    '11px Consolas'
+  );
+  canvas.restore();
 
   // UI-14: Display current radar bearing and elevation angles
-  ctx.fillStyle = '#ffff00';
-  ctx.font = '12px Consolas';
   const radarAzimuth = 0; // TODO: Make this dynamic when radar control is implemented
   const radarElevation = 0; // TODO: Make this dynamic when radar control is implemented
-  ctx.fillText(`Radar Az: ${radarAzimuth.toFixed(1)}°`, 10, 35);
-  ctx.fillText(`Radar El: ${radarElevation.toFixed(1)}°`, 10, 50);
+  canvas.drawText(
+    `Radar Az: ${radarAzimuth.toFixed(1)}°`,
+    new Vector2(10, 35),
+    '#ffff00',
+    '12px Consolas'
+  );
+  canvas.drawText(
+    `Radar El: ${radarElevation.toFixed(1)}°`,
+    new Vector2(10, 50),
+    '#ffff00',
+    '12px Consolas'
+  );
 }
 
 /**
  * Draw vertical radar display (side view)
  */
-function drawVerticalRadar(ctx: CanvasRenderingContext2D): void {
-  const { width, height } = ctx.canvas;
+function drawVerticalRadar(): void {
+  const canvas = verticalRadarManager;
+  const width = canvas.width;
+  const height = canvas.height;
 
-  // Clear and set background
-  ctx.fillStyle = '#001100';
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.strokeStyle = '#00ff00';
-  ctx.lineWidth = 1;
+  // Clear canvas
+  canvas.clear('#001100');
 
   const groundLevel = height - 20;
   const gunX = 20;
 
   // Draw ground line
-  ctx.beginPath();
-  ctx.moveTo(0, groundLevel);
-  ctx.lineTo(width, groundLevel);
-  ctx.stroke();
+  canvas.drawLine(
+    new Vector2(0, groundLevel),
+    new Vector2(width, groundLevel),
+    '#00ff00'
+  );
 
   // Draw range grid (horizontal lines for altitude)
   for (let i = 1; i <= 4; i++) {
     const y = groundLevel - (groundLevel / 5) * i;
-    ctx.beginPath();
-    ctx.moveTo(gunX, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
+    canvas.drawLine(new Vector2(gunX, y), new Vector2(width, y), '#00ff00');
 
     // Altitude labels
-    ctx.fillStyle = '#00ff00';
-    ctx.font = '10px Consolas';
-    ctx.fillText(`${i}km`, 2, y - 2);
+    canvas.drawText(
+      `${i}km`,
+      new Vector2(2, y - 2),
+      '#00ff00',
+      '10px Consolas'
+    );
   }
 
   // Draw range grid (vertical lines for distance)
   for (let i = 1; i <= 4; i++) {
     const x = gunX + ((width - gunX) / 4) * i;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, groundLevel);
-    ctx.stroke();
+    canvas.drawLine(new Vector2(x, 0), new Vector2(x, groundLevel), '#00ff00');
 
     // Range labels
-    ctx.fillStyle = '#00ff00';
-    ctx.font = '10px Consolas';
-    ctx.fillText(`${i * 5}km`, x - 15, groundLevel + 15);
+    canvas.drawText(
+      `${i * 5}km`,
+      new Vector2(x - 15, groundLevel + 15),
+      '#00ff00',
+      '10px Consolas'
+    );
   }
 
   // Draw gun position
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(gunX, groundLevel, 3, 0, Math.PI * 2);
-  ctx.fill();
+  canvas.drawCircle(new Vector2(gunX, groundLevel), 3, '#ffffff', true);
 
   // Gun label
-  ctx.fillStyle = '#00ff00';
-  ctx.font = '12px Consolas';
-  ctx.fillText('GUN', gunX - 10, groundLevel - 10);
+  canvas.drawText(
+    'GUN',
+    new Vector2(gunX - 10, groundLevel - 10),
+    '#00ff00',
+    '12px Consolas'
+  );
 }
 
 /**
@@ -268,10 +273,6 @@ function setupEventListeners(): void {
   // Window resize handler
   window.addEventListener('resize', () => {
     resizeCanvases();
-    const hCtx = horizontalRadar.getContext('2d')!;
-    const vCtx = verticalRadar.getContext('2d')!;
-    drawHorizontalRadar(hCtx);
-    drawVerticalRadar(vCtx);
   });
 }
 
