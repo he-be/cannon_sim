@@ -149,6 +149,14 @@ function drawHorizontalRadar(ctx: CanvasRenderingContext2D): void {
   ctx.rotate(-Math.PI / 2);
   ctx.fillText('距離 (Distance)', -30, 0);
   ctx.restore();
+
+  // UI-14: Display current radar bearing and elevation angles
+  ctx.fillStyle = '#ffff00';
+  ctx.font = '12px Consolas';
+  const radarAzimuth = 0; // TODO: Make this dynamic when radar control is implemented
+  const radarElevation = 0; // TODO: Make this dynamic when radar control is implemented
+  ctx.fillText(`Radar Az: ${radarAzimuth.toFixed(1)}°`, 10, 35);
+  ctx.fillText(`Radar El: ${radarElevation.toFixed(1)}°`, 10, 50);
 }
 
 /**
