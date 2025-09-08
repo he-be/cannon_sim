@@ -20,6 +20,7 @@ export default [
         document: 'readonly',
         setInterval: 'readonly',
         Date: 'readonly',
+        performance: 'readonly',
       },
     },
     plugins: {
