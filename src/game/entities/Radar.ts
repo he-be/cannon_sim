@@ -1,302 +1,133 @@
 /**
- * Radar - Radar system entity with target detection and tracking
- * Uses TDD methodology for reliable detection behavior
+ * Radar - Spec-compliant radar entity for Browser Artillery
+ * Implements only features specified in design.md and requirements.md
  */
 
 import { Vector3 } from '../../math/Vector3';
-import { Target } from './Target';
-
-export enum RadarType {
-  SHORT_RANGE = 'short_range',
-  STANDARD = 'standard',
-  LONG_RANGE = 'long_range',
-}
+import { Target, TargetType } from './Target';
 
 export enum RadarState {
-  OFFLINE = 'offline',
-  STANDBY = 'standby',
   SCANNING = 'scanning',
-  TRACKING = 'tracking',
-  JAMMED = 'jammed',
+  OFFLINE = 'offline',
 }
 
-export interface RadarOptions {
-  scanSectorWidth?: number;
-  scanSectorHeight?: number;
-  scanSpeed?: number;
-  maxTargets?: number;
-  powerMode?: 'low' | 'normal' | 'high';
-}
-
-export interface ScanParameters {
-  azimuthCenter?: number;
-  azimuthWidth?: number;
-  elevationCenter?: number;
-  elevationHeight?: number;
-  target?: Vector3;
-}
-
-export interface Detection {
-  target: Target;
+export interface TargetInfo {
   range: number;
-  azimuth: number;
-  elevation: number;
-  velocity: Vector3;
-  radialVelocity: number;
-  accuracy: number;
-  targetClassification: string;
-  threatLevel: number;
-  timestamp: number;
+  bearing: number;
+  altitude: number;
+  speed: number;
+  type: TargetType;
 }
 
-export interface TrackingData {
-  target: Target;
-  positionHistory: Vector3[];
-  velocityEstimate: Vector3;
-  confidence: number;
-  lastUpdate: number;
-}
-
-export interface RawReturn {
-  position: Vector3;
-  strength: number;
-  doppler: number;
-  timestamp: number;
-}
-
-export interface RadarSnapshot {
-  position: Vector3;
-  type: RadarType;
-  state: RadarState;
-  scanAzimuth: number;
-  scanElevation: number;
-  scanPattern: string;
-  detectionCount: number;
-  trackedTargetCount: number;
-  systemHealth: number;
-  powerLevel: number;
+export interface RadarDisplayData {
+  detectedTargets: Target[];
+  centerPosition: Vector3;
+  maxRange: number;
 }
 
 /**
- * Radar entity representing a radar system with detection and tracking capabilities
+ * Radar entity for target detection and tracking
+ * Implements radar functionality as per UI-04, UI-05, UI-13-1, UI-18
  */
 export class Radar {
   private _position: Vector3;
-  private _type: RadarType;
   private _state: RadarState = RadarState.SCANNING;
-  private _maxRange: number;
-  private _resolution: number;
-  private _scanAzimuth = 0;
-  private _scanElevation = 0;
-  private _scanPattern = 'sector';
-  private _scanSectorWidth: number;
-  private _scanSectorHeight: number;
-  private _scanSpeed: number;
-  private _trackedTargets: Target[] = [];
-  private _detections: Detection[] = [];
-  private _rawReturns: RawReturn[] = [];
-  private _trackingData: Map<Target, TrackingData> = new Map();
-  private _systemHealth = 100;
-  private _powerLevel = 100;
-  private _powerMode: 'low' | 'normal' | 'high' = 'normal';
-  private _jammingIntensity = 0;
-  private _noiseLevel = 0.1;
+  private _detectedTargets: Target[] = [];
+  private _selectedTarget: Target | null = null;
+  private _maxRange: number = 1500; // meters
 
-  constructor(position: Vector3, type: RadarType, options?: RadarOptions) {
+  constructor(position: Vector3) {
     this._position = position.copy();
-    this._type = type;
-
-    // Set type-specific defaults
-    switch (type) {
-      case RadarType.SHORT_RANGE:
-        this._maxRange = 10000; // 10km
-        this._resolution = 5; // 5m
-        this._scanSpeed = 90; // deg/sec
-        break;
-      case RadarType.STANDARD:
-        this._maxRange = 20000; // 20km
-        this._resolution = 10; // 10m
-        this._scanSpeed = 60; // deg/sec
-        break;
-      case RadarType.LONG_RANGE:
-        this._maxRange = 40000; // 40km
-        this._resolution = 20; // 20m
-        this._scanSpeed = 30; // deg/sec
-        break;
-    }
-
-    // Apply custom options
-    this._scanSectorWidth = options?.scanSectorWidth ?? 120;
-    this._scanSectorHeight = options?.scanSectorHeight ?? 60;
-    this._scanSpeed = options?.scanSpeed ?? this._scanSpeed;
   }
 
   get position(): Vector3 {
     return this._position.copy();
   }
 
-  get type(): RadarType {
-    return this._type;
-  }
-
   get state(): RadarState {
     return this._state;
   }
 
-  get isActive(): boolean {
-    return this._state === RadarState.SCANNING;
+  get selectedTarget(): Target | null {
+    return this._selectedTarget;
   }
 
-  get maxRange(): number {
-    return this._maxRange;
+  /**
+   * Scan for targets within range (UI-04)
+   */
+  scan(targets: Target[]): void {
+    if (this._state !== RadarState.SCANNING) return;
+
+    this._detectedTargets = targets.filter(target => {
+      // Only detect active targets within range
+      if (target.isDestroyed) return false;
+
+      const distance = target.distanceFrom(this._position);
+      return distance <= this._maxRange;
+    });
   }
 
-  get resolution(): number {
-    return this._resolution;
+  /**
+   * Get currently detected targets (UI-04)
+   */
+  getDetectedTargets(): Target[] {
+    return [...this._detectedTargets];
   }
 
-  get scanAzimuth(): number {
-    return this._scanAzimuth;
-  }
-
-  get scanElevation(): number {
-    return this._scanElevation;
-  }
-
-  get scanPattern(): string {
-    return this._scanPattern;
-  }
-
-  get scanSectorWidth(): number {
-    return this._scanSectorWidth;
-  }
-
-  get scanSectorHeight(): number {
-    return this._scanSectorHeight;
-  }
-
-  get scanSpeed(): number {
-    return this._scanSpeed;
-  }
-
-  get trackedTargets(): Target[] {
-    return [...this._trackedTargets];
-  }
-
-  get effectiveRange(): number {
-    // Adjust range based on power mode
-    switch (this._powerMode) {
-      case 'low':
-        return this._maxRange * 0.7;
-      case 'high':
-        return this._maxRange * 1.3;
-      default:
-        return this._maxRange;
+  /**
+   * Select a target for detailed information (UI-05)
+   */
+  selectTarget(target: Target): void {
+    if (!this._detectedTargets.includes(target)) {
+      throw new Error('Cannot select target that is not detected');
     }
+
+    this._selectedTarget = target;
   }
 
-  get powerLevel(): number {
-    return this._powerLevel;
-  }
+  /**
+   * Get detailed information about selected target (UI-18)
+   */
+  getTargetInfo(): TargetInfo {
+    if (!this._selectedTarget) {
+      throw new Error('No target selected');
+    }
 
-  get systemHealth(): number {
-    return this._systemHealth;
-  }
+    const target = this._selectedTarget;
+    const delta = target.position.subtract(this._position);
+    const range = delta.magnitude();
+    const bearing = Math.atan2(delta.y, delta.x) * (180 / Math.PI);
 
-  get performance(): number {
-    return Math.max(
-      0.1,
-      (this._systemHealth / 100) * (1 - this._jammingIntensity)
-    );
-  }
-
-  setScanPattern(_pattern: string, _params?: ScanParameters): void {
-    // TODO: Implement
-  }
-
-  update(_deltaTime: number): void {
-    // TODO: Implement
-  }
-
-  scanForTargets(_targets: Target[]): void {
-    // TODO: Implement
-  }
-
-  getDetections(): Detection[] {
-    // TODO: Implement
-    return [];
-  }
-
-  getRawReturns(): RawReturn[] {
-    // TODO: Implement
-    return [];
-  }
-
-  initiateTracking(_target: Target): void {
-    // TODO: Implement
-  }
-
-  isTracking(_target: Target): boolean {
-    // TODO: Implement
-    return false;
-  }
-
-  predictTargetPosition(_target: Target, _timeAhead: number): Vector3 {
-    // TODO: Implement
-    return new Vector3();
-  }
-
-  getTrackingData(_target: Target): TrackingData | null {
-    // TODO: Implement
-    return null;
-  }
-
-  setJammingIntensity(_intensity: number): void {
-    // TODO: Implement
-  }
-
-  setNoiseLevel(_level: number): void {
-    // TODO: Implement
-  }
-
-  setPowerMode(_mode: 'low' | 'normal' | 'high'): void {
-    // TODO: Implement
-  }
-
-  takeDamage(_amount: number): void {
-    // TODO: Implement
-  }
-
-  performMaintenance(_amount: number): void {
-    // TODO: Implement
-  }
-
-  getStateSnapshot(): RadarSnapshot {
     return {
-      position: this._position.copy(),
-      type: this._type,
-      state: this._state,
-      scanAzimuth: this._scanAzimuth,
-      scanElevation: this._scanElevation,
-      scanPattern: this._scanPattern,
-      detectionCount: this._detections.length,
-      trackedTargetCount: this._trackedTargets.length,
-      systemHealth: this._systemHealth,
-      powerLevel: this._powerLevel,
+      range,
+      bearing: bearing < 0 ? bearing + 360 : bearing,
+      altitude: target.altitude,
+      speed: target.speed,
+      type: target.type,
     };
   }
 
-  reset(): void {
+  /**
+   * Get radar display data for UI rendering (UI-13-1)
+   */
+  getRadarDisplayData(): RadarDisplayData {
+    return {
+      detectedTargets: [...this._detectedTargets],
+      centerPosition: this._position.copy(),
+      maxRange: this._maxRange,
+    };
+  }
+
+  /**
+   * Set radar offline/online
+   */
+  setOffline(): void {
+    this._state = RadarState.OFFLINE;
+    this._detectedTargets = [];
+    this._selectedTarget = null;
+  }
+
+  setOnline(): void {
     this._state = RadarState.SCANNING;
-    this._scanAzimuth = 0;
-    this._scanElevation = 0;
-    this._scanPattern = 'sector';
-    this._trackedTargets = [];
-    this._detections = [];
-    this._rawReturns = [];
-    this._trackingData.clear();
-    this._systemHealth = 100;
-    this._powerLevel = 100;
-    this._jammingIntensity = 0;
   }
 }
