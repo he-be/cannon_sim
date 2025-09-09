@@ -15,10 +15,8 @@ export interface LeadAngle {
  * Based on simplified shooting method from ShootingMethod.txt
  */
 export class LeadAngleCalculator {
-  private readonly GRAVITY = 9.81; // m/s²
   private readonly AVERAGE_PROJECTILE_SPEED = 200; // m/s (simplified)
   private readonly MAX_ITERATIONS = 10;
-  private readonly CONVERGENCE_TOLERANCE = 1.0; // meters
 
   /**
    * Calculate lead angle for hitting a moving target (GS-07)
