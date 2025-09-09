@@ -96,4 +96,69 @@ describe('Artillery (spec-compliant)', () => {
       expect(bearing).toBeCloseTo(45); // 45 degrees for equal x,y
     });
   });
+
+  describe('lead angle calculation (GS-07, UI-06)', () => {
+    it('should calculate lead angle for stationary target', () => {
+      const targetPos = new Vector3(1000, 0, 10);
+      artillery.setTargetPosition(targetPos);
+
+      const leadAngle = artillery.getRecommendedLeadAngle();
+
+      expect(leadAngle).toBeDefined();
+      expect(leadAngle!.azimuth).toBeCloseTo(90); // East direction
+      expect(leadAngle!.elevation).toBeGreaterThan(0);
+    });
+
+    it('should calculate lead angle for moving target', () => {
+      const targetPos = new Vector3(1000, 0, 10);
+      const targetVelocity = new Vector3(0, 50, 0); // Moving north
+      artillery.setTargetPosition(targetPos, targetVelocity);
+
+      const movingTargetAngle = artillery.getRecommendedLeadAngle();
+
+      expect(movingTargetAngle).toBeDefined();
+      expect(movingTargetAngle!.azimuth).toBeDefined();
+      expect(movingTargetAngle!.elevation).toBeGreaterThan(0);
+
+      // For moving target, the calculation should be different from stationary
+      artillery.setTargetPosition(targetPos); // Set as stationary
+      const stationaryAngle = artillery.getRecommendedLeadAngle();
+      expect(movingTargetAngle!.azimuth).not.toBeCloseTo(
+        stationaryAngle!.azimuth,
+        5
+      );
+    });
+
+    it('should provide detailed lead calculation info (UI-06)', () => {
+      const targetPos = new Vector3(800, 600, 0);
+      const targetVelocity = new Vector3(30, 40, 0);
+      artillery.setTargetPosition(targetPos, targetVelocity);
+
+      const leadInfo = artillery.getLeadCalculationInfo();
+
+      expect(leadInfo).toBeDefined();
+      expect(leadInfo!.leadAngle).toBeDefined();
+      expect(leadInfo!.confidence).toBeGreaterThan(0);
+      expect(leadInfo!.confidence).toBeLessThanOrEqual(1);
+      expect(leadInfo!.leadDistance).toBeGreaterThan(0);
+    });
+
+    it('should detect moving targets', () => {
+      const targetPos = new Vector3(1000, 500, 10);
+
+      // Stationary target
+      artillery.setTargetPosition(targetPos);
+      expect(artillery.isTargetMoving()).toBe(false);
+
+      // Moving target
+      const targetVelocity = new Vector3(25, 15, 0);
+      artillery.setTargetPosition(targetPos, targetVelocity);
+      expect(artillery.isTargetMoving()).toBe(true);
+    });
+
+    it('should return null for lead angle when no target is set', () => {
+      expect(artillery.getRecommendedLeadAngle()).toBeNull();
+      expect(artillery.getLeadCalculationInfo()).toBeNull();
+    });
+  });
 });

@@ -4,6 +4,7 @@
  */
 
 import { Vector3 } from '../../math/Vector3';
+import { LeadAngleCalculator, LeadAngle } from '../LeadAngleCalculator';
 
 export enum ArtilleryState {
   READY = 'ready',
@@ -27,10 +28,13 @@ export interface ProjectileData {
 export class Artillery {
   private _position: Vector3;
   private _targetPosition: Vector3 | null = null;
+  private _targetVelocity: Vector3 | null = null;
   private _state: ArtilleryState = ArtilleryState.READY;
+  private _leadCalculator: LeadAngleCalculator;
 
   constructor(position: Vector3) {
     this._position = position.copy();
+    this._leadCalculator = new LeadAngleCalculator();
   }
 
   get position(): Vector3 {
@@ -52,8 +56,9 @@ export class Artillery {
   /**
    * Set target position for aiming (UI-01)
    */
-  setTargetPosition(target: Vector3): void {
+  setTargetPosition(target: Vector3, velocity?: Vector3): void {
     this._targetPosition = target.copy();
+    this._targetVelocity = velocity ? velocity.copy() : null;
   }
 
   /**
@@ -130,5 +135,52 @@ export class Artillery {
 
     // Convert to 0-360 degrees
     return bearing < 0 ? bearing + 360 : bearing;
+  }
+
+  /**
+   * Get recommended lead angle for moving targets (GS-07, UI-06)
+   */
+  getRecommendedLeadAngle(): LeadAngle | null {
+    if (!this._targetPosition) {
+      return null;
+    }
+
+    const targetVelocity = this._targetVelocity || new Vector3(0, 0, 0);
+
+    return this._leadCalculator.calculateLeadAngle(
+      this._position,
+      this._targetPosition,
+      targetVelocity
+    );
+  }
+
+  /**
+   * Get detailed lead calculation info for UI display (UI-06)
+   */
+  getLeadCalculationInfo(): {
+    leadAngle: LeadAngle;
+    confidence: number;
+    leadDistance: number;
+  } | null {
+    if (!this._targetPosition) {
+      return null;
+    }
+
+    const targetVelocity = this._targetVelocity || new Vector3(0, 0, 0);
+
+    return this._leadCalculator.calculateRecommendedLead(
+      this._position,
+      this._targetPosition,
+      targetVelocity
+    );
+  }
+
+  /**
+   * Check if target is moving (affects lead calculation)
+   */
+  isTargetMoving(): boolean {
+    return this._targetVelocity
+      ? this._targetVelocity.magnitude() > 0.1
+      : false;
   }
 }
