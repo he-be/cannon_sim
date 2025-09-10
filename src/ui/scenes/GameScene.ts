@@ -297,12 +297,192 @@ export class GameScene {
     ctx.fillStyle = '#001100';
     ctx.fillRect(0, 0, width, height);
 
-    // Radar grid and elements would be implemented here
-    // This is a placeholder for the full radar implementation
+    // Draw radar grid (UI-11)
+    this.drawHorizontalRadarGrid(ctx, width, height);
+
+    // Draw targets
+    this.drawTargetsOnHorizontalRadar(ctx, width, height);
+
+    // Draw projectiles
+    this.drawProjectilesOnHorizontalRadar(ctx, width, height);
+
+    // Draw radar center line and cursor
+    this.drawRadarControls(ctx, width, height);
+  }
+
+  /**
+   * Draw horizontal radar grid
+   */
+  private drawHorizontalRadarGrid(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    const centerX = width / 2;
+    const gunY = height - 20;
+    const maxRange = height - 40;
+
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 1;
+
+    // Draw distance lines (horizontal)
+    for (let i = 1; i <= 4; i++) {
+      const y = gunY - (maxRange / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(20, y);
+      ctx.lineTo(width - 20, y);
+      ctx.stroke();
+
+      // Distance labels
+      ctx.fillStyle = '#00ff00';
+      ctx.font = '10px Consolas';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${i * 5}km`, 2, y - 2);
+    }
+
+    // Draw bearing lines (vertical)
+    const bearingRange = 120;
+    const degreesPerPixel = bearingRange / (width - 40);
+
+    for (let bearing = -60; bearing <= 60; bearing += 30) {
+      const x = centerX + bearing / degreesPerPixel;
+      if (x >= 20 && x <= width - 20) {
+        ctx.beginPath();
+        ctx.moveTo(x, 20);
+        ctx.lineTo(x, gunY);
+        ctx.stroke();
+
+        // Bearing labels
+        const label =
+          bearing === 0 ? '0°' : `${bearing > 0 ? '+' : ''}${bearing}°`;
+        ctx.fillStyle = '#00ff00';
+        ctx.font = '10px Consolas';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x, gunY + 15);
+      }
+    }
+
+    // Draw radar center line
+    ctx.strokeStyle = '#ffff00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX, 20);
+    ctx.lineTo(centerX, gunY);
+    ctx.stroke();
+
+    // Draw gun position
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(centerX, gunY, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Gun label
     ctx.fillStyle = '#00ff00';
-    ctx.font = '12px monospace';
+    ctx.font = '12px Consolas';
     ctx.textAlign = 'center';
-    ctx.fillText('HORIZONTAL RADAR', width / 2, height / 2);
+    ctx.fillText('GUN', centerX - 15, gunY + 15);
+  }
+
+  /**
+   * Draw targets on horizontal radar
+   */
+  private drawTargetsOnHorizontalRadar(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    const centerX = width / 2;
+    const gunY = height - 20;
+    const maxRange = height - 40;
+    const scale = maxRange / 20000; // 20km range
+
+    this.targets.forEach(target => {
+      if (!target.isDestroyed) {
+        const dx = target.position.x - this.artillery.position.x;
+        const dy = target.position.y - this.artillery.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance <= 20000) {
+          // Within radar range
+          const angle = Math.atan2(dy, dx);
+          const x = centerX + distance * Math.sin(angle) * scale;
+          const y = gunY - distance * Math.cos(angle) * scale;
+
+          // Draw target symbol
+          ctx.fillStyle = '#ff0000';
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Target label
+          ctx.fillStyle = '#ff0000';
+          ctx.font = '10px Consolas';
+          ctx.textAlign = 'center';
+          ctx.fillText('TGT', x, y - 8);
+        }
+      }
+    });
+  }
+
+  /**
+   * Draw projectiles on horizontal radar
+   */
+  private drawProjectilesOnHorizontalRadar(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    const centerX = width / 2;
+    const gunY = height - 20;
+    const maxRange = height - 40;
+    const scale = maxRange / 20000; // 20km range
+
+    const projectiles = this.projectileManager.getActiveProjectiles();
+    projectiles.forEach(projectile => {
+      const dx = projectile.position.x - this.artillery.position.x;
+      const dy = projectile.position.y - this.artillery.position.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= 20000) {
+        const angle = Math.atan2(dy, dx);
+        const x = centerX + distance * Math.sin(angle) * scale;
+        const y = gunY - distance * Math.cos(angle) * scale;
+
+        // Draw projectile symbol
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  /**
+   * Draw radar controls (center line, cursor)
+   */
+  private drawRadarControls(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    const gunY = height - 20;
+    const maxRange = height - 40;
+
+    // Draw distance cursor (horizontal line)
+    const cursorY = gunY - maxRange / 2;
+    ctx.strokeStyle = '#ffff00';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(20, cursorY);
+    ctx.lineTo(width - 20, cursorY);
+    ctx.stroke();
+
+    // Display radar azimuth and elevation (placeholder values)
+    ctx.fillStyle = '#ffff00';
+    ctx.font = '12px Consolas';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Radar Az: ${this.azimuthAngle.toFixed(1)}°`, 10, 35);
+    ctx.fillText(`Radar El: ${this.elevationAngle.toFixed(1)}°`, 10, 50);
   }
 
   /**
