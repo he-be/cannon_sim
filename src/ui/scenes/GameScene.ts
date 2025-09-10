@@ -183,63 +183,39 @@ export class GameScene {
    * Implements UI-04: 3-pane layout
    */
   render(): void {
-    const ctx = this.canvasManager.context;
-    const canvas = this.canvasManager.getCanvas();
+    // Update HTML control panel elements
+    this.updateControlPanel();
 
-    // Clear canvas
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Render horizontal radar (center pane)
+    this.renderHorizontalRadar();
 
-    // Render 3-pane layout
-    this.renderControlPanel(ctx, canvas);
-    this.renderHorizontalRadar(ctx, canvas);
-    this.renderVerticalRadarAndTargetInfo(ctx, canvas);
+    // Render vertical radar (right pane)
+    this.renderVerticalRadar();
 
     // Render game state overlays
-    this.renderGameStateOverlay(ctx, canvas);
+    this.renderGameStateOverlay();
   }
 
   /**
-   * Render left pane: Control Panel (UI-05 to UI-10)
+   * Update HTML control panel elements
    */
-  private renderControlPanel(
-    ctx: CanvasRenderingContext2D,
-    canvas: HTMLCanvasElement
-  ): void {
-    const panelWidth = canvas.width * 0.25;
-    const panelHeight = canvas.height;
+  private updateControlPanel(): void {
+    // Update azimuth display
+    const azimuthValue = document.getElementById('azimuth-value');
+    if (azimuthValue) {
+      azimuthValue.textContent = `${this.azimuthAngle.toFixed(1)}°`;
+    }
 
-    // Panel background
-    ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(0, 0, panelWidth, panelHeight);
-    ctx.strokeStyle = '#666';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, 0, panelWidth, panelHeight);
+    // Update elevation display
+    const elevationValue = document.getElementById('elevation-value');
+    if (elevationValue) {
+      elevationValue.textContent = `${this.elevationAngle.toFixed(1)}°`;
+    }
 
-    // Title
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('CONTROL PANEL', panelWidth / 2, 30);
+    // Update lead angle display
+    const leadAzimuth = document.getElementById('lead-azimuth');
+    const leadElevation = document.getElementById('lead-elevation');
 
-    let y = 60;
-
-    // Azimuth control (UI-05)
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ccc';
-    ctx.font = '12px monospace';
-    ctx.fillText('Azimuth:', 10, y);
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText(`${this.azimuthAngle.toFixed(1)}°`, 10, y + 15);
-
-    // Elevation control (UI-05)
-    y += 40;
-    ctx.fillStyle = '#ccc';
-    ctx.fillText('Elevation:', 10, y);
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText(`${this.elevationAngle.toFixed(1)}°`, 10, y + 15);
-
-    // Lead angle display (UI-06)
     if (this.lockedTarget) {
       const leadAngle = this.leadCalculator.calculateLeadAngle(
         this.artillery.position,
@@ -247,184 +223,124 @@ export class GameScene {
         this.lockedTarget.velocity
       );
 
-      if (leadAngle) {
-        y += 40;
-        ctx.fillStyle = '#ccc';
-        ctx.fillText('Lead Az:', 10, y);
-        ctx.fillStyle = '#ffff00';
-        ctx.fillText(`${leadAngle.azimuth.toFixed(1)}°`, 10, y + 15);
-
-        y += 25;
-        ctx.fillStyle = '#ccc';
-        ctx.fillText('Lead El:', 10, y);
-        ctx.fillStyle = '#ffff00';
-        ctx.fillText(`${leadAngle.elevation.toFixed(1)}°`, 10, y + 15);
+      if (leadAngle && leadAzimuth && leadElevation) {
+        leadAzimuth.textContent = `${leadAngle.azimuth.toFixed(1)}`;
+        leadElevation.textContent = `${leadAngle.elevation.toFixed(1)}`;
       }
+    } else {
+      if (leadAzimuth) leadAzimuth.textContent = '---';
+      if (leadElevation) leadElevation.textContent = '---';
     }
 
-    // Ammunition display (UI-10)
-    y += 40;
-    ctx.fillStyle = '#ccc';
-    ctx.fillText('Projectile:', 10, y);
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('HE 850m/s', 10, y + 15);
+    // Update target info
+    this.updateTargetInfo();
 
-    // Fire button (UI-07)
-    y += 40;
-    ctx.fillStyle = '#ff0000';
-    ctx.fillRect(10, y, panelWidth - 20, 30);
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.fillText('FIRE', panelWidth / 2, y + 20);
+    // Update game time
+    const gameTimeElement = document.getElementById('game-time');
+    if (gameTimeElement) {
+      const minutes = Math.floor(this.gameTime / 60);
+      const seconds = Math.floor(this.gameTime % 60);
+      gameTimeElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+  }
 
-    // Unlock button (UI-08)
-    y += 40;
-    ctx.fillStyle = '#666';
-    ctx.fillRect(10, y, panelWidth - 20, 25);
-    ctx.fillStyle = '#fff';
-    ctx.fillText('UNLOCK', panelWidth / 2, y + 16);
+  /**
+   * Update target information display
+   */
+  private updateTargetInfo(): void {
+    const targetStatus = document.getElementById('target-status');
+    const targetType = document.getElementById('target-type');
+    const targetRange = document.getElementById('target-range');
+    const targetSpeed = document.getElementById('target-speed');
+    const targetAltitude = document.getElementById('target-altitude');
 
-    // Game time (UI-09)
-    y += 40;
-    ctx.fillStyle = '#ccc';
-    ctx.font = '12px monospace';
-    ctx.fillText('Time:', 10, y);
-    ctx.fillStyle = '#00ff00';
-    const minutes = Math.floor(this.gameTime / 60);
-    const seconds = Math.floor(this.gameTime % 60);
-    ctx.fillText(
-      `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`,
-      10,
-      y + 15
-    );
+    if (this.lockedTarget) {
+      if (targetStatus) {
+        targetStatus.textContent = 'LOCKED ON';
+        targetStatus.className = 'info-value status-locked';
+      }
+      if (targetType) targetType.textContent = this.lockedTarget.type;
+      if (targetRange)
+        targetRange.textContent = `${this.lockedTarget.distanceFrom(this.artillery.position).toFixed(0)} m`;
+      if (targetSpeed)
+        targetSpeed.textContent = `${this.lockedTarget.speed.toFixed(1)} m/s`;
+      if (targetAltitude)
+        targetAltitude.textContent = `${this.lockedTarget.altitude.toFixed(0)} m`;
+    } else {
+      if (targetStatus) {
+        targetStatus.textContent = 'NO TARGET';
+        targetStatus.className = 'info-value status-no-target';
+      }
+      if (targetType) targetType.textContent = '---';
+      if (targetRange) targetRange.textContent = '--- m';
+      if (targetSpeed) targetSpeed.textContent = '--- m/s';
+      if (targetAltitude) targetAltitude.textContent = '--- m';
+    }
   }
 
   /**
    * Render center pane: Horizontal Radar (UI-11 to UI-14)
    */
-  private renderHorizontalRadar(
-    ctx: CanvasRenderingContext2D,
-    canvas: HTMLCanvasElement
-  ): void {
-    const radarX = canvas.width * 0.25;
-    const radarWidth = canvas.width * 0.5;
-    const radarHeight = canvas.height;
+  private renderHorizontalRadar(): void {
+    const horizontalRadarCanvas = document.getElementById(
+      'horizontal-radar-ui'
+    ) as HTMLCanvasElement;
+    if (!horizontalRadarCanvas) return;
 
-    // Radar background
-    ctx.fillStyle = '#000';
-    ctx.fillRect(radarX, 0, radarWidth, radarHeight);
-    ctx.strokeStyle = '#00ff00';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(radarX, 0, radarWidth, radarHeight);
+    const ctx = horizontalRadarCanvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = horizontalRadarCanvas.width;
+    const height = horizontalRadarCanvas.height;
+
+    // Clear canvas
+    ctx.fillStyle = '#001100';
+    ctx.fillRect(0, 0, width, height);
 
     // Radar grid and elements would be implemented here
     // This is a placeholder for the full radar implementation
     ctx.fillStyle = '#00ff00';
     ctx.font = '12px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('HORIZONTAL RADAR', radarX + radarWidth / 2, radarHeight / 2);
+    ctx.fillText('HORIZONTAL RADAR', width / 2, height / 2);
   }
 
   /**
-   * Render right pane: Vertical Radar & Target Info (UI-15 to UI-18)
+   * Render right pane: Vertical Radar (UI-15 to UI-16)
    */
-  private renderVerticalRadarAndTargetInfo(
-    ctx: CanvasRenderingContext2D,
-    canvas: HTMLCanvasElement
-  ): void {
-    const panelX = canvas.width * 0.75;
-    const panelWidth = canvas.width * 0.25;
-    const panelHeight = canvas.height;
+  private renderVerticalRadar(): void {
+    const verticalRadarCanvas = document.getElementById(
+      'vertical-radar'
+    ) as HTMLCanvasElement;
+    if (!verticalRadarCanvas) return;
 
-    // Panel background
-    ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(panelX, 0, panelWidth, panelHeight);
-    ctx.strokeStyle = '#666';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(panelX, 0, panelWidth, panelHeight);
+    const ctx = verticalRadarCanvas.getContext('2d');
+    if (!ctx) return;
 
-    // Vertical radar (upper half)
-    const radarHeight = panelHeight * 0.6;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(panelX, 0, panelWidth, radarHeight);
-    ctx.strokeStyle = '#00ff00';
-    ctx.strokeRect(panelX, 0, panelWidth, radarHeight);
+    const width = verticalRadarCanvas.width;
+    const height = verticalRadarCanvas.height;
 
-    // Target info (lower half)
-    const infoY = radarHeight;
-    const infoHeight = panelHeight * 0.4;
+    // Clear canvas
+    ctx.fillStyle = '#001100';
+    ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = '#333';
-    ctx.fillRect(panelX, infoY, panelWidth, infoHeight);
-    ctx.strokeStyle = '#666';
-    ctx.strokeRect(panelX, infoY, panelWidth, infoHeight);
-
-    // Target info content (UI-17, UI-18)
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px monospace';
+    // Vertical radar grid and elements would be implemented here
+    // This is a placeholder for the full radar implementation
+    ctx.fillStyle = '#00ff00';
+    ctx.font = '12px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('TARGET INFO', panelX + panelWidth / 2, infoY + 20);
-
-    let y = infoY + 40;
-    ctx.textAlign = 'left';
-    ctx.font = '11px monospace';
-
-    if (this.lockedTarget) {
-      ctx.fillStyle = '#ccc';
-      ctx.fillText('Status:', panelX + 10, y);
-      ctx.fillStyle = '#ff0000';
-      ctx.fillText('LOCKED ON', panelX + 10, y + 12);
-
-      y += 30;
-      ctx.fillStyle = '#ccc';
-      ctx.fillText('Type:', panelX + 10, y);
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText(this.lockedTarget.type, panelX + 10, y + 12);
-
-      y += 30;
-      ctx.fillStyle = '#ccc';
-      ctx.fillText('Range:', panelX + 10, y);
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText(
-        `${this.lockedTarget.distanceFrom(this.artillery.position).toFixed(0)}m`,
-        panelX + 10,
-        y + 12
-      );
-
-      y += 25;
-      ctx.fillStyle = '#ccc';
-      ctx.fillText('Speed:', panelX + 10, y);
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText(
-        `${this.lockedTarget.speed.toFixed(1)}m/s`,
-        panelX + 10,
-        y + 12
-      );
-
-      y += 25;
-      ctx.fillStyle = '#ccc';
-      ctx.fillText('Altitude:', panelX + 10, y);
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText(
-        `${this.lockedTarget.altitude.toFixed(0)}m`,
-        panelX + 10,
-        y + 12
-      );
-    } else {
-      ctx.fillStyle = '#ccc';
-      ctx.fillText('Status:', panelX + 10, y);
-      ctx.fillStyle = '#666';
-      ctx.fillText('NO TARGET', panelX + 10, y + 12);
-    }
+    ctx.fillText('VERTICAL RADAR', width / 2, height / 2);
   }
 
   /**
    * Render game state overlay (game over, stage clear)
    */
-  private renderGameStateOverlay(
-    ctx: CanvasRenderingContext2D,
-    canvas: HTMLCanvasElement
-  ): void {
+  private renderGameStateOverlay(): void {
+    // Game state overlay would be implemented here
+    // For now, we'll use a simple overlay on the main canvas
+    const canvas = this.canvasManager.getCanvas();
+    const ctx = this.canvasManager.context;
+
     if (this.gameState === GameState.GAME_OVER) {
       ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
