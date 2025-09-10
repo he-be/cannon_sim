@@ -78,10 +78,20 @@ export class CanvasManager {
     const rect = parent.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
 
-    // 境界線を考慮してサイズを調整
-    const padding = 4; // 2px border * 2
-    const newWidth = rect.width - padding;
-    const newHeight = rect.height - padding;
+    // タイトル画面とステージセレクト画面では全画面サイズを使用
+    let newWidth: number;
+    let newHeight: number;
+
+    if (parent === document.body) {
+      // 全画面モード（タイトル・ステージセレクト）
+      newWidth = window.innerWidth;
+      newHeight = window.innerHeight;
+    } else {
+      // 通常モード（ゲーム内レーダー）
+      const padding = 4; // 2px border * 2
+      newWidth = rect.width - padding;
+      newHeight = rect.height - padding;
+    }
 
     // Canvas要素のサイズを設定
     this.canvas.style.width = `${newWidth}px`;
