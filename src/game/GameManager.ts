@@ -118,6 +118,12 @@ export class GameManager {
       gameConfig
     );
     this.gameStats.currentStage = stageConfig.id;
+
+    // Show game UI when entering game scene
+    const gameUI = document.getElementById('game-ui');
+    if (gameUI) {
+      gameUI.style.display = 'block';
+    }
   }
 
   /**

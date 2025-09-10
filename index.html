@@ -187,7 +187,109 @@
   </head>
   <body>
     <!-- Game canvas for scene rendering -->
-    <canvas id="horizontal-radar" width="1200" height="800"></canvas>
+    <canvas id="horizontal-radar" width="1200" height="800" style="display: none;"></canvas>
+
+    <!-- Game UI overlay -->
+    <div id="game-ui" style="display: none;">
+      <div class="game-container">
+        <!-- Left Pane: Control Panel -->
+        <div class="control-panel">
+          <h2>CONTROL PANEL</h2>
+
+          <!-- Azimuth Control -->
+          <div class="control-group">
+            <label>方位角 (Azimuth)</label>
+            <input
+              type="range"
+              id="azimuth-slider"
+              min="0"
+              max="360"
+              value="180"
+              step="1"
+            />
+            <div class="value-display" id="azimuth-value">180°</div>
+          </div>
+
+          <!-- Elevation Control -->
+          <div class="control-group">
+            <label>仰角 (Elevation)</label>
+            <input
+              type="range"
+              id="elevation-slider"
+              min="0"
+              max="90"
+              value="45"
+              step="1"
+            />
+            <div class="value-display" id="elevation-value">45°</div>
+          </div>
+
+          <!-- Lead Angle Display -->
+          <div class="control-group">
+            <label>リード角 (Lead)</label>
+            <div class="value-display">
+              Az: <span id="lead-azimuth">---</span>° El:
+              <span id="lead-elevation">---</span>°
+            </div>
+          </div>
+
+          <!-- Ammunition Display -->
+          <div class="control-group">
+            <label>装填弾頭</label>
+            <div class="value-display">HE 850m/s</div>
+          </div>
+
+          <!-- Fire Button -->
+          <button class="fire-button" id="fire-button">FIRE</button>
+
+          <!-- Unlock Button -->
+          <button class="unlock-button" id="unlock-button">ロックオン解除</button>
+
+          <!-- Game Time -->
+          <div class="game-time" id="game-time">00:00</div>
+        </div>
+
+        <!-- Center Pane: Horizontal Radar -->
+        <div class="radar-horizontal">
+          <canvas id="horizontal-radar-ui"></canvas>
+        </div>
+
+        <!-- Right Pane: Vertical Radar & Target Info -->
+        <div class="right-pane">
+          <!-- Vertical Radar -->
+          <div class="radar-vertical">
+            <canvas id="vertical-radar"></canvas>
+          </div>
+
+          <!-- Target Information -->
+          <div class="target-info">
+            <h3>TARGET INFO</h3>
+            <div class="info-row">
+              <span class="info-label">ステータス:</span>
+              <span class="info-value status-no-target" id="target-status"
+                >NO TARGET</span
+              >
+            </div>
+            <div class="info-row">
+              <span class="info-label">種別:</span>
+              <span class="info-value" id="target-type">---</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">距離:</span>
+              <span class="info-value" id="target-range">--- m</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">速度:</span>
+              <span class="info-value" id="target-speed">--- m/s</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">高度:</span>
+              <span class="info-value" id="target-altitude">--- m</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
