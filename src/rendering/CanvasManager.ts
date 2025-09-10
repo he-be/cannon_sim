@@ -41,6 +41,13 @@ export class CanvasManager {
   }
 
   /**
+   * Canvas要素を取得
+   */
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
+  /**
    * Canvasの幅を取得
    */
   get width(): number {
