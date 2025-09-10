@@ -6,6 +6,8 @@
 import { Vector3 } from '../math/Vector3';
 import { Target, TargetType } from '../game/entities/Target';
 import { Radar } from '../game/entities/Radar';
+import { PhysicsEngine } from '../physics/PhysicsEngine';
+import { Forces } from '../physics/Forces';
 
 export interface TrackingState {
   isTracking: boolean;
@@ -48,6 +50,34 @@ export interface TrackingOptions {
   maxLockDistance: number; // maximum distance for lock-on
 }
 
+export interface LeadSolution {
+  azimuth: number; // 推奨方位角 (degrees)
+  elevation: number; // 推奨仰角 (degrees)
+  flightTime: number; // 弾道時間 (seconds)
+  targetFuturePos: Vector3; // 目標未来位置
+  impactPos: Vector3; // 着弾予測位置
+  convergenceError: number; // 収束誤差 (meters)
+  converged: boolean; // 収束成功フラグ
+}
+
+export interface BallisticsParameters {
+  muzzleVelocity: number; // 初速 (m/s)
+  mass: number; // 砲弾質量 (kg)
+  dragCoefficient: number; // 抗力係数
+  crossSectionalArea: number; // 断面積 (m²)
+  airDensity: number; // 大気密度 (kg/m³)
+  gravity: number; // 重力加速度 (m/s²)
+  earthAngularVelocity: number; // 地球角速度 (rad/s)
+  latitude: number; // 緯度 (degrees)
+}
+
+export interface ArtilleryConfiguration {
+  muzzleVelocity: number;
+  projectileMass: number;
+  dragCoefficient: number;
+  caliber: number; // mm
+}
+
 /**
  * Manages target detection, tracking, and lock-on functionality
  */
@@ -56,6 +86,9 @@ export class TargetTracker {
   private _events: TargetTrackingEvents;
   private _options: TrackingOptions;
   private _radar: Radar;
+  // Ballistics calculation
+  private _ballisticsParams: BallisticsParameters;
+  private _physicsEngine: PhysicsEngine;
 
   // Target management
   private _detectedTargets: Map<Target, DetectedTarget> = new Map();
@@ -80,6 +113,24 @@ export class TargetTracker {
       maxLockDistance: 12000, // 12km
       ...options,
     };
+
+    // Initialize with default environmental parameters only
+    // Artillery-specific parameters will be provided at calculation time
+    this._ballisticsParams = {
+      muzzleVelocity: 800, // Default, will be overridden
+      mass: 45, // Default, will be overridden
+      dragCoefficient: 0.47, // Default, will be overridden
+      crossSectionalArea: 0.02, // Default, will be overridden
+      airDensity: 1.225, // sea level air density
+      gravity: 9.81,
+      earthAngularVelocity: 7.292e-5, // rad/s
+      latitude: 35.0, // degrees (default location)
+    };
+
+    // Initialize physics engine for ballistic calculations
+    this._physicsEngine = new PhysicsEngine(
+      this.createBallisticsAcceleration.bind(this)
+    );
   }
 
   /**
@@ -485,5 +536,363 @@ export class TargetTracker {
    */
   getDetectedTargetCount(): number {
     return this._detectedTargets.size;
+  }
+
+  /**
+   * Update ballistics parameters from artillery configuration
+   */
+  private updateBallisticsFromArtillery(config: ArtilleryConfiguration): void {
+    // Calculate cross-sectional area from caliber (mm to m²)
+    const radius = config.caliber / 2 / 1000; // Convert mm to meters
+    const crossSectionalArea = Math.PI * radius * radius;
+
+    this._ballisticsParams = {
+      ...this._ballisticsParams,
+      muzzleVelocity: config.muzzleVelocity,
+      mass: config.projectileMass,
+      dragCoefficient: config.dragCoefficient,
+      crossSectionalArea: crossSectionalArea,
+    };
+  }
+
+  /**
+   * Set environmental parameters for ballistic calculations
+   */
+  setEnvironmentalParameters(params: {
+    airDensity?: number;
+    gravity?: number;
+    latitude?: number;
+  }): void {
+    this._ballisticsParams = {
+      ...this._ballisticsParams,
+      ...params,
+    };
+  }
+
+  /**
+   * Create acceleration function for ballistic calculations
+   * Implements forces from ShootingMethod.txt: gravity, drag, Coriolis
+   */
+  private createBallisticsAcceleration(
+    state: { position: Vector3; velocity: Vector3 },
+    _time: number
+  ): Vector3 {
+    const {
+      mass,
+      dragCoefficient,
+      crossSectionalArea,
+      airDensity,
+      gravity,
+      earthAngularVelocity,
+      latitude,
+    } = this._ballisticsParams;
+
+    // Gravity force (always downward in game coordinates)
+    const gravityForce = Forces.gravity(mass, gravity, new Vector3(0, 0, -1));
+
+    // Drag force (quadratic, opposite to velocity)
+    const dragForce = Forces.drag(
+      state.velocity,
+      airDensity,
+      dragCoefficient,
+      crossSectionalArea
+    );
+
+    // Coriolis force (Earth rotation effect)
+    // Convert latitude to radians and create angular velocity vector
+    const latRad = (latitude * Math.PI) / 180;
+    const earthOmega = new Vector3(
+      0, // No x-component in our coordinate system
+      earthAngularVelocity * Math.cos(latRad), // Y-component (north)
+      earthAngularVelocity * Math.sin(latRad) // Z-component (up)
+    );
+    const coriolisForce = Forces.coriolis(mass, earthOmega, state.velocity);
+
+    // Sum all forces and convert to acceleration
+    const totalForce = Forces.sum(gravityForce, dragForce, coriolisForce);
+    return totalForce.multiply(1 / mass);
+  }
+
+  /**
+   * Calculate recommended lead angles using Shooting Method
+   * Implements the iterative solution from ShootingMethod.txt Section 5
+   */
+  calculateLeadAngles(
+    target: DetectedTarget,
+    artilleryPosition: Vector3,
+    artilleryConfig?: ArtilleryConfiguration
+  ): LeadSolution | null {
+    if (!target) return null;
+
+    // Update ballistics parameters from artillery configuration if provided
+    if (artilleryConfig) {
+      this.updateBallisticsFromArtillery(artilleryConfig);
+    }
+
+    const maxIterations = 15;
+    const convergenceThreshold = 10.0; // 10 meter accuracy (realistic for artillery)
+    let iteration = 0;
+
+    // Step 1: Initial guess (simple ballistic approximation)
+    const initialGuess = this.calculateSimpleBallisticAngles(
+      target,
+      artilleryPosition
+    );
+    let currentAzimuth = initialGuess.azimuth;
+    let currentElevation = initialGuess.elevation;
+    let currentFlightTime = initialGuess.flightTime;
+
+    while (iteration < maxIterations) {
+      // Step 2: Predict target future position
+      const targetFuturePos = this.predictTargetPosition(
+        target,
+        currentFlightTime
+      );
+
+      // Step 3: Calculate projectile trajectory with current angles
+      const impactPos = this.simulateTrajectory(
+        currentAzimuth,
+        currentElevation,
+        artilleryPosition,
+        currentFlightTime
+      );
+
+      // Step 4: Calculate error
+      const error = targetFuturePos.subtract(impactPos);
+      const errorMagnitude = error.magnitude();
+
+      // Check convergence
+      if (errorMagnitude < convergenceThreshold) {
+        return {
+          azimuth: currentAzimuth,
+          elevation: currentElevation,
+          flightTime: currentFlightTime,
+          targetFuturePos,
+          impactPos,
+          convergenceError: errorMagnitude,
+          converged: true,
+        };
+      }
+
+      // Step 5: Update angles using Newton-Raphson method
+      const angleUpdate = this.calculateAngleCorrection(
+        error,
+        currentAzimuth,
+        currentElevation,
+        artilleryPosition,
+        currentFlightTime
+      );
+
+      currentAzimuth += angleUpdate.deltaAzimuth;
+      currentElevation += angleUpdate.deltaElevation;
+
+      // Update flight time estimate
+      const distance = targetFuturePos.subtract(artilleryPosition).magnitude();
+      currentFlightTime =
+        distance / (this._ballisticsParams.muzzleVelocity * 0.8); // Account for drag
+
+      iteration++;
+    }
+
+    // Return non-converged result
+    const finalTargetPos = this.predictTargetPosition(
+      target,
+      currentFlightTime
+    );
+    const finalImpactPos = this.simulateTrajectory(
+      currentAzimuth,
+      currentElevation,
+      artilleryPosition,
+      currentFlightTime
+    );
+
+    return {
+      azimuth: currentAzimuth,
+      elevation: currentElevation,
+      flightTime: currentFlightTime,
+      targetFuturePos: finalTargetPos,
+      impactPos: finalImpactPos,
+      convergenceError: finalTargetPos.subtract(finalImpactPos).magnitude(),
+      converged: false,
+    };
+  }
+
+  /**
+   * Calculate simple ballistic angles as initial guess
+   */
+  private calculateSimpleBallisticAngles(
+    target: DetectedTarget,
+    artilleryPos: Vector3
+  ): {
+    azimuth: number;
+    elevation: number;
+    flightTime: number;
+  } {
+    const delta = target.target.position.subtract(artilleryPos);
+    const horizontalDistance = Math.sqrt(delta.x * delta.x + delta.y * delta.y);
+    const verticalDistance = delta.z;
+
+    // Simple ballistic calculation (ignore drag and Coriolis for initial guess)
+    const v0 = this._ballisticsParams.muzzleVelocity;
+    const g = this._ballisticsParams.gravity;
+
+    // Simple elevation calculation (avoid complex square root that might be imaginary)
+    let elevation: number;
+    const discriminant =
+      v0 * v0 * v0 * v0 -
+      g *
+        (g * horizontalDistance * horizontalDistance +
+          2 * verticalDistance * v0 * v0);
+
+    if (discriminant >= 0 && horizontalDistance > 0) {
+      elevation =
+        Math.atan2(v0 * v0 + Math.sqrt(discriminant), g * horizontalDistance) *
+        (180 / Math.PI);
+    } else {
+      // Fallback: simple angle based on distance and height
+      elevation =
+        Math.atan2(
+          verticalDistance + horizontalDistance * 0.1,
+          horizontalDistance
+        ) *
+        (180 / Math.PI);
+      elevation = Math.max(5, Math.min(45, elevation)); // Clamp between 5-45 degrees
+    }
+
+    // Azimuth to target current position
+    const azimuth = Math.atan2(delta.x, delta.y) * (180 / Math.PI);
+
+    // Flight time estimate (more robust)
+    const elevationRad = (elevation * Math.PI) / 180;
+    const horizontalVelocity = v0 * Math.cos(elevationRad);
+    const flightTime =
+      horizontalVelocity > 0
+        ? horizontalDistance / horizontalVelocity
+        : horizontalDistance / v0;
+
+    return { azimuth, elevation, flightTime };
+  }
+
+  /**
+   * Predict target position at given time
+   */
+  private predictTargetPosition(
+    target: DetectedTarget,
+    flightTime: number
+  ): Vector3 {
+    // Simple linear motion prediction: P(t) = P(0) + v*t
+    return target.target.position.add(target.velocity.multiply(flightTime));
+  }
+
+  /**
+   * Simulate projectile trajectory using physics engine
+   */
+  private simulateTrajectory(
+    azimuth: number,
+    elevation: number,
+    startPos: Vector3,
+    flightTime: number
+  ): Vector3 {
+    const azimuthRad = (azimuth * Math.PI) / 180;
+    const elevationRad = (elevation * Math.PI) / 180;
+    const v0 = this._ballisticsParams.muzzleVelocity;
+
+    // Convert angles to initial velocity vector (game coordinate system)
+    const initialVelocity = new Vector3(
+      v0 * Math.cos(elevationRad) * Math.sin(azimuthRad), // X: east
+      v0 * Math.cos(elevationRad) * Math.cos(azimuthRad), // Y: north
+      v0 * Math.sin(elevationRad) // Z: up
+    );
+
+    let state = { position: startPos.copy(), velocity: initialVelocity };
+    const dt = 0.01; // 10ms time step
+    let currentTime = 0;
+
+    // Simulate trajectory until specified flight time
+    while (currentTime < flightTime && state.position.z >= 0) {
+      state = this._physicsEngine.integrate(state, currentTime, dt);
+      currentTime += dt;
+
+      // Ground impact check
+      if (state.position.z <= 0) {
+        break;
+      }
+    }
+
+    return state.position;
+  }
+
+  /**
+   * Calculate angle correction using numerical differentiation
+   */
+  private calculateAngleCorrection(
+    error: Vector3,
+    currentAzimuth: number,
+    currentElevation: number,
+    artilleryPos: Vector3,
+    flightTime: number
+  ): { deltaAzimuth: number; deltaElevation: number } {
+    const deltaAngle = 0.1; // Small angle change for numerical differentiation
+
+    // Calculate partial derivatives
+    const baseImpact = this.simulateTrajectory(
+      currentAzimuth,
+      currentElevation,
+      artilleryPos,
+      flightTime
+    );
+
+    const azimuthPlusImpact = this.simulateTrajectory(
+      currentAzimuth + deltaAngle,
+      currentElevation,
+      artilleryPos,
+      flightTime
+    );
+    const azimuthPartial = azimuthPlusImpact
+      .subtract(baseImpact)
+      .multiply(1 / deltaAngle);
+
+    const elevationPlusImpact = this.simulateTrajectory(
+      currentAzimuth,
+      currentElevation + deltaAngle,
+      artilleryPos,
+      flightTime
+    );
+    const elevationPartial = elevationPlusImpact
+      .subtract(baseImpact)
+      .multiply(1 / deltaAngle);
+
+    // Simple correction (not full Newton-Raphson, but effective)
+    const correctionFactor = 0.1;
+    const deltaAzimuth =
+      -(error.dot(azimuthPartial) / azimuthPartial.dot(azimuthPartial)) *
+      correctionFactor;
+    const deltaElevation =
+      -(error.dot(elevationPartial) / elevationPartial.dot(elevationPartial)) *
+      correctionFactor;
+
+    return { deltaAzimuth, deltaElevation };
+  }
+
+  /**
+   * Get lead solution for currently locked target
+   */
+  getLeadSolution(
+    artilleryConfig?: ArtilleryConfiguration
+  ): LeadSolution | null {
+    if (!this._state.lockedTarget || !this._state.isLocked) {
+      return null;
+    }
+
+    const detectedTarget = this._detectedTargets.get(this._state.lockedTarget);
+    if (!detectedTarget) {
+      return null;
+    }
+
+    return this.calculateLeadAngles(
+      detectedTarget,
+      this._radar.position,
+      artilleryConfig
+    );
   }
 }

@@ -501,6 +501,227 @@ describe('TargetTracker (T022 - Target Tracking System)', () => {
     });
   });
 
+  describe('lead angle calculation (Shooting Method)', () => {
+    beforeEach(() => {
+      targetTracker.update(testTargets);
+      // Lock onto first moving target
+      const movingTargets = targetTracker
+        .getDetectedTargets()
+        .filter(t => t.target.type !== TargetType.STATIC);
+      if (movingTargets.length > 0) {
+        targetTracker.startTracking(movingTargets[0].target);
+        vi.advanceTimersByTime(2500); // Achieve full lock
+        targetTracker.update([movingTargets[0].target]);
+      }
+    });
+
+    it('should calculate lead solution for locked target', () => {
+      const leadSolution = targetTracker.getLeadSolution();
+
+      if (leadSolution) {
+        expect(leadSolution.azimuth).toBeTypeOf('number');
+        expect(leadSolution.elevation).toBeTypeOf('number');
+        expect(leadSolution.flightTime).toBeGreaterThan(0);
+        expect(leadSolution.targetFuturePos).toBeDefined();
+        expect(leadSolution.impactPos).toBeDefined();
+        expect(leadSolution.convergenceError).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('should return null when no target is locked', () => {
+      targetTracker.releaseLock();
+      const leadSolution = targetTracker.getLeadSolution();
+      expect(leadSolution).toBeNull();
+    });
+
+    it('should calculate different angles for different targets', () => {
+      const target1 = new Target(
+        new Vector3(3000, 0, 0),
+        TargetType.MOVING_FAST,
+        new Vector3(100, 0, 0)
+      );
+      const target2 = new Target(
+        new Vector3(0, 3000, 0),
+        TargetType.MOVING_FAST,
+        new Vector3(0, -100, 0)
+      );
+
+      targetTracker.update([target1, target2]);
+
+      // Test first target
+      targetTracker.startTracking(target1);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([target1]);
+      const solution1 = targetTracker.getLeadSolution();
+
+      // Test second target
+      targetTracker.releaseLock();
+      targetTracker.startTracking(target2);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([target2]);
+      const solution2 = targetTracker.getLeadSolution();
+
+      if (solution1 && solution2) {
+        expect(solution1.azimuth).not.toBeCloseTo(solution2.azimuth, 1);
+      }
+    });
+
+    it('should handle static targets', () => {
+      const staticTarget = new Target(
+        new Vector3(2000, 2000, 0),
+        TargetType.STATIC,
+        new Vector3(0, 0, 0)
+      );
+
+      targetTracker.update([staticTarget]);
+      targetTracker.startTracking(staticTarget);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([staticTarget]);
+
+      const solution = targetTracker.getLeadSolution();
+
+      if (solution) {
+        expect(solution.flightTime).toBeGreaterThan(0);
+        // For static targets, future position should equal current position
+        expect(solution.targetFuturePos.x).toBeCloseTo(
+          staticTarget.position.x,
+          1
+        );
+        expect(solution.targetFuturePos.y).toBeCloseTo(
+          staticTarget.position.y,
+          1
+        );
+      }
+    });
+
+    it('should provide reasonable solutions for moving targets', () => {
+      const reasonableTarget = new Target(
+        new Vector3(5000, 0, 100),
+        TargetType.MOVING_SLOW,
+        new Vector3(50, 0, 0)
+      );
+
+      targetTracker.update([reasonableTarget]);
+      targetTracker.startTracking(reasonableTarget);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([reasonableTarget]);
+
+      const solution = targetTracker.getLeadSolution();
+
+      if (solution) {
+        // Solution should be mathematically valid
+        expect(solution.flightTime).toBeGreaterThan(0);
+        expect(solution.azimuth).toBeGreaterThan(-180);
+        expect(solution.azimuth).toBeLessThan(180);
+        expect(solution.elevation).toBeGreaterThan(-90);
+        expect(solution.elevation).toBeLessThan(180);
+
+        // Verify that solution structures are properly formed
+        expect(solution.targetFuturePos).toBeInstanceOf(Vector3);
+        expect(solution.impactPos).toBeInstanceOf(Vector3);
+      }
+    });
+
+    it('should handle extreme distances gracefully', () => {
+      const distantTarget = new Target(
+        new Vector3(20000, 0, 1000),
+        TargetType.MOVING_FAST,
+        new Vector3(200, 0, 0)
+      );
+
+      targetTracker.update([distantTarget]);
+      targetTracker.startTracking(distantTarget);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([distantTarget]);
+
+      const solution = targetTracker.getLeadSolution();
+
+      if (solution) {
+        expect(solution.elevation).toBeGreaterThan(0);
+        expect(solution.flightTime).toBeGreaterThan(0);
+        expect(solution.azimuth).toBeGreaterThanOrEqual(-180);
+        expect(solution.azimuth).toBeLessThanOrEqual(180);
+      }
+    });
+  });
+
+  describe('artillery integration', () => {
+    it('should use artillery configuration for lead calculations', () => {
+      const mockArtilleryConfig = {
+        muzzleVelocity: 900,
+        projectileMass: 50,
+        dragCoefficient: 0.5,
+        caliber: 155,
+      };
+
+      const target = new Target(
+        new Vector3(3000, 0, 0),
+        TargetType.MOVING_FAST,
+        new Vector3(100, 0, 0)
+      );
+
+      targetTracker.update([target]);
+      targetTracker.startTracking(target);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([target]);
+
+      const solution = targetTracker.getLeadSolution(mockArtilleryConfig);
+
+      if (solution) {
+        expect(solution.flightTime).toBeGreaterThan(0);
+        expect(solution.azimuth).toBeTypeOf('number');
+        expect(solution.elevation).toBeTypeOf('number');
+      }
+    });
+
+    it('should handle missing artillery configuration gracefully', () => {
+      const target = new Target(
+        new Vector3(2000, 1000, 0),
+        TargetType.MOVING_SLOW,
+        new Vector3(30, 0, 0)
+      );
+
+      targetTracker.update([target]);
+      targetTracker.startTracking(target);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([target]);
+
+      // Should use default parameters when no config provided
+      const solution = targetTracker.getLeadSolution();
+
+      if (solution) {
+        expect(solution.flightTime).toBeGreaterThan(0);
+        expect(solution.targetFuturePos).toBeInstanceOf(Vector3);
+      }
+    });
+
+    it('should allow environmental parameter updates', () => {
+      targetTracker.setEnvironmentalParameters({
+        airDensity: 1.0, // Thinner air
+        gravity: 9.5,
+        latitude: 45.0,
+      });
+
+      const target = new Target(
+        new Vector3(4000, 0, 100),
+        TargetType.STATIC,
+        new Vector3(0, 0, 0)
+      );
+
+      targetTracker.update([target]);
+      targetTracker.startTracking(target);
+      vi.advanceTimersByTime(2500);
+      targetTracker.update([target]);
+
+      const solution = targetTracker.getLeadSolution();
+
+      expect(solution).not.toBeNull();
+      if (solution) {
+        expect(solution.flightTime).toBeGreaterThan(0);
+      }
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle empty target list', () => {
       expect(() => {

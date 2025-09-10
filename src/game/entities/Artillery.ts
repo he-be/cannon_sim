@@ -5,6 +5,7 @@
 
 import { Vector3 } from '../../math/Vector3';
 import { LeadAngleCalculator, LeadAngle } from '../LeadAngleCalculator';
+import { ArtilleryConfiguration } from '../../targeting/TargetTracker';
 
 export enum ArtilleryState {
   READY = 'ready',
@@ -182,5 +183,17 @@ export class Artillery {
     return this._targetVelocity
       ? this._targetVelocity.magnitude() > 0.1
       : false;
+  }
+
+  /**
+   * Get artillery configuration for ballistic calculations
+   */
+  getConfiguration(): ArtilleryConfiguration {
+    return {
+      muzzleVelocity: 800, // 800 m/s (typical 155mm artillery)
+      projectileMass: 45, // 45 kg standard HE shell
+      dragCoefficient: 0.47, // Sphere approximation
+      caliber: 155, // 155mm caliber
+    };
   }
 }
