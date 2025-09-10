@@ -92,6 +92,16 @@ export class GameManager {
       this.handleSceneTransition
     );
     this.gameStats.currentStage = null;
+
+    // Hide game UI and show canvas for title scene
+    const gameUI = document.getElementById('game-ui');
+    const canvas = document.getElementById('horizontal-radar');
+    if (gameUI) {
+      gameUI.style.display = 'none';
+    }
+    if (canvas) {
+      canvas.style.display = 'block';
+    }
   }
 
   /**
@@ -103,6 +113,16 @@ export class GameManager {
       this.handleSceneTransition
     );
     this.gameStats.currentStage = null;
+
+    // Hide game UI and show canvas for stage select scene
+    const gameUI = document.getElementById('game-ui');
+    const canvas = document.getElementById('horizontal-radar');
+    if (gameUI) {
+      gameUI.style.display = 'none';
+    }
+    if (canvas) {
+      canvas.style.display = 'block';
+    }
   }
 
   /**
@@ -119,10 +139,14 @@ export class GameManager {
     );
     this.gameStats.currentStage = stageConfig.id;
 
-    // Show game UI when entering game scene
+    // Show game UI and hide canvas when entering game scene
     const gameUI = document.getElementById('game-ui');
+    const canvas = document.getElementById('horizontal-radar');
     if (gameUI) {
       gameUI.style.display = 'block';
+    }
+    if (canvas) {
+      canvas.style.display = 'none';
     }
   }
 
