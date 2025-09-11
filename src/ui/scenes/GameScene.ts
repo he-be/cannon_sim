@@ -19,6 +19,7 @@ import {
   ScreenCoordinates,
 } from '../../math/RadarCoordinateConverter';
 import { Vector3 } from '../../math/Vector3';
+import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
 
 export enum GameState {
   PLAYING = 'playing',
@@ -45,6 +46,7 @@ export class GameScene {
   private canvasManager: CanvasManager;
   private onSceneTransition: (transition: SceneTransition) => void;
   private config: GameSceneConfig;
+  private mouseHandler: MouseHandler;
 
   // Game entities
   private artillery!: Artillery;
@@ -88,6 +90,7 @@ export class GameScene {
     this.canvasManager = canvasManager;
     this.onSceneTransition = onSceneTransition;
     this.config = config;
+    this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
 
     this.initializeGame();
     this.setupEventListeners();
@@ -155,19 +158,18 @@ export class GameScene {
   }
 
   /**
-   * Setup event listeners for user input
+   * Setup event listeners for user input using MouseHandler
    */
   private setupEventListeners(): void {
-    const canvas = this.canvasManager.getCanvas();
+    // Use MouseHandler for mouse events (GS-03, GS-T01, GS-T02)
+    this.mouseHandler.addEventListener(this.handleMouseEvent.bind(this));
 
-    // Mouse events for radar control (GS-03, GS-T01, GS-T02)
-    canvas.addEventListener('mousedown', event => this.handleMouseDown(event));
-    canvas.addEventListener('mousemove', event => this.handleMouseMove(event));
-    canvas.addEventListener('mouseup', () => this.handleMouseUp());
+    // Wheel events still need manual handling since MouseHandler doesn't support them
+    const canvas = this.canvasManager.getCanvas();
     canvas.addEventListener('wheel', event => this.handleWheel(event));
     canvas.addEventListener('contextmenu', event => event.preventDefault()); // Disable right-click menu
 
-    // Keyboard events
+    // Keyboard events still handled directly
     window.addEventListener('keydown', event => this.handleKeyDown(event));
   }
 
@@ -1126,43 +1128,48 @@ export class GameScene {
   }
 
   /**
+   * Handle all mouse events through MouseHandler (GS-T01, GS-T02, GS-T04)
+   */
+  private handleMouseEvent(event: MouseEventData): void {
+    switch (event.type) {
+      case 'mousedown':
+        this.handleMouseDownEvent(event);
+        break;
+      case 'mousemove':
+        this.handleMouseMoveEvent(event);
+        break;
+      case 'mouseup':
+        this.handleMouseUpEvent(event);
+        break;
+      case 'click':
+        if (event.button === 2) {
+          // Right click for target lock-on (GS-T04)
+          this.handleRightClickEvent(event);
+        }
+        break;
+    }
+  }
+
+  /**
    * Handle mouse down events (GS-T04)
    */
-  private handleMouseDown(event: MouseEvent): void {
-    const canvas = this.canvasManager.getCanvas();
-    const rect = canvas.getBoundingClientRect();
-
-    // Calculate mouse position relative to canvas
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-
+  private handleMouseDownEvent(event: MouseEventData): void {
     this.isMouseDragging = true;
-    this.lastMousePosition = { x: mouseX, y: mouseY };
-
-    // Handle right click for target lock-on (GS-05)
-    if (event.button === 2) {
-      this.handleRightClick(mouseX, mouseY);
-    }
-
-    event.preventDefault();
+    this.lastMousePosition = {
+      x: event.position.canvas.x,
+      y: event.position.canvas.y,
+    };
   }
 
   /**
    * Handle mouse move events (GS-T01, GS-T02)
    */
-  private handleMouseMove(event: MouseEvent): void {
+  private handleMouseMoveEvent(event: MouseEventData): void {
     if (!this.isMouseDragging) return;
 
-    const canvas = this.canvasManager.getCanvas();
-    const rect = canvas.getBoundingClientRect();
-
-    // Calculate mouse position relative to canvas
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-
     // Calculate mouse movement delta
-    const deltaX = mouseX - this.lastMousePosition.x;
-    const deltaY = mouseY - this.lastMousePosition.y;
+    const deltaX = event.position.canvas.x - this.lastMousePosition.x;
+    const deltaY = event.position.canvas.y - this.lastMousePosition.y;
 
     // Update radar azimuth based on horizontal mouse movement (GS-T01)
     const azimuthDelta = RadarCoordinateConverter.mouseToAzimuthDelta(
@@ -1175,7 +1182,7 @@ export class GameScene {
 
     // Update distance cursor based on vertical mouse movement (GS-T02)
     const maxRange = 20000; // 20km
-    const canvasHeight = canvas.height;
+    const canvasHeight = this.canvasManager.getCanvas().height;
     const rangeDelta = RadarCoordinateConverter.mouseToRangeDelta(
       deltaY,
       maxRange,
@@ -1187,46 +1194,26 @@ export class GameScene {
     );
 
     // Update last mouse position
-    this.lastMousePosition = { x: mouseX, y: mouseY };
+    this.lastMousePosition = {
+      x: event.position.canvas.x,
+      y: event.position.canvas.y,
+    };
 
     // Check for target tracking (GS-T03)
     this.updateTargetTracking();
-
-    event.preventDefault();
   }
 
   /**
    * Handle mouse up events
    */
-  private handleMouseUp(): void {
+  private handleMouseUpEvent(_event: MouseEventData): void {
     this.isMouseDragging = false;
-  }
-
-  /**
-   * Handle mouse wheel events (GS-T02 alternative)
-   */
-  private handleWheel(event: WheelEvent): void {
-    const maxRange = 20000; // 20km
-    const scrollSensitivity = 100; // meters per wheel tick
-
-    // Update distance cursor based on wheel movement
-    const rangeDelta =
-      event.deltaY > 0 ? scrollSensitivity : -scrollSensitivity;
-    this.radarRangeCursor = Math.max(
-      0,
-      Math.min(maxRange, this.radarRangeCursor + rangeDelta)
-    );
-
-    // Check for target tracking after cursor movement
-    this.updateTargetTracking();
-
-    event.preventDefault();
   }
 
   /**
    * Handle right click for target lock-on (GS-T04)
    */
-  private handleRightClick(_mouseX: number, _mouseY: number): void {
+  private handleRightClickEvent(_event: MouseEventData): void {
     // Find target under cursor using improved collision detection
     const targetUnderCursor = this.findTargetNearCursor();
 
@@ -1254,6 +1241,27 @@ export class GameScene {
         this.trackedTarget = null;
       }
     }
+  }
+
+  /**
+   * Handle mouse wheel events (GS-T02 alternative)
+   */
+  private handleWheel(event: WheelEvent): void {
+    const maxRange = 20000; // 20km
+    const scrollSensitivity = 100; // meters per wheel tick
+
+    // Update distance cursor based on wheel movement
+    const rangeDelta =
+      event.deltaY > 0 ? scrollSensitivity : -scrollSensitivity;
+    this.radarRangeCursor = Math.max(
+      0,
+      Math.min(maxRange, this.radarRangeCursor + rangeDelta)
+    );
+
+    // Check for target tracking after cursor movement
+    this.updateTargetTracking();
+
+    event.preventDefault();
   }
 
   /**
@@ -1509,11 +1517,10 @@ export class GameScene {
    */
   destroy(): void {
     this.gameLoop.stop();
-    // Remove event listeners
+    // Cleanup MouseHandler
+    this.mouseHandler.destroy();
+    // Remove manual event listeners
     const canvas = this.canvasManager.getCanvas();
-    canvas.removeEventListener('mousedown', this.handleMouseDown);
-    canvas.removeEventListener('mousemove', this.handleMouseMove);
-    canvas.removeEventListener('mouseup', this.handleMouseUp);
     canvas.removeEventListener('wheel', this.handleWheel);
     window.removeEventListener('keydown', this.handleKeyDown);
   }
