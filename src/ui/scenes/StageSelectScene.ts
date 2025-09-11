@@ -6,6 +6,7 @@
 import { CanvasManager } from '../../rendering/CanvasManager';
 import { StageData, StageConfig } from '../../data/StageData';
 import { SceneType, SceneTransition } from './TitleScene';
+import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
 
 interface StageButton {
   stage: StageConfig;
@@ -20,6 +21,7 @@ interface StageButton {
 export class StageSelectScene {
   private canvasManager: CanvasManager;
   private onSceneTransition: (transition: SceneTransition) => void;
+  private mouseHandler: MouseHandler;
   private stageButtons: StageButton[] = [];
 
   constructor(
@@ -28,6 +30,7 @@ export class StageSelectScene {
   ) {
     this.canvasManager = canvasManager;
     this.onSceneTransition = onSceneTransition;
+    this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
     this.setupEventListeners();
   }
 
@@ -137,38 +140,35 @@ export class StageSelectScene {
   }
 
   /**
-   * Setup event listeners for user interaction
+   * Setup event listeners for user interaction using MouseHandler
    */
   private setupEventListeners(): void {
-    const canvas = this.canvasManager.getCanvas();
-
-    this.handleClick = this.handleClick.bind(this);
-    canvas.addEventListener('click', this.handleClick);
+    this.mouseHandler.addEventListener(this.handleMouseEvent.bind(this));
   }
 
   /**
-   * Handle click events on the stage selection screen
+   * Handle mouse events using MouseHandler
    */
-  private handleClick(event: MouseEvent): void {
-    const canvas = this.canvasManager.getCanvas();
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+  private handleMouseEvent(event: MouseEventData): void {
+    if (event.type === 'click' && event.button === 0) {
+      // Left click only
+      const clickPos = event.position.canvas;
 
-    for (const button of this.stageButtons) {
-      const { bounds, stage } = button;
-      if (
-        x >= bounds.x &&
-        x <= bounds.x + bounds.width &&
-        y >= bounds.y &&
-        y <= bounds.y + bounds.height
-      ) {
-        // Stage button clicked - transition to game scene with selected stage
-        this.onSceneTransition({
-          type: SceneType.GAME,
-          data: { selectedStage: stage },
-        });
-        break;
+      for (const button of this.stageButtons) {
+        const { bounds, stage } = button;
+        if (
+          clickPos.x >= bounds.x &&
+          clickPos.x <= bounds.x + bounds.width &&
+          clickPos.y >= bounds.y &&
+          clickPos.y <= bounds.y + bounds.height
+        ) {
+          // Stage button clicked - transition to game scene with selected stage
+          this.onSceneTransition({
+            type: SceneType.GAME,
+            data: { selectedStage: stage },
+          });
+          break;
+        }
       }
     }
   }
@@ -177,7 +177,6 @@ export class StageSelectScene {
    * Cleanup event listeners when scene is destroyed
    */
   destroy(): void {
-    const canvas = this.canvasManager.getCanvas();
-    canvas.removeEventListener('click', this.handleClick);
+    this.mouseHandler.destroy();
   }
 }
