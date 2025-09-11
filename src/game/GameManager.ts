@@ -85,6 +85,7 @@ export class GameManager {
 
   /**
    * Show title scene
+   * UI visibility control is delegated to scene components
    */
   private showTitleScene(): void {
     this.currentScene = new TitleScene(
@@ -93,19 +94,13 @@ export class GameManager {
     );
     this.gameStats.currentStage = null;
 
-    // Hide game UI and show canvas for title scene
-    const gameUI = document.getElementById('game-ui');
-    const canvas = document.getElementById('horizontal-radar');
-    if (gameUI) {
-      gameUI.style.display = 'none';
-    }
-    if (canvas) {
-      canvas.style.display = 'block';
-    }
+    // Note: UI visibility control removed to comply with TR-02
+    // Canvas 2D API requirement: all game elements must use Canvas only
   }
 
   /**
    * Show stage select scene
+   * UI visibility control is delegated to scene components
    */
   private showStageSelectScene(): void {
     this.currentScene = new StageSelectScene(
@@ -114,19 +109,13 @@ export class GameManager {
     );
     this.gameStats.currentStage = null;
 
-    // Hide game UI and show canvas for stage select scene
-    const gameUI = document.getElementById('game-ui');
-    const canvas = document.getElementById('horizontal-radar');
-    if (gameUI) {
-      gameUI.style.display = 'none';
-    }
-    if (canvas) {
-      canvas.style.display = 'block';
-    }
+    // Note: UI visibility control removed to comply with TR-02
+    // Canvas 2D API requirement: all game elements must use Canvas only
   }
 
   /**
    * Show game scene with selected stage
+   * UI visibility control is delegated to scene components
    */
   private showGameScene(stageConfig: StageConfig): void {
     const gameConfig: GameSceneConfig = {
@@ -139,15 +128,9 @@ export class GameManager {
     );
     this.gameStats.currentStage = stageConfig.id;
 
-    // Show game UI and hide canvas when entering game scene
-    const gameUI = document.getElementById('game-ui');
-    const canvas = document.getElementById('horizontal-radar');
-    if (gameUI) {
-      gameUI.style.display = 'block';
-    }
-    if (canvas) {
-      canvas.style.display = 'none';
-    }
+    // Note: UI visibility control removed to comply with TR-02
+    // Canvas 2D API requirement: all game elements must use Canvas only
+    // GameScene should handle its own UI drawing via Canvas API
   }
 
   /**
