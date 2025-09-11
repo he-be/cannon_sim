@@ -14,6 +14,7 @@ import { LeadAngleCalculator } from '../../game/LeadAngleCalculator';
 import { TrajectoryCalculator } from '../../game/TrajectoryCalculator';
 import { CollisionDetector } from '../../physics/CollisionDetector';
 import { GameLoop } from '../../core/GameLoop';
+import { RadarCoordinateConverter } from '../../math/RadarCoordinateConverter';
 
 export enum GameState {
   PLAYING = 'playing',
@@ -43,7 +44,8 @@ export class GameScene {
 
   // Game systems
   private leadCalculator!: LeadAngleCalculator;
-  private trajectoryCalculator!: TrajectoryCalculator;
+  // @ts-expect-error - Reserved for future trajectory prediction features
+  private _trajectoryCalculator!: TrajectoryCalculator;
   private collisionDetector!: CollisionDetector;
   private gameLoop!: GameLoop;
 
@@ -56,6 +58,13 @@ export class GameScene {
   private azimuthAngle: number = 0;
   private elevationAngle: number = 45;
   private lockedTarget: Target | null = null;
+
+  // Radar control state
+  private radarAzimuth: number = 0; // Current radar direction
+  private radarRangeCursor: number = 10000; // Distance cursor position (meters)
+  private isMouseDragging: boolean = false;
+  private lastMousePosition: { x: number; y: number } = { x: 0, y: 0 };
+  private mouseSensitivity: number = 0.1; // degrees per pixel
 
   constructor(
     canvasManager: CanvasManager,
@@ -88,7 +97,7 @@ export class GameScene {
     // Initialize game systems
     this.projectileManager = new ProjectileManager();
     this.leadCalculator = new LeadAngleCalculator();
-    this.trajectoryCalculator = new TrajectoryCalculator();
+    this._trajectoryCalculator = new TrajectoryCalculator();
     this.collisionDetector = new CollisionDetector();
 
     // Initialize game loop
@@ -112,6 +121,7 @@ export class GameScene {
     canvas.addEventListener('mousemove', event => this.handleMouseMove(event));
     canvas.addEventListener('mouseup', () => this.handleMouseUp());
     canvas.addEventListener('wheel', event => this.handleWheel(event));
+    canvas.addEventListener('contextmenu', event => event.preventDefault()); // Disable right-click menu
 
     // Keyboard events
     window.addEventListener('keydown', event => this.handleKeyDown(event));
@@ -138,7 +148,7 @@ export class GameScene {
     });
 
     // Update projectiles
-    this.projectileManager.update(deltaTime);
+    this.projectileManager.update();
 
     // Update radar scanning
     this.radar.scan(this.targets);
@@ -391,11 +401,6 @@ export class GameScene {
     width: number,
     height: number
   ): void {
-    const centerX = width / 2;
-    const gunY = height - 20;
-    const maxRange = height - 40;
-    const scale = maxRange / 20000; // 20km range
-
     this.targets.forEach(target => {
       if (!target.isDestroyed) {
         const dx = target.position.x - this.artillery.position.x;
@@ -403,10 +408,17 @@ export class GameScene {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance <= 20000) {
-          // Within radar range
-          const angle = Math.atan2(dy, dx);
-          const x = centerX + distance * Math.sin(angle) * scale;
-          const y = gunY - distance * Math.cos(angle) * scale;
+          // Within radar range - use new coordinate converter
+          const screenPos =
+            RadarCoordinateConverter.worldToHorizontalRadarScreen(
+              target.position,
+              this.artillery.position,
+              this.radarAzimuth,
+              { width, height },
+              20000
+            );
+          const x = screenPos.x;
+          const y = screenPos.y;
 
           // Draw target symbol
           ctx.fillStyle = '#ff0000';
@@ -432,11 +444,6 @@ export class GameScene {
     width: number,
     height: number
   ): void {
-    const centerX = width / 2;
-    const gunY = height - 20;
-    const maxRange = height - 40;
-    const scale = maxRange / 20000; // 20km range
-
     const projectiles = this.projectileManager.getActiveProjectiles();
     projectiles.forEach(projectile => {
       const dx = projectile.position.x - this.artillery.position.x;
@@ -444,9 +451,16 @@ export class GameScene {
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance <= 20000) {
-        const angle = Math.atan2(dy, dx);
-        const x = centerX + distance * Math.sin(angle) * scale;
-        const y = gunY - distance * Math.cos(angle) * scale;
+        // Use new coordinate converter for projectiles
+        const screenPos = RadarCoordinateConverter.worldToHorizontalRadarScreen(
+          projectile.position,
+          this.artillery.position,
+          this.radarAzimuth,
+          { width, height },
+          20000
+        );
+        const x = screenPos.x;
+        const y = screenPos.y;
 
         // Draw projectile symbol
         ctx.fillStyle = '#ffff00';
@@ -468,21 +482,40 @@ export class GameScene {
     const gunY = height - 20;
     const maxRange = height - 40;
 
-    // Draw distance cursor (horizontal line)
-    const cursorY = gunY - maxRange / 2;
-    ctx.strokeStyle = '#ffff00';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(20, cursorY);
-    ctx.lineTo(width - 20, cursorY);
-    ctx.stroke();
+    // Draw distance cursor (horizontal line) - UI-12
+    const cursorRange = this.radarRangeCursor;
+    const scale = maxRange / 20000; // 20km range
+    const cursorY = gunY - cursorRange * scale;
 
-    // Display radar azimuth and elevation (placeholder values)
+    if (cursorY >= 20 && cursorY <= gunY) {
+      ctx.strokeStyle = '#ffff00';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(20, cursorY);
+      ctx.lineTo(width - 20, cursorY);
+      ctx.stroke();
+
+      // Draw cursor range label
+      ctx.fillStyle = '#ffff00';
+      ctx.font = '10px Consolas';
+      ctx.textAlign = 'right';
+      ctx.fillText(
+        `${(cursorRange / 1000).toFixed(1)}km`,
+        width - 25,
+        cursorY - 2
+      );
+    }
+
+    // Display radar azimuth and elevation (UI-14)
     ctx.fillStyle = '#ffff00';
     ctx.font = '12px Consolas';
     ctx.textAlign = 'left';
-    ctx.fillText(`Radar Az: ${this.azimuthAngle.toFixed(1)}°`, 10, 35);
-    ctx.fillText(`Radar El: ${this.elevationAngle.toFixed(1)}°`, 10, 50);
+    ctx.fillText(`Radar Az: ${this.radarAzimuth.toFixed(1)}°`, 10, 35);
+    ctx.fillText(
+      `Cursor Range: ${(this.radarRangeCursor / 1000).toFixed(1)}km`,
+      10,
+      50
+    );
   }
 
   /**
@@ -555,31 +588,165 @@ export class GameScene {
   }
 
   /**
-   * Handle mouse down events
+   * Handle mouse down events (GS-T04)
    */
-  private handleMouseDown(_event: MouseEvent): void {
-    // Placeholder for radar interaction
+  private handleMouseDown(event: MouseEvent): void {
+    const canvas = this.canvasManager.getCanvas();
+    const rect = canvas.getBoundingClientRect();
+
+    // Calculate mouse position relative to canvas
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    this.isMouseDragging = true;
+    this.lastMousePosition = { x: mouseX, y: mouseY };
+
+    // Handle right click for target lock-on (GS-05)
+    if (event.button === 2) {
+      this.handleRightClick(mouseX, mouseY);
+    }
+
+    event.preventDefault();
   }
 
   /**
-   * Handle mouse move events
+   * Handle mouse move events (GS-T01, GS-T02)
    */
-  private handleMouseMove(_event: MouseEvent): void {
-    // Placeholder for radar control
+  private handleMouseMove(event: MouseEvent): void {
+    if (!this.isMouseDragging) return;
+
+    const canvas = this.canvasManager.getCanvas();
+    const rect = canvas.getBoundingClientRect();
+
+    // Calculate mouse position relative to canvas
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    // Calculate mouse movement delta
+    const deltaX = mouseX - this.lastMousePosition.x;
+    const deltaY = mouseY - this.lastMousePosition.y;
+
+    // Update radar azimuth based on horizontal mouse movement (GS-T01)
+    const azimuthDelta = RadarCoordinateConverter.mouseToAzimuthDelta(
+      deltaX,
+      this.mouseSensitivity
+    );
+    this.radarAzimuth = RadarCoordinateConverter.normalizeAzimuth(
+      this.radarAzimuth + azimuthDelta
+    );
+
+    // Update distance cursor based on vertical mouse movement (GS-T02)
+    const maxRange = 20000; // 20km
+    const canvasHeight = canvas.height;
+    const rangeDelta = RadarCoordinateConverter.mouseToRangeDelta(
+      deltaY,
+      maxRange,
+      canvasHeight
+    );
+    this.radarRangeCursor = Math.max(
+      0,
+      Math.min(maxRange, this.radarRangeCursor + rangeDelta)
+    );
+
+    // Update last mouse position
+    this.lastMousePosition = { x: mouseX, y: mouseY };
+
+    // Check for target tracking (GS-T03)
+    this.updateTargetTracking();
+
+    event.preventDefault();
   }
 
   /**
    * Handle mouse up events
    */
   private handleMouseUp(): void {
-    // Placeholder for radar interaction
+    this.isMouseDragging = false;
   }
 
   /**
-   * Handle mouse wheel events
+   * Handle mouse wheel events (GS-T02 alternative)
    */
-  private handleWheel(_event: WheelEvent): void {
-    // Placeholder for radar zoom/distance control
+  private handleWheel(event: WheelEvent): void {
+    const maxRange = 20000; // 20km
+    const scrollSensitivity = 100; // meters per wheel tick
+
+    // Update distance cursor based on wheel movement
+    const rangeDelta =
+      event.deltaY > 0 ? scrollSensitivity : -scrollSensitivity;
+    this.radarRangeCursor = Math.max(
+      0,
+      Math.min(maxRange, this.radarRangeCursor + rangeDelta)
+    );
+
+    // Check for target tracking after cursor movement
+    this.updateTargetTracking();
+
+    event.preventDefault();
+  }
+
+  /**
+   * Handle right click for target lock-on (GS-T04)
+   */
+  private handleRightClick(_mouseX: number, _mouseY: number): void {
+    // Find target under cursor (simplified approach)
+    const targetUnderCursor = this.findTargetNearCursor();
+
+    if (targetUnderCursor) {
+      // Lock onto target (GS-T04)
+      this.lockedTarget = targetUnderCursor;
+    } else {
+      // Unlock current target
+      this.lockedTarget = null;
+    }
+  }
+
+  /**
+   * Update target tracking state (GS-T03)
+   */
+  private updateTargetTracking(): void {
+    // If a target is locked, update radar to follow it (GS-T05)
+    if (this.lockedTarget && !this.lockedTarget.isDestroyed) {
+      const targetAzimuth = RadarCoordinateConverter.calculateAzimuth(
+        this.artillery.position,
+        this.lockedTarget.position
+      );
+      this.radarAzimuth = targetAzimuth;
+
+      // Update range cursor to target distance
+      const targetDistance = this.lockedTarget.distanceFrom(
+        this.artillery.position
+      );
+      this.radarRangeCursor = targetDistance;
+    }
+  }
+
+  /**
+   * Find target near cursor position
+   */
+  private findTargetNearCursor(): Target | null {
+    const tolerance = 500; // meters
+
+    for (const target of this.targets) {
+      if (target.isDestroyed) continue;
+
+      const targetDistance = target.distanceFrom(this.artillery.position);
+      const targetAzimuth = RadarCoordinateConverter.calculateAzimuth(
+        this.artillery.position,
+        target.position
+      );
+
+      // Check if cursor is close to target
+      const azimuthDiff = Math.abs(targetAzimuth - this.radarAzimuth);
+      const rangeDiff = Math.abs(targetDistance - this.radarRangeCursor);
+
+      if (azimuthDiff <= 10 && rangeDiff <= tolerance) {
+        // 10 degrees, 500m tolerance
+        return target;
+      }
+    }
+
+    return null;
   }
 
   /**
