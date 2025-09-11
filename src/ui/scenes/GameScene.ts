@@ -14,13 +14,22 @@ import { LeadAngleCalculator } from '../../game/LeadAngleCalculator';
 import { TrajectoryCalculator } from '../../game/TrajectoryCalculator';
 import { CollisionDetector } from '../../physics/CollisionDetector';
 import { GameLoop } from '../../core/GameLoop';
-import { RadarCoordinateConverter } from '../../math/RadarCoordinateConverter';
+import {
+  RadarCoordinateConverter,
+  ScreenCoordinates,
+} from '../../math/RadarCoordinateConverter';
 
 export enum GameState {
   PLAYING = 'playing',
   PAUSED = 'paused',
   GAME_OVER = 'game_over',
   STAGE_CLEAR = 'stage_clear',
+}
+
+export enum TargetingState {
+  NO_TARGET = 'NO_TARGET',
+  TRACKING = 'TRACKING', // Target under cursor, not locked
+  LOCKED_ON = 'LOCKED_ON', // Target locked with right-click
 }
 
 export interface GameSceneConfig {
@@ -58,6 +67,10 @@ export class GameScene {
   private azimuthAngle: number = 0;
   private elevationAngle: number = 45;
   private lockedTarget: Target | null = null;
+
+  // Targeting state management
+  private targetingState: TargetingState = TargetingState.NO_TARGET;
+  private trackedTarget: Target | null = null; // Target currently under cursor
 
   // Radar control state
   private radarAzimuth: number = 0; // Current radar direction
@@ -153,6 +166,9 @@ export class GameScene {
     // Update radar scanning
     this.radar.scan(this.targets);
 
+    // Update target tracking system - automatic tracking
+    this.updateTargetTracking();
+
     // Check collisions (GS-08, GS-09)
     this.checkCollisions();
 
@@ -179,9 +195,15 @@ export class GameScene {
           target.destroy();
           projectile.markAsTargetHit();
 
-          // Unlock target if it was locked (GS-09)
+          // Clean up targeting state if the destroyed target was being tracked (GS-09)
           if (this.lockedTarget === target) {
             this.lockedTarget = null;
+            this.targetingState = TargetingState.NO_TARGET;
+            this.trackedTarget = null;
+          } else if (this.trackedTarget === target) {
+            // If we were only tracking this target, clear tracking state
+            this.trackedTarget = null;
+            this.targetingState = TargetingState.NO_TARGET;
           }
         }
       });
@@ -255,7 +277,7 @@ export class GameScene {
   }
 
   /**
-   * Update target information display
+   * Update target information display (UI-17, UI-18)
    */
   private updateTargetInfo(): void {
     const targetStatus = document.getElementById('target-status');
@@ -264,19 +286,38 @@ export class GameScene {
     const targetSpeed = document.getElementById('target-speed');
     const targetAltitude = document.getElementById('target-altitude');
 
-    if (this.lockedTarget) {
+    // Use appropriate target based on state
+    const displayTarget = this.lockedTarget || this.trackedTarget;
+
+    if (displayTarget) {
+      // Update status based on targeting state
       if (targetStatus) {
-        targetStatus.textContent = 'LOCKED ON';
-        targetStatus.className = 'info-value status-locked';
+        switch (this.targetingState) {
+          case TargetingState.LOCKED_ON:
+            targetStatus.textContent = 'LOCKED ON';
+            targetStatus.className = 'info-value status-locked';
+            break;
+          case TargetingState.TRACKING:
+            targetStatus.textContent = 'TRACKING';
+            targetStatus.className = 'info-value status-tracking';
+            break;
+          default:
+            targetStatus.textContent = 'NO TARGET';
+            targetStatus.className = 'info-value status-no-target';
+            break;
+        }
       }
-      if (targetType) targetType.textContent = this.lockedTarget.type;
+
+      // Display target information
+      if (targetType) targetType.textContent = displayTarget.type;
       if (targetRange)
-        targetRange.textContent = `${this.lockedTarget.distanceFrom(this.artillery.position).toFixed(0)} m`;
+        targetRange.textContent = `${displayTarget.distanceFrom(this.artillery.position).toFixed(0)} m`;
       if (targetSpeed)
-        targetSpeed.textContent = `${this.lockedTarget.speed.toFixed(1)} m/s`;
+        targetSpeed.textContent = `${displayTarget.speed.toFixed(1)} m/s`;
       if (targetAltitude)
-        targetAltitude.textContent = `${this.lockedTarget.altitude.toFixed(0)} m`;
+        targetAltitude.textContent = `${displayTarget.altitude.toFixed(0)} m`;
     } else {
+      // No target
       if (targetStatus) {
         targetStatus.textContent = 'NO TARGET';
         targetStatus.className = 'info-value status-no-target';
@@ -420,17 +461,8 @@ export class GameScene {
           const x = screenPos.x;
           const y = screenPos.y;
 
-          // Draw target symbol
-          ctx.fillStyle = '#ff0000';
-          ctx.beginPath();
-          ctx.arc(x, y, 4, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Target label
-          ctx.fillStyle = '#ff0000';
-          ctx.font = '10px Consolas';
-          ctx.textAlign = 'center';
-          ctx.fillText('TGT', x, y - 8);
+          // Draw target with state-based visual feedback
+          this.drawTargetWithState(ctx, x, y, target);
         }
       }
     });
@@ -689,64 +721,252 @@ export class GameScene {
    * Handle right click for target lock-on (GS-T04)
    */
   private handleRightClick(_mouseX: number, _mouseY: number): void {
-    // Find target under cursor (simplified approach)
+    // Find target under cursor using improved collision detection
     const targetUnderCursor = this.findTargetNearCursor();
 
     if (targetUnderCursor) {
-      // Lock onto target (GS-T04)
-      this.lockedTarget = targetUnderCursor;
+      // Check if we're clicking on the same target that's already locked
+      if (this.lockedTarget === targetUnderCursor) {
+        // Unlock current target (toggle behavior)
+        this.lockedTarget = null;
+        this.targetingState = TargetingState.NO_TARGET;
+        this.trackedTarget = null;
+      } else {
+        // Lock onto new target (GS-T04)
+        this.lockedTarget = targetUnderCursor;
+        this.targetingState = TargetingState.LOCKED_ON;
+        this.trackedTarget = targetUnderCursor;
+
+        // Immediately update radar to track the locked target
+        this.updateRadarToTrackTarget(targetUnderCursor);
+      }
     } else {
-      // Unlock current target
-      this.lockedTarget = null;
+      // Right-click in empty space unlocks current target
+      if (this.lockedTarget) {
+        this.lockedTarget = null;
+        this.targetingState = TargetingState.NO_TARGET;
+        this.trackedTarget = null;
+      }
     }
+  }
+
+  /**
+   * Update radar to immediately track a target (for lock-on)
+   */
+  private updateRadarToTrackTarget(target: Target): void {
+    // Calculate target azimuth
+    const targetAzimuth = RadarCoordinateConverter.calculateAzimuth(
+      this.artillery.position,
+      target.position
+    );
+    this.radarAzimuth = targetAzimuth;
+
+    // Update range cursor to target distance
+    const targetDistance = target.distanceFrom(this.artillery.position);
+    this.radarRangeCursor = targetDistance;
   }
 
   /**
    * Update target tracking state (GS-T03)
    */
   private updateTargetTracking(): void {
-    // If a target is locked, update radar to follow it (GS-T05)
+    // If a target is locked, continuously update radar to follow it (GS-T05)
     if (this.lockedTarget && !this.lockedTarget.isDestroyed) {
+      // Automatic continuous tracking for locked targets
       const targetAzimuth = RadarCoordinateConverter.calculateAzimuth(
         this.artillery.position,
         this.lockedTarget.position
       );
       this.radarAzimuth = targetAzimuth;
 
-      // Update range cursor to target distance
+      // Update range cursor to target distance for real-time tracking
       const targetDistance = this.lockedTarget.distanceFrom(
         this.artillery.position
       );
       this.radarRangeCursor = targetDistance;
+
+      // Maintain locked state
+      this.targetingState = TargetingState.LOCKED_ON;
+      this.trackedTarget = this.lockedTarget;
+    } else {
+      // Clean up if locked target was destroyed
+      if (this.lockedTarget && this.lockedTarget.isDestroyed) {
+        this.lockedTarget = null;
+      }
+
+      // Check for target under cursor for TRACKING state (GS-T03)
+      const targetUnderCursor = this.findTargetNearCursor();
+
+      if (targetUnderCursor) {
+        this.targetingState = TargetingState.TRACKING;
+        this.trackedTarget = targetUnderCursor;
+      } else {
+        this.targetingState = TargetingState.NO_TARGET;
+        this.trackedTarget = null;
+      }
     }
   }
 
   /**
-   * Find target near cursor position
+   * Draw target with state-based visual feedback (GS-T03)
    */
+  private drawTargetWithState(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    target: Target
+  ): void {
+    let fillColor = '#ff0000'; // Default red
+    let strokeColor = '#ff0000';
+    let labelText = 'TGT';
+    let symbolRadius = 4;
+
+    // Determine target state and apply visual feedback
+    if (target === this.lockedTarget) {
+      // LOCKED ON state - bright yellow with pulsing effect
+      fillColor = '#ffff00';
+      strokeColor = '#ffffff';
+      labelText = 'LOCK';
+      symbolRadius = 6;
+
+      // Draw lock-on reticle
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 12, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Draw cross-hairs
+      ctx.beginPath();
+      ctx.moveTo(x - 8, y);
+      ctx.lineTo(x + 8, y);
+      ctx.moveTo(x, y - 8);
+      ctx.lineTo(x, y + 8);
+      ctx.stroke();
+    } else if (
+      target === this.trackedTarget &&
+      this.targetingState === TargetingState.TRACKING
+    ) {
+      // TRACKING state - orange with highlight
+      fillColor = '#ff8800';
+      strokeColor = '#ffaa00';
+      labelText = 'TRCK';
+      symbolRadius = 5;
+
+      // Draw tracking indicator
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Draw main target symbol
+    ctx.fillStyle = fillColor;
+    ctx.beginPath();
+    ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw target border
+    if (target === this.trackedTarget || target === this.lockedTarget) {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Draw target label
+    ctx.fillStyle = fillColor;
+    ctx.font = '10px Consolas';
+    ctx.textAlign = 'center';
+    ctx.fillText(labelText, x, y - 10);
+  }
+
+  /**
+   * Calculate cursor screen position on horizontal radar
+   */
+  private calculateCursorScreenPosition(
+    width: number,
+    height: number,
+    maxRange: number
+  ): ScreenCoordinates {
+    const centerX = width / 2;
+    const gunY = height - 20;
+    const maxRenderRange = height - 40;
+    const scale = maxRenderRange / maxRange;
+
+    // Distance cursor position
+    const cursorY = gunY - this.radarRangeCursor * scale;
+
+    // Cursor is always at center X (radar center line)
+    return { x: centerX, y: cursorY };
+  }
+
   private findTargetNearCursor(): Target | null {
-    const tolerance = 500; // meters
+    // Get horizontal radar canvas for coordinate calculations
+    const horizontalRadarCanvas = document.getElementById(
+      'horizontal-radar-ui'
+    ) as HTMLCanvasElement;
+    if (!horizontalRadarCanvas) return null;
+
+    const width = horizontalRadarCanvas.width;
+    const height = horizontalRadarCanvas.height;
+    const maxRange = 20000; // 20km radar range
+
+    // Calculate cursor screen position
+    const cursorScreenPos = this.calculateCursorScreenPosition(
+      width,
+      height,
+      maxRange
+    );
+
+    let closestTarget: Target | null = null;
+    let closestDistance = Infinity;
+    const screenTolerance = 15; // pixels
 
     for (const target of this.targets) {
       if (target.isDestroyed) continue;
 
-      const targetDistance = target.distanceFrom(this.artillery.position);
-      const targetAzimuth = RadarCoordinateConverter.calculateAzimuth(
-        this.artillery.position,
-        target.position
-      );
+      const dx = target.position.x - this.artillery.position.x;
+      const dy = target.position.y - this.artillery.position.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
-      // Check if cursor is close to target
-      const azimuthDiff = Math.abs(targetAzimuth - this.radarAzimuth);
-      const rangeDiff = Math.abs(targetDistance - this.radarRangeCursor);
+      // Only consider targets within radar range
+      if (distance <= maxRange) {
+        // Convert target position to screen coordinates
+        const targetScreenPos =
+          RadarCoordinateConverter.worldToHorizontalRadarScreen(
+            target.position,
+            this.artillery.position,
+            this.radarAzimuth,
+            { width, height },
+            maxRange
+          );
 
-      if (azimuthDiff <= 10 && rangeDiff <= tolerance) {
-        // 10 degrees, 500m tolerance
-        return target;
+        // Check if target is within screen tolerance of cursor
+        if (
+          RadarCoordinateConverter.isTargetUnderCursor(
+            targetScreenPos,
+            cursorScreenPos,
+            screenTolerance
+          )
+        ) {
+          // Find the closest target if multiple are under cursor
+          const screenDistance = Math.sqrt(
+            Math.pow(targetScreenPos.x - cursorScreenPos.x, 2) +
+              Math.pow(targetScreenPos.y - cursorScreenPos.y, 2)
+          );
+
+          if (screenDistance < closestDistance) {
+            closestDistance = screenDistance;
+            closestTarget = target;
+          }
+        }
       }
     }
 
-    return null;
+    return closestTarget;
   }
 
   /**
