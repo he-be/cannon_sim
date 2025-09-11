@@ -232,36 +232,64 @@ export class GameScene {
    * Update HTML control panel elements
    */
   private updateControlPanel(): void {
-    // Update azimuth display
+    // Update artillery azimuth display
     const azimuthValue = document.getElementById('azimuth-value');
     if (azimuthValue) {
       azimuthValue.textContent = `${this.azimuthAngle.toFixed(1)}°`;
     }
 
-    // Update elevation display
+    // Update artillery elevation display
     const elevationValue = document.getElementById('elevation-value');
     if (elevationValue) {
       elevationValue.textContent = `${this.elevationAngle.toFixed(1)}°`;
     }
 
-    // Update lead angle display
+    // Enhanced lead angle display - works for both locked and tracked targets
     const leadAzimuth = document.getElementById('lead-azimuth');
     const leadElevation = document.getElementById('lead-elevation');
 
-    if (this.lockedTarget) {
+    // Use locked target for calculations, or tracked target as preview
+    const calculationTarget = this.lockedTarget || this.trackedTarget;
+
+    if (calculationTarget) {
       const leadAngle = this.leadCalculator.calculateLeadAngle(
         this.artillery.position,
-        this.lockedTarget.position,
-        this.lockedTarget.velocity
+        calculationTarget.position,
+        calculationTarget.velocity
       );
 
       if (leadAngle && leadAzimuth && leadElevation) {
+        // Add visual distinction between locked and tracked target calculations
+        const isLocked = calculationTarget === this.lockedTarget;
+
         leadAzimuth.textContent = `${leadAngle.azimuth.toFixed(1)}`;
         leadElevation.textContent = `${leadAngle.elevation.toFixed(1)}`;
+
+        // Add visual styling based on lock state
+        if (isLocked) {
+          leadAzimuth.style.color = '#ff0000'; // Red for locked
+          leadElevation.style.color = '#ff0000';
+          leadAzimuth.style.fontWeight = 'bold';
+          leadElevation.style.fontWeight = 'bold';
+        } else {
+          leadAzimuth.style.color = '#ffff00'; // Yellow for preview
+          leadElevation.style.color = '#ffff00';
+          leadAzimuth.style.fontWeight = 'normal';
+          leadElevation.style.fontWeight = 'normal';
+        }
       }
     } else {
-      if (leadAzimuth) leadAzimuth.textContent = '---';
-      if (leadElevation) leadElevation.textContent = '---';
+      // No target available
+      if (leadAzimuth) {
+        leadAzimuth.textContent = '---';
+        leadAzimuth.style.color = '#666';
+        leadAzimuth.style.fontWeight = 'normal';
+      }
+      if (leadElevation) {
+        leadElevation.textContent = '---';
+        leadElevation.style.color = '#666';
+        leadElevation.style.fontWeight = 'normal';
+      }
     }
 
     // Update target info
@@ -273,6 +301,52 @@ export class GameScene {
       const minutes = Math.floor(this.gameTime / 60);
       const seconds = Math.floor(this.gameTime % 60);
       gameTimeElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    // Update radar information display
+    this.updateRadarInfo();
+  }
+
+  /**
+   * Update radar information display
+   */
+  private updateRadarInfo(): void {
+    // Update radar azimuth display in control panel
+    const radarAzimuthDisplay = document.getElementById(
+      'radar-azimuth-display'
+    );
+    if (radarAzimuthDisplay) {
+      radarAzimuthDisplay.textContent = `${this.radarAzimuth.toFixed(1)}°`;
+    }
+
+    // Update radar range cursor display
+    const radarRangeDisplay = document.getElementById('radar-range-display');
+    if (radarRangeDisplay) {
+      radarRangeDisplay.textContent = `${(this.radarRangeCursor / 1000).toFixed(1)}km`;
+    }
+
+    // Update targeting mode display
+    const targetingModeDisplay = document.getElementById(
+      'targeting-mode-display'
+    );
+    if (targetingModeDisplay) {
+      switch (this.targetingState) {
+        case TargetingState.LOCKED_ON:
+          targetingModeDisplay.textContent = 'AUTO TRACK';
+          targetingModeDisplay.style.color = '#ff0000';
+          targetingModeDisplay.style.fontWeight = 'bold';
+          break;
+        case TargetingState.TRACKING:
+          targetingModeDisplay.textContent = 'ACQUIRING';
+          targetingModeDisplay.style.color = '#ffff00';
+          targetingModeDisplay.style.fontWeight = 'normal';
+          break;
+        default:
+          targetingModeDisplay.textContent = 'MANUAL';
+          targetingModeDisplay.style.color = '#00ff00';
+          targetingModeDisplay.style.fontWeight = 'normal';
+          break;
+      }
     }
   }
 
@@ -290,7 +364,7 @@ export class GameScene {
     const displayTarget = this.lockedTarget || this.trackedTarget;
 
     if (displayTarget) {
-      // Update status based on targeting state
+      // Update status based on targeting state with enhanced details
       if (targetStatus) {
         switch (this.targetingState) {
           case TargetingState.LOCKED_ON:
@@ -308,24 +382,127 @@ export class GameScene {
         }
       }
 
-      // Display target information
-      if (targetType) targetType.textContent = displayTarget.type;
-      if (targetRange)
-        targetRange.textContent = `${displayTarget.distanceFrom(this.artillery.position).toFixed(0)} m`;
-      if (targetSpeed)
-        targetSpeed.textContent = `${displayTarget.speed.toFixed(1)} m/s`;
-      if (targetAltitude)
-        targetAltitude.textContent = `${displayTarget.altitude.toFixed(0)} m`;
+      // Calculate additional target information
+      const currentRange = displayTarget.distanceFrom(this.artillery.position);
+      const currentSpeed = displayTarget.speed;
+      const currentAltitude = displayTarget.altitude;
+
+      // Display enhanced target information
+      if (targetType) {
+        targetType.textContent = displayTarget.type;
+        // Add visual indication for locked vs tracked targets
+        if (displayTarget === this.lockedTarget) {
+          targetType.style.color = '#ff0000';
+          targetType.style.fontWeight = 'bold';
+        } else {
+          targetType.style.color = '#ffff00';
+          targetType.style.fontWeight = 'normal';
+        }
+      }
+
+      if (targetRange) {
+        targetRange.textContent = `${currentRange.toFixed(0)} m`;
+        // Color code range based on engagement envelope
+        if (currentRange < 5000) {
+          targetRange.style.color = '#ff0000'; // Close range - red
+        } else if (currentRange < 15000) {
+          targetRange.style.color = '#ffff00'; // Medium range - yellow
+        } else {
+          targetRange.style.color = '#00ff00'; // Long range - green
+        }
+      }
+
+      if (targetSpeed) {
+        targetSpeed.textContent = `${currentSpeed.toFixed(1)} m/s`;
+        // Color code speed based on threat level
+        if (currentSpeed > 200) {
+          targetSpeed.style.color = '#ff0000'; // Fast - high threat
+        } else if (currentSpeed > 50) {
+          targetSpeed.style.color = '#ffff00'; // Medium speed
+        } else {
+          targetSpeed.style.color = '#00ff00'; // Slow - easier target
+        }
+      }
+
+      if (targetAltitude) {
+        targetAltitude.textContent = `${currentAltitude.toFixed(0)} m`;
+        targetAltitude.style.color = '#00ff00';
+      }
+
+      // Update additional target details if elements exist
+      this.updateAdditionalTargetDetails(displayTarget);
     } else {
-      // No target
+      // No target - reset all displays
       if (targetStatus) {
         targetStatus.textContent = 'NO TARGET';
         targetStatus.className = 'info-value status-no-target';
       }
-      if (targetType) targetType.textContent = '---';
-      if (targetRange) targetRange.textContent = '--- m';
-      if (targetSpeed) targetSpeed.textContent = '--- m/s';
-      if (targetAltitude) targetAltitude.textContent = '--- m';
+      if (targetType) {
+        targetType.textContent = '---';
+        targetType.style.color = '#666';
+        targetType.style.fontWeight = 'normal';
+      }
+      if (targetRange) {
+        targetRange.textContent = '--- m';
+        targetRange.style.color = '#666';
+      }
+      if (targetSpeed) {
+        targetSpeed.textContent = '--- m/s';
+        targetSpeed.style.color = '#666';
+      }
+      if (targetAltitude) {
+        targetAltitude.textContent = '--- m';
+        targetAltitude.style.color = '#666';
+      }
+    }
+  }
+
+  /**
+   * Update additional target details display
+   */
+  private updateAdditionalTargetDetails(target: Target): void {
+    // Update bearing to target
+    const targetBearingElement = document.getElementById('target-bearing');
+    if (targetBearingElement) {
+      const bearing = RadarCoordinateConverter.calculateAzimuth(
+        this.artillery.position,
+        target.position
+      );
+      targetBearingElement.textContent = `${bearing.toFixed(1)}°`;
+      targetBearingElement.style.color = '#00ff00';
+    }
+
+    // Update time to intercept estimation
+    const timeToInterceptElement = document.getElementById('target-tti');
+    if (timeToInterceptElement) {
+      const range = target.distanceFrom(this.artillery.position);
+      const muzzleVelocity = 850; // m/s - from ammunition display
+      const estimatedTTI = range / muzzleVelocity;
+
+      if (estimatedTTI < 60) {
+        timeToInterceptElement.textContent = `${estimatedTTI.toFixed(1)}s`;
+      } else {
+        timeToInterceptElement.textContent = `${(estimatedTTI / 60).toFixed(1)}m`;
+      }
+
+      // Color based on engagement time
+      if (estimatedTTI < 10) {
+        timeToInterceptElement.style.color = '#ff0000'; // Critical - very fast engagement needed
+      } else if (estimatedTTI < 30) {
+        timeToInterceptElement.style.color = '#ffff00'; // Moderate time
+      } else {
+        timeToInterceptElement.style.color = '#00ff00'; // Plenty of time
+      }
+    }
+
+    // Update target heading if available
+    const targetHeadingElement = document.getElementById('target-heading');
+    if (targetHeadingElement && target.velocity) {
+      const heading =
+        Math.atan2(target.velocity.x, target.velocity.y) * (180 / Math.PI);
+      const normalizedHeading = heading < 0 ? heading + 360 : heading;
+      targetHeadingElement.textContent = `${normalizedHeading.toFixed(0)}°`;
+      targetHeadingElement.style.color = '#00ff00';
     }
   }
 
@@ -569,12 +746,310 @@ export class GameScene {
     ctx.fillStyle = '#001100';
     ctx.fillRect(0, 0, width, height);
 
-    // Vertical radar grid and elements would be implemented here
-    // This is a placeholder for the full radar implementation
+    // Draw vertical radar grid (UI-15)
+    this.drawVerticalRadarGrid(ctx, width, height);
+
+    // Draw targets on vertical radar
+    this.drawTargetsOnVerticalRadar(ctx, width, height);
+
+    // Draw projectiles on vertical radar
+    this.drawProjectilesOnVerticalRadar(ctx, width, height);
+
+    // Draw altitude markers and information
+    this.drawVerticalRadarInfo(ctx, width, height);
+  }
+
+  /**
+   * Draw vertical radar grid (UI-15)
+   */
+  private drawVerticalRadarGrid(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    const gunX = 20; // Gun position (left side)
+    const groundY = height - 20; // Ground level
+
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 1;
+
+    // Draw range lines (vertical)
+    for (let i = 1; i <= 4; i++) {
+      const x = gunX + ((width - 40) / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(x, 20);
+      ctx.lineTo(x, groundY);
+      ctx.stroke();
+
+      // Range labels
+      ctx.fillStyle = '#00ff00';
+      ctx.font = '10px Consolas';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${i * 5}km`, x, groundY + 15);
+    }
+
+    // Draw altitude lines (horizontal)
+    for (let i = 1; i <= 4; i++) {
+      const y = groundY - ((height - 40) / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(gunX, y);
+      ctx.lineTo(width - 20, y);
+      ctx.stroke();
+
+      // Altitude labels
+      ctx.fillStyle = '#00ff00';
+      ctx.font = '10px Consolas';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${i * 250}m`, 2, y - 2);
+    }
+
+    // Draw ground line
+    ctx.strokeStyle = '#ffff00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(gunX, groundY);
+    ctx.lineTo(width - 20, groundY);
+    ctx.stroke();
+
+    // Draw gun position
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(gunX, groundY, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Gun label
     ctx.fillStyle = '#00ff00';
-    ctx.font = '12px monospace';
+    ctx.font = '12px Consolas';
+    ctx.textAlign = 'left';
+    ctx.fillText('GUN', gunX - 5, groundY + 15);
+  }
+
+  /**
+   * Draw targets on vertical radar
+   */
+  private drawTargetsOnVerticalRadar(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    this.targets.forEach(target => {
+      if (!target.isDestroyed) {
+        const dx = target.position.x - this.artillery.position.x;
+        const dy = target.position.y - this.artillery.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance <= 20000) {
+          // Use coordinate converter for vertical radar
+          const screenPos = RadarCoordinateConverter.worldToVerticalRadarScreen(
+            target.position,
+            this.artillery.position,
+            this.radarAzimuth,
+            { width, height },
+            20000
+          );
+
+          // Only draw if within screen bounds
+          if (
+            screenPos.x >= 20 &&
+            screenPos.x <= width - 20 &&
+            screenPos.y >= 20 &&
+            screenPos.y <= height - 20
+          ) {
+            // Draw target with state-based feedback (smaller than horizontal radar)
+            this.drawTargetWithStateVertical(
+              ctx,
+              screenPos.x,
+              screenPos.y,
+              target
+            );
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Draw projectiles on vertical radar
+   */
+  private drawProjectilesOnVerticalRadar(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    const projectiles = this.projectileManager.getActiveProjectiles();
+    projectiles.forEach(projectile => {
+      const dx = projectile.position.x - this.artillery.position.x;
+      const dy = projectile.position.y - this.artillery.position.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance <= 20000) {
+        const screenPos = RadarCoordinateConverter.worldToVerticalRadarScreen(
+          projectile.position,
+          this.artillery.position,
+          this.radarAzimuth,
+          { width, height },
+          20000
+        );
+
+        // Only draw if within screen bounds
+        if (
+          screenPos.x >= 20 &&
+          screenPos.x <= width - 20 &&
+          screenPos.y >= 20 &&
+          screenPos.y <= height - 20
+        ) {
+          // Draw projectile symbol (smaller for vertical radar)
+          ctx.fillStyle = '#ffff00';
+          ctx.beginPath();
+          ctx.arc(screenPos.x, screenPos.y, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    });
+  }
+
+  /**
+   * Draw vertical radar information and markers
+   */
+  private drawVerticalRadarInfo(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    // Draw radar beam indicator
+    const beamWidth = 30; // pixels
+    const centerX = 20 + (width - 40) * 0.5;
+
+    ctx.fillStyle = 'rgba(255, 255, 0, 0.1)';
+    ctx.fillRect(centerX - beamWidth / 2, 20, beamWidth, height - 40);
+
+    // Draw elevation angle indicator if there's a locked target
+    if (this.lockedTarget) {
+      const targetElevation = this.calculateTargetElevation(this.lockedTarget);
+
+      // Draw elevation line
+      const elevationY = height - 20 - (targetElevation / 90) * (height - 40);
+      if (elevationY >= 20 && elevationY <= height - 20) {
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(20, elevationY);
+        ctx.lineTo(width - 20, elevationY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Elevation label
+        ctx.fillStyle = '#ff0000';
+        ctx.font = '10px Consolas';
+        ctx.textAlign = 'right';
+        ctx.fillText(
+          `${targetElevation.toFixed(1)}°`,
+          width - 25,
+          elevationY - 2
+        );
+      }
+    }
+
+    // Display vertical radar information
+    ctx.fillStyle = '#ffff00';
+    ctx.font = '12px Consolas';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Vertical Radar Az: ${this.radarAzimuth.toFixed(1)}°`, 10, 35);
+
+    if (this.lockedTarget) {
+      const elevation = this.calculateTargetElevation(this.lockedTarget);
+      ctx.fillText(`Target Elevation: ${elevation.toFixed(1)}°`, 10, 50);
+    }
+  }
+
+  /**
+   * Draw target with state-based visual feedback for vertical radar
+   */
+  private drawTargetWithStateVertical(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    target: Target
+  ): void {
+    let fillColor = '#ff0000';
+    let strokeColor = '#ff0000';
+    let labelText = 'T';
+    let symbolRadius = 3; // Smaller for vertical radar
+
+    // Determine target state and apply visual feedback
+    if (target === this.lockedTarget) {
+      fillColor = '#ffff00';
+      strokeColor = '#ffffff';
+      labelText = 'L';
+      symbolRadius = 4;
+
+      // Draw smaller lock-on indicator
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Draw cross-hairs
+      ctx.beginPath();
+      ctx.moveTo(x - 5, y);
+      ctx.lineTo(x + 5, y);
+      ctx.moveTo(x, y - 5);
+      ctx.lineTo(x, y + 5);
+      ctx.stroke();
+    } else if (
+      target === this.trackedTarget &&
+      this.targetingState === TargetingState.TRACKING
+    ) {
+      fillColor = '#ff8800';
+      strokeColor = '#ffaa00';
+      labelText = 'T';
+      symbolRadius = 3.5;
+
+      // Draw tracking indicator
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Draw main target symbol
+    ctx.fillStyle = fillColor;
+    ctx.beginPath();
+    ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw target border
+    if (target === this.trackedTarget || target === this.lockedTarget) {
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Draw smaller target label
+    ctx.fillStyle = fillColor;
+    ctx.font = '8px Consolas';
     ctx.textAlign = 'center';
-    ctx.fillText('VERTICAL RADAR', width / 2, height / 2);
+    ctx.fillText(labelText, x, y - 8);
+  }
+
+  /**
+   * Calculate target elevation angle
+   */
+  private calculateTargetElevation(target: Target): number {
+    const dx = target.position.x - this.artillery.position.x;
+    const dy = target.position.y - this.artillery.position.y;
+    const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
+    const verticalDistance = target.position.z - this.artillery.position.z;
+
+    const elevationRad = Math.atan2(verticalDistance, horizontalDistance);
+    const elevationDeg = elevationRad * (180 / Math.PI);
+
+    return Math.max(0, Math.min(90, elevationDeg));
   }
 
   /**
