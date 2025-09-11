@@ -265,24 +265,58 @@ export class GameScene {
    * Update HTML control panel elements
    */
   private updateControlPanel(): void {
-    // Update artillery azimuth display
-    const azimuthValue = document.getElementById('azimuth-value');
-    if (azimuthValue) {
-      azimuthValue.textContent = `${this.azimuthAngle.toFixed(1)}°`;
-    }
+    // TR-02 Compliance: Render control panel info to Canvas instead of HTML DOM
+    this.renderControlPanelToCanvas();
+  }
 
-    // Update artillery elevation display
-    const elevationValue = document.getElementById('elevation-value');
-    if (elevationValue) {
-      elevationValue.textContent = `${this.elevationAngle.toFixed(1)}°`;
-    }
+  /**
+   * Render control panel information to Canvas (TR-02 compliant)
+   */
+  private renderControlPanelToCanvas(): void {
+    // Get or create control panel canvas
+    const controlPanelCanvas = document.getElementById(
+      'control-panel-canvas'
+    ) as HTMLCanvasElement;
+    if (!controlPanelCanvas) return;
 
-    // Enhanced lead angle display - works for both locked and tracked targets
-    const leadAzimuth = document.getElementById('lead-azimuth');
-    const leadElevation = document.getElementById('lead-elevation');
+    const ctx = controlPanelCanvas.getContext('2d');
+    if (!ctx) return;
 
-    // Use locked target for calculations, or tracked target as preview
+    const width = controlPanelCanvas.width;
+    const height = controlPanelCanvas.height;
+
+    // Clear canvas with console-style background
+    ctx.fillStyle = '#001100';
+    ctx.fillRect(0, 0, width, height);
+
+    // Set text style for control panel
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    let yPos = 20;
+    const leftMargin = 20;
+    const lineHeight = 25;
+
+    // Artillery azimuth display
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Azimuth:', leftMargin, yPos);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${this.azimuthAngle.toFixed(1)}°`, leftMargin + 80, yPos);
+    yPos += lineHeight;
+
+    // Artillery elevation display
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Elevation:', leftMargin, yPos);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${this.elevationAngle.toFixed(1)}°`, leftMargin + 80, yPos);
+    yPos += lineHeight * 1.5;
+
+    // Lead angle display
     const calculationTarget = this.lockedTarget || this.trackedTarget;
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Lead Angle:', leftMargin, yPos);
+    yPos += lineHeight;
 
     if (calculationTarget) {
       const leadAngle = this.leadCalculator.calculateLeadAngle(
@@ -291,251 +325,253 @@ export class GameScene {
         calculationTarget.velocity
       );
 
-      if (leadAngle && leadAzimuth && leadElevation) {
-        // Add visual distinction between locked and tracked target calculations
+      if (leadAngle) {
         const isLocked = calculationTarget === this.lockedTarget;
+        const color = isLocked ? '#ff0000' : '#ffff00';
 
-        leadAzimuth.textContent = `${leadAngle.azimuth.toFixed(1)}`;
-        leadElevation.textContent = `${leadAngle.elevation.toFixed(1)}`;
-
-        // Add visual styling based on lock state
-        if (isLocked) {
-          leadAzimuth.style.color = '#ff0000'; // Red for locked
-          leadElevation.style.color = '#ff0000';
-          leadAzimuth.style.fontWeight = 'bold';
-          leadElevation.style.fontWeight = 'bold';
-        } else {
-          leadAzimuth.style.color = '#ffff00'; // Yellow for preview
-          leadElevation.style.color = '#ffff00';
-          leadAzimuth.style.fontWeight = 'normal';
-          leadElevation.style.fontWeight = 'normal';
-        }
+        ctx.fillStyle = color;
+        ctx.fillText(
+          `Az: ${leadAngle.azimuth.toFixed(1)}°`,
+          leftMargin + 20,
+          yPos
+        );
+        yPos += lineHeight;
+        ctx.fillText(
+          `El: ${leadAngle.elevation.toFixed(1)}°`,
+          leftMargin + 20,
+          yPos
+        );
+      } else {
+        ctx.fillStyle = '#666666';
+        ctx.fillText('Az: ---°', leftMargin + 20, yPos);
+        yPos += lineHeight;
+        ctx.fillText('El: ---°', leftMargin + 20, yPos);
       }
     } else {
-      // No target available
-      if (leadAzimuth) {
-        leadAzimuth.textContent = '---';
-        leadAzimuth.style.color = '#666';
-        leadAzimuth.style.fontWeight = 'normal';
-      }
-      if (leadElevation) {
-        leadElevation.textContent = '---';
-        leadElevation.style.color = '#666';
-        leadElevation.style.fontWeight = 'normal';
-      }
+      ctx.fillStyle = '#666666';
+      ctx.fillText('Az: ---°', leftMargin + 20, yPos);
+      yPos += lineHeight;
+      ctx.fillText('El: ---°', leftMargin + 20, yPos);
+    }
+    yPos += lineHeight;
+
+    // Game time display
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Game Time:', leftMargin, yPos);
+    const minutes = Math.floor(this.gameTime / 60);
+    const seconds = Math.floor(this.gameTime % 60);
+    const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(timeStr, leftMargin + 80, yPos);
+    yPos += lineHeight * 1.5;
+
+    // Radar information
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Radar Az:', leftMargin, yPos);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${this.radarAzimuth.toFixed(1)}°`, leftMargin + 80, yPos);
+    yPos += lineHeight;
+
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Range:', leftMargin, yPos);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(
+      `${(this.radarRangeCursor / 1000).toFixed(1)}km`,
+      leftMargin + 80,
+      yPos
+    );
+    yPos += lineHeight;
+
+    // Targeting mode display
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Targeting:', leftMargin, yPos);
+
+    let modeText = 'MANUAL';
+    let modeColor = '#00ff00';
+
+    switch (this.targetingState) {
+      case TargetingState.LOCKED_ON:
+        modeText = 'AUTO TRACK';
+        modeColor = '#ff0000';
+        break;
+      case TargetingState.TRACKING:
+        modeText = 'ACQUIRING';
+        modeColor = '#ffff00';
+        break;
     }
 
-    // Update target info
-    this.updateTargetInfo();
+    ctx.fillStyle = modeColor;
+    ctx.fillText(modeText, leftMargin + 80, yPos);
+    yPos += lineHeight * 1.5;
 
-    // Update game time
-    const gameTimeElement = document.getElementById('game-time');
-    if (gameTimeElement) {
-      const minutes = Math.floor(this.gameTime / 60);
-      const seconds = Math.floor(this.gameTime % 60);
-      gameTimeElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-
-    // Update radar information display
-    this.updateRadarInfo();
+    // Target information
+    this.renderTargetInfoToCanvas(ctx, leftMargin, yPos, lineHeight);
   }
 
   /**
-   * Update radar information display
+   * Render target information to Canvas (TR-02 compliant)
    */
-  private updateRadarInfo(): void {
-    // Update radar azimuth display in control panel
-    const radarAzimuthDisplay = document.getElementById(
-      'radar-azimuth-display'
-    );
-    if (radarAzimuthDisplay) {
-      radarAzimuthDisplay.textContent = `${this.radarAzimuth.toFixed(1)}°`;
-    }
-
-    // Update radar range cursor display
-    const radarRangeDisplay = document.getElementById('radar-range-display');
-    if (radarRangeDisplay) {
-      radarRangeDisplay.textContent = `${(this.radarRangeCursor / 1000).toFixed(1)}km`;
-    }
-
-    // Update targeting mode display
-    const targetingModeDisplay = document.getElementById(
-      'targeting-mode-display'
-    );
-    if (targetingModeDisplay) {
-      switch (this.targetingState) {
-        case TargetingState.LOCKED_ON:
-          targetingModeDisplay.textContent = 'AUTO TRACK';
-          targetingModeDisplay.style.color = '#ff0000';
-          targetingModeDisplay.style.fontWeight = 'bold';
-          break;
-        case TargetingState.TRACKING:
-          targetingModeDisplay.textContent = 'ACQUIRING';
-          targetingModeDisplay.style.color = '#ffff00';
-          targetingModeDisplay.style.fontWeight = 'normal';
-          break;
-        default:
-          targetingModeDisplay.textContent = 'MANUAL';
-          targetingModeDisplay.style.color = '#00ff00';
-          targetingModeDisplay.style.fontWeight = 'normal';
-          break;
-      }
-    }
-  }
-
-  /**
-   * Update target information display (UI-17, UI-18)
-   */
-  private updateTargetInfo(): void {
-    const targetStatus = document.getElementById('target-status');
-    const targetType = document.getElementById('target-type');
-    const targetRange = document.getElementById('target-range');
-    const targetSpeed = document.getElementById('target-speed');
-    const targetAltitude = document.getElementById('target-altitude');
-
-    // Use appropriate target based on state
+  private renderTargetInfoToCanvas(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    lineHeight: number
+  ): void {
     const displayTarget = this.lockedTarget || this.trackedTarget;
 
+    // Target status header
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Target Info:', x, y);
+    y += lineHeight;
+
     if (displayTarget) {
-      // Update status based on targeting state with enhanced details
-      if (targetStatus) {
-        switch (this.targetingState) {
-          case TargetingState.LOCKED_ON:
-            targetStatus.textContent = 'LOCKED ON';
-            targetStatus.className = 'info-value status-locked';
-            break;
-          case TargetingState.TRACKING:
-            targetStatus.textContent = 'TRACKING';
-            targetStatus.className = 'info-value status-tracking';
-            break;
-          default:
-            targetStatus.textContent = 'NO TARGET';
-            targetStatus.className = 'info-value status-no-target';
-            break;
-        }
+      // Target status
+      let statusText = 'NO TARGET';
+      let statusColor = '#666666';
+
+      switch (this.targetingState) {
+        case TargetingState.LOCKED_ON:
+          statusText = 'LOCKED ON';
+          statusColor = '#ff0000';
+          break;
+        case TargetingState.TRACKING:
+          statusText = 'TRACKING';
+          statusColor = '#ffff00';
+          break;
       }
 
-      // Calculate additional target information
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText('Status:', x, y);
+      ctx.fillStyle = statusColor;
+      ctx.fillText(statusText, x + 60, y);
+      y += lineHeight;
+
+      // Target type
+      const typeColor =
+        displayTarget === this.lockedTarget ? '#ff0000' : '#ffff00';
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText('Type:', x, y);
+      ctx.fillStyle = typeColor;
+      ctx.fillText(displayTarget.type, x + 60, y);
+      y += lineHeight;
+
+      // Target range
       const currentRange = displayTarget.distanceFrom(this.artillery.position);
+      let rangeColor = '#00ff00'; // Long range - green
+      if (currentRange < 5000) {
+        rangeColor = '#ff0000'; // Close range - red
+      } else if (currentRange < 15000) {
+        rangeColor = '#ffff00'; // Medium range - yellow
+      }
+
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText('Range:', x, y);
+      ctx.fillStyle = rangeColor;
+      ctx.fillText(`${currentRange.toFixed(0)} m`, x + 60, y);
+      y += lineHeight;
+
+      // Target speed
       const currentSpeed = displayTarget.speed;
+      let speedColor = '#00ff00'; // Slow - easier target
+      if (currentSpeed > 200) {
+        speedColor = '#ff0000'; // Fast - high threat
+      } else if (currentSpeed > 50) {
+        speedColor = '#ffff00'; // Medium speed
+      }
+
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText('Speed:', x, y);
+      ctx.fillStyle = speedColor;
+      ctx.fillText(`${currentSpeed.toFixed(1)} m/s`, x + 60, y);
+      y += lineHeight;
+
+      // Target altitude
       const currentAltitude = displayTarget.altitude;
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText('Altitude:', x, y);
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText(`${currentAltitude.toFixed(0)} m`, x + 60, y);
+      y += lineHeight;
 
-      // Display enhanced target information
-      if (targetType) {
-        targetType.textContent = displayTarget.type;
-        // Add visual indication for locked vs tracked targets
-        if (displayTarget === this.lockedTarget) {
-          targetType.style.color = '#ff0000';
-          targetType.style.fontWeight = 'bold';
-        } else {
-          targetType.style.color = '#ffff00';
-          targetType.style.fontWeight = 'normal';
-        }
-      }
-
-      if (targetRange) {
-        targetRange.textContent = `${currentRange.toFixed(0)} m`;
-        // Color code range based on engagement envelope
-        if (currentRange < 5000) {
-          targetRange.style.color = '#ff0000'; // Close range - red
-        } else if (currentRange < 15000) {
-          targetRange.style.color = '#ffff00'; // Medium range - yellow
-        } else {
-          targetRange.style.color = '#00ff00'; // Long range - green
-        }
-      }
-
-      if (targetSpeed) {
-        targetSpeed.textContent = `${currentSpeed.toFixed(1)} m/s`;
-        // Color code speed based on threat level
-        if (currentSpeed > 200) {
-          targetSpeed.style.color = '#ff0000'; // Fast - high threat
-        } else if (currentSpeed > 50) {
-          targetSpeed.style.color = '#ffff00'; // Medium speed
-        } else {
-          targetSpeed.style.color = '#00ff00'; // Slow - easier target
-        }
-      }
-
-      if (targetAltitude) {
-        targetAltitude.textContent = `${currentAltitude.toFixed(0)} m`;
-        targetAltitude.style.color = '#00ff00';
-      }
-
-      // Update additional target details if elements exist
-      this.updateAdditionalTargetDetails(displayTarget);
+      // Additional target details
+      this.renderAdditionalTargetDetailsToCanvas(
+        ctx,
+        x,
+        y,
+        lineHeight,
+        displayTarget
+      );
     } else {
-      // No target - reset all displays
-      if (targetStatus) {
-        targetStatus.textContent = 'NO TARGET';
-        targetStatus.className = 'info-value status-no-target';
-      }
-      if (targetType) {
-        targetType.textContent = '---';
-        targetType.style.color = '#666';
-        targetType.style.fontWeight = 'normal';
-      }
-      if (targetRange) {
-        targetRange.textContent = '--- m';
-        targetRange.style.color = '#666';
-      }
-      if (targetSpeed) {
-        targetSpeed.textContent = '--- m/s';
-        targetSpeed.style.color = '#666';
-      }
-      if (targetAltitude) {
-        targetAltitude.textContent = '--- m';
-        targetAltitude.style.color = '#666';
-      }
+      // No target - show placeholder
+      ctx.fillStyle = '#666666';
+      ctx.fillText('Status: NO TARGET', x, y);
+      y += lineHeight;
+      ctx.fillText('Type: ---', x, y);
+      y += lineHeight;
+      ctx.fillText('Range: --- m', x, y);
+      y += lineHeight;
+      ctx.fillText('Speed: --- m/s', x, y);
+      y += lineHeight;
+      ctx.fillText('Altitude: --- m', x, y);
     }
   }
 
   /**
-   * Update additional target details display
+   * Render additional target details to Canvas (TR-02 compliant)
    */
-  private updateAdditionalTargetDetails(target: Target): void {
-    // Update bearing to target
-    const targetBearingElement = document.getElementById('target-bearing');
-    if (targetBearingElement) {
-      const bearing = RadarCoordinateConverter.calculateAzimuth(
-        this.artillery.position,
-        target.position
-      );
-      targetBearingElement.textContent = `${bearing.toFixed(1)}°`;
-      targetBearingElement.style.color = '#00ff00';
+  private renderAdditionalTargetDetailsToCanvas(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    lineHeight: number,
+    target: Target
+  ): void {
+    // Target bearing
+    const bearing = RadarCoordinateConverter.calculateAzimuth(
+      this.artillery.position,
+      target.position
+    );
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('Bearing:', x, y);
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText(`${bearing.toFixed(1)}°`, x + 60, y);
+    y += lineHeight;
+
+    // Time to intercept estimation
+    const range = target.distanceFrom(this.artillery.position);
+    const muzzleVelocity = 850; // m/s - from ammunition display
+    const estimatedTTI = range / muzzleVelocity;
+
+    let ttiText: string;
+    if (estimatedTTI < 60) {
+      ttiText = `${estimatedTTI.toFixed(1)}s`;
+    } else {
+      ttiText = `${(estimatedTTI / 60).toFixed(1)}m`;
     }
 
-    // Update time to intercept estimation
-    const timeToInterceptElement = document.getElementById('target-tti');
-    if (timeToInterceptElement) {
-      const range = target.distanceFrom(this.artillery.position);
-      const muzzleVelocity = 850; // m/s - from ammunition display
-      const estimatedTTI = range / muzzleVelocity;
-
-      if (estimatedTTI < 60) {
-        timeToInterceptElement.textContent = `${estimatedTTI.toFixed(1)}s`;
-      } else {
-        timeToInterceptElement.textContent = `${(estimatedTTI / 60).toFixed(1)}m`;
-      }
-
-      // Color based on engagement time
-      if (estimatedTTI < 10) {
-        timeToInterceptElement.style.color = '#ff0000'; // Critical - very fast engagement needed
-      } else if (estimatedTTI < 30) {
-        timeToInterceptElement.style.color = '#ffff00'; // Moderate time
-      } else {
-        timeToInterceptElement.style.color = '#00ff00'; // Plenty of time
-      }
+    let ttiColor = '#00ff00'; // Plenty of time
+    if (estimatedTTI < 10) {
+      ttiColor = '#ff0000'; // Critical - very fast engagement needed
+    } else if (estimatedTTI < 30) {
+      ttiColor = '#ffff00'; // Moderate time
     }
 
-    // Update target heading if available
-    const targetHeadingElement = document.getElementById('target-heading');
-    if (targetHeadingElement && target.velocity) {
+    ctx.fillStyle = '#00ff00';
+    ctx.fillText('TTI:', x, y);
+    ctx.fillStyle = ttiColor;
+    ctx.fillText(ttiText, x + 60, y);
+    y += lineHeight;
+
+    // Target heading if available
+    if (target.velocity) {
       const heading =
         Math.atan2(target.velocity.x, target.velocity.y) * (180 / Math.PI);
       const normalizedHeading = heading < 0 ? heading + 360 : heading;
-      targetHeadingElement.textContent = `${normalizedHeading.toFixed(0)}°`;
-      targetHeadingElement.style.color = '#00ff00';
+
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText('Heading:', x, y);
+      ctx.fillStyle = '#00ff00';
+      ctx.fillText(`${normalizedHeading.toFixed(0)}°`, x + 60, y);
     }
   }
 
