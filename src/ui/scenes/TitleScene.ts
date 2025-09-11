@@ -32,6 +32,7 @@ export class TitleScene {
   private canvasManager: CanvasManager;
   private onSceneTransition: (transition: SceneTransition) => void;
   private startButtonBounds?: ButtonBounds;
+  private handleClick: (event: MouseEvent) => void;
 
   constructor(
     canvasManager: CanvasManager,
@@ -127,14 +128,14 @@ export class TitleScene {
   private setupEventListeners(): void {
     const canvas = this.canvasManager.getCanvas();
 
-    this.handleClick = this.handleClick.bind(this);
+    this.handleClick = this.handleClickEvent.bind(this);
     canvas.addEventListener('click', this.handleClick);
   }
 
   /**
    * Handle click events on the title screen
    */
-  private handleClick(event: MouseEvent): void {
+  private handleClickEvent(event: MouseEvent): void {
     const canvas = this.canvasManager.getCanvas();
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;

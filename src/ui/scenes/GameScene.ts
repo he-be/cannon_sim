@@ -18,6 +18,7 @@ import {
   RadarCoordinateConverter,
   ScreenCoordinates,
 } from '../../math/RadarCoordinateConverter';
+import { Vector3 } from '../../math/Vector3';
 
 export enum GameState {
   PLAYING = 'playing',
@@ -96,16 +97,46 @@ export class GameScene {
    * Initialize game entities and systems
    */
   private initializeGame(): void {
-    // Initialize artillery at stage position
-    this.artillery = new Artillery(this.config.selectedStage.artilleryPosition);
+    // Ensure artillery position is a Vector3 instance
+    const artilleryPos = this.config.selectedStage.artilleryPosition as
+      | Vector3
+      | { x: number; y: number; z: number };
+    const artilleryPosition =
+      artilleryPos instanceof Vector3
+        ? artilleryPos
+        : new Vector3(artilleryPos.x, artilleryPos.y, artilleryPos.z);
 
-    // Initialize targets from stage config
-    this.targets = this.config.selectedStage.targets.map(
-      target => new Target(target.position, target.type, target.velocity)
-    );
+    // Initialize artillery at stage position
+    this.artillery = new Artillery(artilleryPosition);
+
+    // Initialize targets from stage config with Vector3 conversion
+    this.targets = this.config.selectedStage.targets.map(target => {
+      const pos =
+        (target.position as
+          | Vector3
+          | { x: number; y: number; z: number }) instanceof Vector3
+          ? target.position
+          : new Vector3(
+              (target.position as { x: number; y: number; z: number }).x,
+              (target.position as { x: number; y: number; z: number }).y,
+              (target.position as { x: number; y: number; z: number }).z
+            );
+      const vel = target.velocity
+        ? (target.velocity as
+            | Vector3
+            | { x: number; y: number; z: number }) instanceof Vector3
+          ? target.velocity
+          : new Vector3(
+              (target.velocity as { x: number; y: number; z: number }).x,
+              (target.velocity as { x: number; y: number; z: number }).y,
+              (target.velocity as { x: number; y: number; z: number }).z
+            )
+        : undefined;
+      return new Target(pos, target.type, vel);
+    });
 
     // Initialize radar
-    this.radar = new Radar(this.config.selectedStage.artilleryPosition);
+    this.radar = new Radar(artilleryPosition);
 
     // Initialize game systems
     this.projectileManager = new ProjectileManager();

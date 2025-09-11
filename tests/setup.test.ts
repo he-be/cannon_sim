@@ -2,7 +2,20 @@
  * Basic setup test to verify testing environment is working
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Mock requestAnimationFrame for test environment
+Object.defineProperty(globalThis, 'requestAnimationFrame', {
+  value: vi.fn((callback: FrameRequestCallback) =>
+    globalThis.setTimeout(callback, 16)
+  ),
+  writable: true,
+});
+
+Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+  value: vi.fn((id: number) => globalThis.clearTimeout(id)),
+  writable: true,
+});
 
 describe('Setup', () => {
   it('should run tests successfully', () => {
