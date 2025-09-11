@@ -39,12 +39,13 @@ export const StageData = {
   createStage1(): StageConfig {
     const artilleryPosition = new Vector3(0, 0, 0);
 
+    // Stage 1 target positions (static)
     const targets = [
-      new Target(new Vector3(0, 500, 0), TargetType.STATIC),
-      new Target(new Vector3(100, 600, 0), TargetType.STATIC),
-      new Target(new Vector3(-100, 600, 0), TargetType.STATIC),
-      new Target(new Vector3(200, 700, 0), TargetType.STATIC),
-      new Target(new Vector3(-200, 700, 0), TargetType.STATIC),
+      new Target(new Vector3(0, 0, 500), TargetType.STATIC),
+      new Target(new Vector3(100, 0, 600), TargetType.STATIC),
+      new Target(new Vector3(-100, 0, 600), TargetType.STATIC),
+      new Target(new Vector3(200, 0, 700), TargetType.STATIC),
+      new Target(new Vector3(-200, 0, 700), TargetType.STATIC),
     ];
 
     return {
@@ -63,26 +64,28 @@ export const StageData = {
   createStage2(): StageConfig {
     const artilleryPosition = new Vector3(0, 0, 0);
 
+    // Stage 2 target positions and velocities (slow moving)
+    const slowSpeed = 10; // m/s - should be externalized to Constants
     const targets = [
       new Target(
-        new Vector3(0, 500, 0),
+        new Vector3(0, 0, 500),
         TargetType.MOVING_SLOW,
-        new Vector3(0, -10, 0)
+        new Vector3(0, 0, -slowSpeed)
       ),
       new Target(
-        new Vector3(100, 600, 0),
+        new Vector3(100, 0, 600),
         TargetType.MOVING_SLOW,
-        new Vector3(5, -10, 0)
+        new Vector3(5, 0, -slowSpeed)
       ),
       new Target(
-        new Vector3(-100, 600, 0),
+        new Vector3(-100, 0, 600),
         TargetType.MOVING_SLOW,
-        new Vector3(-5, -10, 0)
+        new Vector3(-5, 0, -slowSpeed)
       ),
       new Target(
-        new Vector3(200, 700, 0),
+        new Vector3(200, 0, 700),
         TargetType.MOVING_SLOW,
-        new Vector3(10, -10, 0)
+        new Vector3(10, 0, -slowSpeed)
       ),
     ];
 
@@ -102,31 +105,33 @@ export const StageData = {
   createStage3(): StageConfig {
     const artilleryPosition = new Vector3(0, 0, 0);
 
+    // Stage 3 target positions and velocities (fast moving)
+    const fastSpeed = 20; // m/s - should be externalized to Constants
     const targets = [
       new Target(
-        new Vector3(0, 500, 0),
+        new Vector3(0, 0, 500),
         TargetType.MOVING_FAST,
-        new Vector3(0, -20, 0)
+        new Vector3(0, 0, -fastSpeed)
       ),
       new Target(
-        new Vector3(100, 600, 0),
+        new Vector3(100, 0, 600),
         TargetType.MOVING_FAST,
-        new Vector3(10, -20, 0)
+        new Vector3(10, 0, -fastSpeed)
       ),
       new Target(
-        new Vector3(-100, 600, 0),
+        new Vector3(-100, 0, 600),
         TargetType.MOVING_FAST,
-        new Vector3(-10, -20, 0)
+        new Vector3(-10, 0, -fastSpeed)
       ),
       new Target(
-        new Vector3(200, 700, 0),
+        new Vector3(200, 0, 700),
         TargetType.MOVING_FAST,
-        new Vector3(15, -20, 0)
+        new Vector3(15, 0, -fastSpeed)
       ),
       new Target(
-        new Vector3(-200, 700, 0),
+        new Vector3(-200, 0, 700),
         TargetType.MOVING_FAST,
-        new Vector3(-15, -20, 0)
+        new Vector3(-15, 0, -fastSpeed)
       ),
     ];
 
