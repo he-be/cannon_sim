@@ -3,8 +3,9 @@
  * Implements explosion effects, destruction feedback, and particle systems
  */
 
-import { Vector3 } from '../../math/Vector3';
-import { Vector2 } from '../../math/Vector2';
+import { Vector3 } from '../../core/math/Vector3';
+import { Vector2 } from '../../core/math/Vector2';
+import { CanvasManager } from '../CanvasManager';
 
 export interface Particle {
   position: Vector2;
@@ -39,14 +40,14 @@ export class EffectRenderer {
   private particles: Particle[] = [];
   private explosions: ExplosionEffect[] = [];
   private options: EffectSystemOptions;
-  private ctx: CanvasRenderingContext2D;
+  private canvasManager: CanvasManager;
   private currentTime: number = 0; // Track time internally
 
   constructor(
-    ctx: CanvasRenderingContext2D,
+    canvasManager: CanvasManager,
     options?: Partial<EffectSystemOptions>
   ) {
-    this.ctx = ctx;
+    this.canvasManager = canvasManager;
     this.options = {
       maxParticles: 500,
       explosionDuration: 1.5, // seconds
@@ -175,27 +176,27 @@ export class EffectRenderer {
       const radius = explosion.maxRadius * progress;
       const alpha = 1.0 - progress;
 
-      // Draw explosion ring
-      this.ctx.save();
-      this.ctx.globalAlpha = alpha * 0.7;
-      this.ctx.strokeStyle =
+      // Draw explosion ring using CanvasManager
+      this.canvasManager.save();
+      this.canvasManager.context.globalAlpha = alpha * 0.7;
+      const ringColor =
         explosion.type === 'target_destruction' ? '#ff3300' : '#ffaa00';
-      this.ctx.lineWidth = 3;
-      this.ctx.beginPath();
-      this.ctx.arc(screenPos.x, screenPos.y, radius, 0, Math.PI * 2);
-      this.ctx.stroke();
+      this.canvasManager.drawCircle(screenPos, radius, ringColor, false);
 
       // Draw inner flash
       if (progress < 0.3) {
-        this.ctx.globalAlpha = alpha;
-        this.ctx.fillStyle =
+        this.canvasManager.context.globalAlpha = alpha;
+        const flashColor =
           explosion.type === 'target_destruction' ? '#ffff99' : '#ffffff';
-        this.ctx.beginPath();
-        this.ctx.arc(screenPos.x, screenPos.y, radius * 0.5, 0, Math.PI * 2);
-        this.ctx.fill();
+        this.canvasManager.drawCircle(
+          screenPos,
+          radius * 0.5,
+          flashColor,
+          true
+        );
       }
 
-      this.ctx.restore();
+      this.canvasManager.restore();
     });
   }
 
@@ -203,40 +204,33 @@ export class EffectRenderer {
    * Render particle effects
    */
   private renderParticles(): void {
-    this.ctx.save();
+    this.canvasManager.save();
 
     this.particles.forEach(particle => {
-      this.ctx.globalAlpha = particle.alpha;
-      this.ctx.fillStyle = particle.color;
-
-      this.ctx.beginPath();
-      this.ctx.arc(
-        particle.position.x,
-        particle.position.y,
+      this.canvasManager.context.globalAlpha = particle.alpha;
+      this.canvasManager.drawCircle(
+        particle.position,
         particle.size,
-        0,
-        Math.PI * 2
+        particle.color,
+        true
       );
-      this.ctx.fill();
     });
 
-    this.ctx.restore();
+    this.canvasManager.restore();
   }
 
   /**
    * Convert world coordinates to screen coordinates
-   * This is a simplified version - in full implementation would use proper camera transform
+   * Uses CanvasManager's coordinate system for consistency
    */
   private worldToScreen(worldPos: Vector3): Vector2 | null {
-    // Simple orthographic projection for now
-    // In full implementation, this would use the camera/radar coordinate system
-    const centerX = this.ctx.canvas.width / 2;
-    const centerY = this.ctx.canvas.height / 2;
-    const scale = 0.1; // meters to pixels scaling
+    // Use CanvasManager's center and a consistent scale factor
+    const center = this.canvasManager.center;
+    const scale = 0.1; // meters to pixels scaling - should be externalized to Constants
 
     return new Vector2(
-      centerX + worldPos.x * scale,
-      centerY - worldPos.y * scale // Flip Y axis for screen coordinates
+      center.x + worldPos.x * scale,
+      center.y - worldPos.z * scale // Use Z for forward distance, flip Y axis
     );
   }
 
