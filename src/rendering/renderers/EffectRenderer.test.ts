@@ -1,21 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EffectRenderer } from './EffectRenderer';
 import { Vector3 } from '../../math/Vector3';
+import { Vector2 } from '../../math/Vector2';
+import { CanvasManager } from '../CanvasManager';
 
-describe('EffectRenderer (T025 - Effect System)', () => {
+describe('EffectRenderer (T025-2 - Complete Rewrite)', () => {
   let effectRenderer: EffectRenderer;
-  let mockCanvas: HTMLCanvasElement;
-  let mockCtx: CanvasRenderingContext2D;
+  let mockCanvasManager: CanvasManager;
+  let mockContext: CanvasRenderingContext2D;
 
   beforeEach(() => {
-    // Create mock canvas and context
-    mockCanvas = {
-      width: 800,
-      height: 600,
-    } as HTMLCanvasElement;
-
-    mockCtx = {
-      canvas: mockCanvas,
+    mockContext = {
       save: vi.fn(),
       restore: vi.fn(),
       beginPath: vi.fn(),
@@ -28,7 +23,19 @@ describe('EffectRenderer (T025 - Effect System)', () => {
       lineWidth: 1,
     } as any;
 
-    effectRenderer = new EffectRenderer(mockCtx);
+    mockCanvasManager = {
+      getCanvas: () => ({ width: 800, height: 600 }) as HTMLCanvasElement,
+      getContext: () => mockContext,
+      context: mockContext,
+      width: 800,
+      height: 600,
+      center: new Vector2(400, 300),
+      drawCircle: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+    } as any;
+
+    effectRenderer = new EffectRenderer(mockCanvasManager);
   });
 
   describe('initialization', () => {
@@ -39,7 +46,7 @@ describe('EffectRenderer (T025 - Effect System)', () => {
     });
 
     it('should accept custom options', () => {
-      const customRenderer = new EffectRenderer(mockCtx, {
+      const customRenderer = new EffectRenderer(mockCanvasManager, {
         maxParticles: 100,
         explosionDuration: 2.0,
       });
@@ -48,7 +55,7 @@ describe('EffectRenderer (T025 - Effect System)', () => {
     });
   });
 
-  describe('explosion effects', () => {
+  describe('explosion creation', () => {
     it('should create projectile impact explosion', () => {
       const position = new Vector3(100, 200, 0);
 
@@ -69,7 +76,7 @@ describe('EffectRenderer (T025 - Effect System)', () => {
       expect(stats.particleCount).toBeGreaterThan(0);
     });
 
-    it('should create different particle counts for different explosion types', () => {
+    it('should create different particle counts for different types', () => {
       const position = new Vector3(0, 0, 0);
 
       effectRenderer.createExplosion(position, 'projectile_impact');
@@ -80,17 +87,17 @@ describe('EffectRenderer (T025 - Effect System)', () => {
       effectRenderer.createExplosion(position, 'target_destruction');
       const destructionStats = effectRenderer.getStats();
 
-      // Target destruction should have more particles than projectile impact
       expect(destructionStats.particleCount).toBeGreaterThan(
         impactStats.particleCount
       );
     });
 
     it('should respect maximum particle limit', () => {
-      const limitedRenderer = new EffectRenderer(mockCtx, { maxParticles: 10 });
+      const limitedRenderer = new EffectRenderer(mockCanvasManager, {
+        maxParticles: 10,
+      });
       const position = new Vector3(0, 0, 0);
 
-      // Create multiple explosions
       for (let i = 0; i < 5; i++) {
         limitedRenderer.createExplosion(position, 'target_destruction');
       }
@@ -100,7 +107,7 @@ describe('EffectRenderer (T025 - Effect System)', () => {
     });
   });
 
-  describe('particle simulation', () => {
+  describe('particle system update', () => {
     beforeEach(() => {
       const position = new Vector3(0, 0, 0);
       effectRenderer.createExplosion(position, 'projectile_impact');
@@ -110,7 +117,6 @@ describe('EffectRenderer (T025 - Effect System)', () => {
       const initialStats = effectRenderer.getStats();
       const initialParticleCount = initialStats.particleCount;
 
-      // Update with small time step
       effectRenderer.update(0.016); // ~60 FPS
 
       const stats = effectRenderer.getStats();
@@ -120,31 +126,27 @@ describe('EffectRenderer (T025 - Effect System)', () => {
     it('should remove expired particles', () => {
       const initialStats = effectRenderer.getStats();
 
-      // Update with very large time step to expire particles
-      effectRenderer.update(5.0);
+      effectRenderer.update(5.0); // Large time step to expire particles
 
       const finalStats = effectRenderer.getStats();
       expect(finalStats.particleCount).toBeLessThan(initialStats.particleCount);
     });
 
     it('should apply physics to particles', () => {
-      // Update multiple times to ensure physics is working
       for (let i = 0; i < 10; i++) {
         effectRenderer.update(0.1);
       }
 
-      // Particles should still exist (not all expired immediately)
       const stats = effectRenderer.getStats();
       expect(stats.particleCount).toBeGreaterThan(0);
     });
   });
 
-  describe('effect lifecycle', () => {
+  describe('explosion lifecycle', () => {
     it('should clean up expired explosions', () => {
       const position = new Vector3(100, 100, 0);
       effectRenderer.createExplosion(position, 'projectile_impact');
 
-      // Update with time longer than explosion duration
       effectRenderer.update(3.0); // Longer than default 1.5s duration
 
       const stats = effectRenderer.getStats();
@@ -155,7 +157,6 @@ describe('EffectRenderer (T025 - Effect System)', () => {
       const position = new Vector3(200, 200, 0);
       effectRenderer.createExplosion(position, 'target_destruction');
 
-      // Update with time shorter than explosion duration
       effectRenderer.update(0.5); // Shorter than 1.5s duration
 
       const stats = effectRenderer.getStats();
@@ -175,19 +176,26 @@ describe('EffectRenderer (T025 - Effect System)', () => {
       }).not.toThrow();
     });
 
-    it('should call canvas drawing methods', () => {
+    it('should call CanvasManager drawing methods', () => {
+      effectRenderer.createExplosion(
+        new Vector3(100, 100, 100),
+        'target_destruction'
+      );
       effectRenderer.render();
 
-      expect(mockCtx.save).toHaveBeenCalled();
-      expect(mockCtx.restore).toHaveBeenCalled();
-      expect(mockCtx.beginPath).toHaveBeenCalled();
+      expect(mockCanvasManager.save).toHaveBeenCalled();
+      expect(mockCanvasManager.restore).toHaveBeenCalled();
+      expect(mockCanvasManager.drawCircle).toHaveBeenCalled();
     });
 
     it('should render both explosions and particles', () => {
+      effectRenderer.createExplosion(
+        new Vector3(200, 200, 200),
+        'projectile_impact'
+      );
       effectRenderer.render();
 
-      // Should draw circles (arc method called)
-      expect(mockCtx.arc).toHaveBeenCalled();
+      expect(mockCanvasManager.drawCircle).toHaveBeenCalled();
     });
   });
 
@@ -213,7 +221,6 @@ describe('EffectRenderer (T025 - Effect System)', () => {
         explosionDuration: 3.0,
       });
 
-      // Verify options are updated (test by creating effects with new limits)
       const position = new Vector3(0, 0, 0);
       effectRenderer.createExplosion(position, 'projectile_impact');
 
@@ -225,7 +232,6 @@ describe('EffectRenderer (T025 - Effect System)', () => {
     it('should provide accurate statistics', () => {
       const position = new Vector3(100, 200, 0);
 
-      // Create multiple effects
       effectRenderer.createExplosion(position, 'projectile_impact');
       effectRenderer.createExplosion(position, 'target_destruction');
 
@@ -253,6 +259,18 @@ describe('EffectRenderer (T025 - Effect System)', () => {
         }).not.toThrow();
       });
     });
+
+    it('should handle invalid canvas center gracefully', () => {
+      // Mock invalid center
+      mockCanvasManager.center = new Vector2(0, 0);
+
+      const position = new Vector3(100, 100, 100);
+
+      expect(() => {
+        effectRenderer.createExplosion(position, 'projectile_impact');
+        effectRenderer.render();
+      }).not.toThrow();
+    });
   });
 
   describe('performance characteristics', () => {
@@ -264,7 +282,6 @@ describe('EffectRenderer (T025 - Effect System)', () => {
         new Vector3(0, 0, 100),
       ];
 
-      // Create multiple explosions
       positions.forEach(pos => {
         effectRenderer.createExplosion(pos, 'target_destruction');
       });
@@ -281,7 +298,6 @@ describe('EffectRenderer (T025 - Effect System)', () => {
     it('should maintain performance with particle limit', () => {
       const position = new Vector3(0, 0, 0);
 
-      // Try to create excessive particles
       for (let i = 0; i < 20; i++) {
         effectRenderer.createExplosion(position, 'target_destruction');
       }

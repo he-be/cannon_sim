@@ -20,6 +20,8 @@ import {
 } from '../../math/RadarCoordinateConverter';
 import { Vector3 } from '../../math/Vector3';
 import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
+import { ProjectileRenderer } from '../../rendering/renderers/ProjectileRenderer';
+import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
 
 export enum GameState {
   PLAYING = 'playing',
@@ -60,6 +62,8 @@ export class GameScene {
   private _trajectoryCalculator!: TrajectoryCalculator;
   private collisionDetector!: CollisionDetector;
   private gameLoop!: GameLoop;
+  private projectileRenderer!: ProjectileRenderer;
+  private effectRenderer!: EffectRenderer;
 
   // Game state
   private gameState: GameState = GameState.PLAYING;
@@ -146,6 +150,8 @@ export class GameScene {
     this.leadCalculator = new LeadAngleCalculator();
     this._trajectoryCalculator = new TrajectoryCalculator();
     this.collisionDetector = new CollisionDetector();
+    this.projectileRenderer = new ProjectileRenderer();
+    this.effectRenderer = new EffectRenderer(this.canvasManager);
 
     // Initialize game loop
     this.gameLoop = new GameLoop(
@@ -196,6 +202,9 @@ export class GameScene {
     // Update projectiles
     this.projectileManager.update();
 
+    // Update effects
+    this.effectRenderer.update(deltaTime);
+
     // Update radar scanning
     this.radar.scan(this.targets);
 
@@ -224,7 +233,11 @@ export class GameScene {
           !target.isDestroyed &&
           this.collisionDetector.checkCollision(projectile, target)
         ) {
-          // Hit detected (GS-08)
+          // Hit detected (GS-08) - Create explosion effect
+          this.effectRenderer.createExplosion(
+            target.position,
+            'target_destruction'
+          );
           target.destroy();
           projectile.markAsTargetHit();
 
@@ -256,6 +269,9 @@ export class GameScene {
 
     // Render vertical radar (right pane)
     this.renderVerticalRadar();
+
+    // Render effects (explosions, particles)
+    this.effectRenderer.render();
 
     // Render game state overlays
     this.renderGameStateOverlay();
@@ -718,35 +734,27 @@ export class GameScene {
    * Draw projectiles on horizontal radar
    */
   private drawProjectilesOnHorizontalRadar(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
+    _ctx: CanvasRenderingContext2D,
+    _width: number,
+    _height: number
   ): void {
+    // Update projectiles in renderer and delegate rendering
     const projectiles = this.projectileManager.getActiveProjectiles();
-    projectiles.forEach(projectile => {
-      const dx = projectile.position.x - this.artillery.position.x;
-      const dy = projectile.position.y - this.artillery.position.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance <= 20000) {
-        // Use new coordinate converter for projectiles
-        const screenPos = RadarCoordinateConverter.worldToHorizontalRadarScreen(
-          projectile.position,
-          this.artillery.position,
-          this.radarAzimuth,
-          { width, height },
-          20000
-        );
-        const x = screenPos.x;
-        const y = screenPos.y;
-
-        // Draw projectile symbol
-        ctx.fillStyle = '#ffff00';
-        ctx.beginPath();
-        ctx.arc(x, y, 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
+    projectiles.forEach((projectile, index) => {
+      this.projectileRenderer.updateProjectile(
+        `projectile-${index}`,
+        projectile.position,
+        projectile.velocity,
+        {
+          color: '#ffff00',
+          size: 2,
+          isActive: true,
+        }
+      );
     });
+
+    // Use ProjectileRenderer for consistent rendering
+    this.projectileRenderer.renderOnHorizontalRadar(this.canvasManager);
   }
 
   /**
@@ -941,40 +949,27 @@ export class GameScene {
    * Draw projectiles on vertical radar
    */
   private drawProjectilesOnVerticalRadar(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
+    _ctx: CanvasRenderingContext2D,
+    _width: number,
+    _height: number
   ): void {
+    // Update projectiles in renderer and delegate rendering
     const projectiles = this.projectileManager.getActiveProjectiles();
-    projectiles.forEach(projectile => {
-      const dx = projectile.position.x - this.artillery.position.x;
-      const dy = projectile.position.y - this.artillery.position.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance <= 20000) {
-        const screenPos = RadarCoordinateConverter.worldToVerticalRadarScreen(
-          projectile.position,
-          this.artillery.position,
-          this.radarAzimuth,
-          { width, height },
-          20000
-        );
-
-        // Only draw if within screen bounds
-        if (
-          screenPos.x >= 20 &&
-          screenPos.x <= width - 20 &&
-          screenPos.y >= 20 &&
-          screenPos.y <= height - 20
-        ) {
-          // Draw projectile symbol (smaller for vertical radar)
-          ctx.fillStyle = '#ffff00';
-          ctx.beginPath();
-          ctx.arc(screenPos.x, screenPos.y, 1.5, 0, Math.PI * 2);
-          ctx.fill();
+    projectiles.forEach((projectile, index) => {
+      this.projectileRenderer.updateProjectile(
+        `projectile-${index}`,
+        projectile.position,
+        projectile.velocity,
+        {
+          color: '#ffff00',
+          size: 1.5,
+          isActive: true,
         }
-      }
+      );
     });
+
+    // Use ProjectileRenderer for consistent rendering
+    this.projectileRenderer.renderOnVerticalRadar(this.canvasManager);
   }
 
   /**
