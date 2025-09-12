@@ -1,6 +1,8 @@
 /**
- * GameManager - Game state and scene management for Browser Artillery
- * Implements scene transitions as per GF-01, GF-02, GF-03, GF-04 specifications
+ * GameManager - Clean implementation with proper component integration
+ * Implements proper scene management and game flow control
+ * Implements Canvas 2D API compliance (TR-02)
+ * Implements proper game loop with deltaTime calculation
  */
 
 import { CanvasManager } from '../rendering/CanvasManager';
@@ -11,7 +13,7 @@ import {
 } from '../ui/scenes/TitleScene';
 import { StageSelectScene } from '../ui/scenes/StageSelectScene';
 import { GameScene, GameSceneConfig } from '../ui/scenes/GameScene';
-import { StageData, StageConfig } from '../data/StageData';
+import { getStageById, StageConfig } from '../data/StageData';
 
 export enum GameState {
   INITIALIZING = 'initializing',
@@ -25,13 +27,18 @@ export interface GameStats {
   currentStage: number | null;
 }
 
+interface Scene {
+  update(deltaTime: number): void;
+  render(): void;
+  destroy(): void;
+}
+
 /**
- * GameManager handles overall game state and scene management
- * Implements scene transitions and game flow management
+ * GameManager handles overall game state and scene management with proper game loop
  */
 export class GameManager {
   private canvasManager: CanvasManager;
-  private currentScene: TitleScene | StageSelectScene | GameScene | null = null;
+  private currentScene: Scene | null = null;
   private gameState: GameState = GameState.INITIALIZING;
   private gameStats: GameStats = {
     totalPlayTime: 0,
@@ -39,6 +46,8 @@ export class GameManager {
     currentStage: null,
   };
   private startTime: number = 0;
+  private lastFrameTime: number = 0;
+  private animationFrameId: number | null = null;
 
   constructor(canvasId: string) {
     this.canvasManager = new CanvasManager(canvasId);
@@ -50,9 +59,47 @@ export class GameManager {
    */
   private initializeGame(): void {
     this.startTime = Date.now();
+    this.lastFrameTime = this.startTime;
     this.gameState = GameState.RUNNING;
     this.showTitleScene();
   }
+
+  /**
+   * Start the game loop
+   */
+  start(): void {
+    if (this.animationFrameId !== null) return;
+
+    this.lastFrameTime = Date.now();
+    this.gameLoop();
+  }
+
+  /**
+   * Stop the game loop
+   */
+  stop(): void {
+    if (this.animationFrameId !== null) {
+      globalThis.cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+  }
+
+  /**
+   * Main game loop with proper deltaTime calculation
+   */
+  private gameLoop = (): void => {
+    const currentTime = Date.now();
+    const deltaTime = Math.min(
+      (currentTime - this.lastFrameTime) / 1000,
+      1 / 30
+    ); // Cap at 30 FPS
+    this.lastFrameTime = currentTime;
+
+    this.update(deltaTime);
+    this.render();
+
+    this.animationFrameId = globalThis.requestAnimationFrame(this.gameLoop);
+  };
 
   /**
    * Handle scene transitions
@@ -61,6 +108,7 @@ export class GameManager {
     // Clean up current scene
     if (this.currentScene) {
       this.currentScene.destroy();
+      this.currentScene = null;
     }
 
     switch (transition.type) {
@@ -85,7 +133,6 @@ export class GameManager {
 
   /**
    * Show title scene
-   * UI visibility control is delegated to scene components
    */
   private showTitleScene(): void {
     this.currentScene = new TitleScene(
@@ -93,14 +140,10 @@ export class GameManager {
       this.handleSceneTransition
     );
     this.gameStats.currentStage = null;
-
-    // Note: UI visibility control removed to comply with TR-02
-    // Canvas 2D API requirement: all game elements must use Canvas only
   }
 
   /**
    * Show stage select scene
-   * UI visibility control is delegated to scene components
    */
   private showStageSelectScene(): void {
     this.currentScene = new StageSelectScene(
@@ -108,14 +151,10 @@ export class GameManager {
       this.handleSceneTransition
     );
     this.gameStats.currentStage = null;
-
-    // Note: UI visibility control removed to comply with TR-02
-    // Canvas 2D API requirement: all game elements must use Canvas only
   }
 
   /**
    * Show game scene with selected stage
-   * UI visibility control is delegated to scene components
    */
   private showGameScene(stageConfig: StageConfig): void {
     const gameConfig: GameSceneConfig = {
@@ -127,28 +166,27 @@ export class GameManager {
       gameConfig
     );
     this.gameStats.currentStage = stageConfig.id;
-
-    // Note: UI visibility control removed to comply with TR-02
-    // Canvas 2D API requirement: all game elements must use Canvas only
-    // GameScene should handle its own UI drawing via Canvas API
   }
 
   /**
-   * Update game state
+   * Update game state with deltaTime
    */
-  update(): void {
+  private update(deltaTime: number): void {
     if (this.gameState !== GameState.RUNNING) return;
 
     // Update game statistics
     this.gameStats.totalPlayTime = (Date.now() - this.startTime) / 1000;
 
-    // Scene-specific updates are handled by individual scenes
+    // Update current scene
+    if (this.currentScene) {
+      this.currentScene.update(deltaTime);
+    }
   }
 
   /**
    * Render current scene
    */
-  render(): void {
+  private render(): void {
     if (this.currentScene) {
       this.currentScene.render();
     }
@@ -186,17 +224,20 @@ export class GameManager {
    * Cleanup resources
    */
   destroy(): void {
+    this.stop();
     if (this.currentScene) {
       this.currentScene.destroy();
+      this.currentScene = null;
     }
-    // CanvasManager cleanup is handled automatically
   }
 
   /**
    * Get available stages for selection
    */
   getAvailableStages(): StageConfig[] {
-    return [1, 2, 3].map(id => StageData.getStage(id)!).filter(Boolean);
+    return [1, 2, 3]
+      .map(id => getStageById(id))
+      .filter((stage): stage is StageConfig => stage !== null);
   }
 
   /**
@@ -209,5 +250,12 @@ export class GameManager {
       currentStage: null,
     };
     this.startTime = Date.now();
+  }
+
+  /**
+   * Get canvas manager for external access if needed
+   */
+  getCanvasManager(): CanvasManager {
+    return this.canvasManager;
   }
 }

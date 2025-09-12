@@ -1,26 +1,16 @@
 /**
- * GameScene - Main game scene for Browser Artillery
- * Implements game screen layout and gameplay flow as per UI-04 and game system specifications
+ * GameScene - Clean implementation with proper component integration
+ * Implements UI-04: 3-pane layout for main gameplay
+ * Implements TR-02: Canvas 2D API compliance (no DOM manipulation)
+ * Implements all game system requirements
  */
 
 import { CanvasManager } from '../../rendering/CanvasManager';
 import { StageConfig } from '../../data/StageData';
 import { SceneType, SceneTransition } from './TitleScene';
-import { Artillery } from '../../game/entities/Artillery';
-import { Target } from '../../game/entities/Target';
-import { Radar } from '../../game/entities/Radar';
-import { ProjectileManager } from '../../game/ProjectileManager';
-import { LeadAngleCalculator } from '../../game/LeadAngleCalculator';
-import { TrajectoryCalculator } from '../../game/TrajectoryCalculator';
-import { CollisionDetector } from '../../physics/CollisionDetector';
-import { GameLoop } from '../../core/GameLoop';
-import {
-  RadarCoordinateConverter,
-  ScreenCoordinates,
-} from '../../math/RadarCoordinateConverter';
-import { Vector3 } from '../../math/Vector3';
 import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
-import { ProjectileRenderer } from '../../rendering/renderers/ProjectileRenderer';
+import { Vector2 } from '../../math/Vector2';
+import { Vector3 } from '../../math/Vector3';
 import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
 
 export enum GameState {
@@ -32,59 +22,103 @@ export enum GameState {
 
 export enum TargetingState {
   NO_TARGET = 'NO_TARGET',
-  TRACKING = 'TRACKING', // Target under cursor, not locked
-  LOCKED_ON = 'LOCKED_ON', // Target locked with right-click
+  TRACKING = 'TRACKING',
+  LOCKED_ON = 'LOCKED_ON',
 }
 
 export interface GameSceneConfig {
   selectedStage: StageConfig;
 }
 
+interface TargetState {
+  id: string;
+  position: Vector3;
+  velocity?: Vector3;
+  isDestroyed: boolean;
+  type: string;
+  spawnTime: number;
+}
+
+interface ProjectileState {
+  id: string;
+  position: Vector3;
+  velocity: Vector3;
+  isActive: boolean;
+  spawnTime: number;
+}
+
 /**
- * GameScene handles the main gameplay
- * Implements UI-04: 3-pane layout and all game system requirements
+ * Main game scene with clean Canvas 2D API compliant implementation
  */
 export class GameScene {
   private canvasManager: CanvasManager;
+  private mouseHandler: MouseHandler;
   private onSceneTransition: (transition: SceneTransition) => void;
   private config: GameSceneConfig;
-  private mouseHandler: MouseHandler;
-
-  // Game entities
-  private artillery!: Artillery;
-  private targets: Target[] = [];
-  private radar!: Radar;
-  private projectileManager!: ProjectileManager;
-
-  // Game systems
-  private leadCalculator!: LeadAngleCalculator;
-  // @ts-expect-error - Reserved for future trajectory prediction features
-  private _trajectoryCalculator!: TrajectoryCalculator;
-  private collisionDetector!: CollisionDetector;
-  private gameLoop!: GameLoop;
-  private projectileRenderer!: ProjectileRenderer;
-  private effectRenderer!: EffectRenderer;
+  private effectRenderer: EffectRenderer;
 
   // Game state
   private gameState: GameState = GameState.PLAYING;
-  private startTime: number = 0;
   private gameTime: number = 0;
+  private startTime: number = 0;
 
-  // UI state
+  // Game entities
+  private targets: TargetState[] = [];
+  private projectiles: ProjectileState[] = [];
+  private artilleryPosition: Vector3;
+
+  // Targeting system
+  private targetingState: TargetingState = TargetingState.NO_TARGET;
+  private trackedTarget: TargetState | null = null;
+  private lockedTarget: TargetState | null = null;
+
+  // Artillery controls
   private azimuthAngle: number = 0;
   private elevationAngle: number = 45;
-  private lockedTarget: Target | null = null;
 
-  // Targeting state management
-  private targetingState: TargetingState = TargetingState.NO_TARGET;
-  private trackedTarget: Target | null = null; // Target currently under cursor
+  // Radar controls
+  private radarAzimuth: number = 0;
+  private radarRange: number = 10000; // 10km
+  private maxRadarRange: number = 20000; // 20km
 
-  // Radar control state
-  private radarAzimuth: number = 0; // Current radar direction
-  private radarRangeCursor: number = 10000; // Distance cursor position (meters)
+  // Mouse control state
   private isMouseDragging: boolean = false;
-  private lastMousePosition: { x: number; y: number } = { x: 0, y: 0 };
-  private mouseSensitivity: number = 0.1; // degrees per pixel
+  private lastMousePosition: Vector2 = new Vector2(0, 0);
+  private mouseSensitivity: number = 0.5;
+
+  // Animation
+  private animationTime: number = 0;
+
+  // UI Layout constants (UI-04: 3-pane layout)
+  private readonly UI_LAYOUT = {
+    CONTROL_PANEL_WIDTH: 300,
+    VERTICAL_RADAR_WIDTH: 250,
+    HORIZONTAL_RADAR_HEIGHT: 350,
+  } as const;
+
+  // CRT styling constants
+  private readonly CRT_COLORS = {
+    BACKGROUND: '#001100',
+    PRIMARY_TEXT: '#00ff00',
+    SECONDARY_TEXT: '#66ff66',
+    WARNING_TEXT: '#ffff00',
+    DANGER_TEXT: '#ff6600',
+    CRITICAL_TEXT: '#ff0000',
+    GRID_LINE: '#003300',
+    RADAR_LINE: '#00ff00',
+    TARGET_NORMAL: '#ff0000',
+    TARGET_TRACKED: '#ff8800',
+    TARGET_LOCKED: '#ffff00',
+    PROJECTILE: '#ffffff',
+    SCAN_LINE: 'rgba(0, 255, 0, 0.1)',
+  } as const;
+
+  private readonly FONTS = {
+    TITLE: 'bold 18px monospace',
+    SUBTITLE: '14px monospace',
+    DATA: '12px monospace',
+    SMALL: '10px monospace',
+  } as const;
 
   constructor(
     canvasManager: CanvasManager,
@@ -95,129 +129,185 @@ export class GameScene {
     this.onSceneTransition = onSceneTransition;
     this.config = config;
     this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
+    this.effectRenderer = new EffectRenderer(this.canvasManager);
+
+    // Initialize artillery position
+    this.artilleryPosition = new Vector3(
+      this.config.selectedStage.artilleryPosition.x,
+      this.config.selectedStage.artilleryPosition.y,
+      this.config.selectedStage.artilleryPosition.z
+    );
 
     this.initializeGame();
     this.setupEventListeners();
   }
 
   /**
-   * Initialize game entities and systems
+   * Initialize game entities and state
    */
   private initializeGame(): void {
-    // Ensure artillery position is a Vector3 instance
-    const artilleryPos = this.config.selectedStage.artilleryPosition as
-      | Vector3
-      | { x: number; y: number; z: number };
-    const artilleryPosition =
-      artilleryPos instanceof Vector3
-        ? artilleryPos
-        : new Vector3(artilleryPos.x, artilleryPos.y, artilleryPos.z);
+    this.startTime = Date.now();
+    this.gameTime = 0;
+    this.gameState = GameState.PLAYING;
 
-    // Initialize artillery at stage position
-    this.artillery = new Artillery(artilleryPosition);
-
-    // Initialize targets from stage config with Vector3 conversion
-    this.targets = this.config.selectedStage.targets.map(target => {
-      const pos =
-        (target.position as
-          | Vector3
-          | { x: number; y: number; z: number }) instanceof Vector3
-          ? target.position
-          : new Vector3(
-              (target.position as { x: number; y: number; z: number }).x,
-              (target.position as { x: number; y: number; z: number }).y,
-              (target.position as { x: number; y: number; z: number }).z
-            );
-      const vel = target.velocity
-        ? (target.velocity as
-            | Vector3
-            | { x: number; y: number; z: number }) instanceof Vector3
-          ? target.velocity
-          : new Vector3(
-              (target.velocity as { x: number; y: number; z: number }).x,
-              (target.velocity as { x: number; y: number; z: number }).y,
-              (target.velocity as { x: number; y: number; z: number }).z
+    // Initialize targets from stage configuration
+    this.targets = this.config.selectedStage.targets.map(
+      (targetConfig, index) => ({
+        id: `target-${index}`,
+        position: new Vector3(
+          targetConfig.position.x,
+          targetConfig.position.y,
+          targetConfig.position.z
+        ),
+        velocity: targetConfig.velocity
+          ? new Vector3(
+              targetConfig.velocity.x,
+              targetConfig.velocity.y,
+              targetConfig.velocity.z
             )
-        : undefined;
-      return new Target(pos, target.type, vel);
-    });
-
-    // Initialize radar
-    this.radar = new Radar(artilleryPosition);
-
-    // Initialize game systems
-    this.projectileManager = new ProjectileManager();
-    this.leadCalculator = new LeadAngleCalculator();
-    this._trajectoryCalculator = new TrajectoryCalculator();
-    this.collisionDetector = new CollisionDetector();
-    this.projectileRenderer = new ProjectileRenderer();
-    this.effectRenderer = new EffectRenderer(this.canvasManager);
-
-    // Initialize game loop
-    this.gameLoop = new GameLoop(
-      deltaTime => this.update(deltaTime),
-      () => this.render()
+          : undefined,
+        isDestroyed: false,
+        type: targetConfig.type,
+        spawnTime: this.gameTime + targetConfig.spawnDelay,
+      })
     );
 
-    this.startTime = Date.now();
-    this.gameLoop.start();
+    // Clear projectiles and effects
+    this.projectiles = [];
+    this.effectRenderer.clearAll();
+
+    // Reset targeting
+    this.targetingState = TargetingState.NO_TARGET;
+    this.trackedTarget = null;
+    this.lockedTarget = null;
   }
 
   /**
-   * Setup event listeners for user input using MouseHandler
+   * Setup event listeners
    */
   private setupEventListeners(): void {
-    // Use MouseHandler for mouse events (GS-03, GS-T01, GS-T02)
-    this.mouseHandler.addEventListener(this.handleMouseEvent.bind(this));
+    this.mouseHandler.addEventListener((event: MouseEventData) => {
+      this.handleMouseEvent(event);
+    });
 
-    // Wheel events still need manual handling since MouseHandler doesn't support them
-    const canvas = this.canvasManager.getCanvas();
-    canvas.addEventListener('wheel', event => this.handleWheel(event));
-    canvas.addEventListener('contextmenu', event => event.preventDefault()); // Disable right-click menu
-
-    // Keyboard events still handled directly
+    // Keyboard events for game controls
     window.addEventListener('keydown', event => this.handleKeyDown(event));
   }
 
   /**
    * Update game state
    */
-  private update(deltaTime: number): void {
-    if (this.gameState !== GameState.PLAYING) return;
-
+  update(deltaTime: number): void {
+    this.animationTime += deltaTime;
     this.gameTime = (Date.now() - this.startTime) / 1000;
 
-    // Update targets
-    this.targets.forEach(target => {
-      target.update(deltaTime);
+    if (this.gameState !== GameState.PLAYING) return;
 
-      // Check game over condition (GS-10)
-      if (target.position.y <= this.config.selectedStage.artilleryPosition.y) {
-        this.gameState = GameState.GAME_OVER;
-        this.gameLoop.stop();
-        return;
-      }
-    });
+    // Update targets
+    this.updateTargets(deltaTime);
 
     // Update projectiles
-    this.projectileManager.update();
+    this.updateProjectiles(deltaTime);
 
     // Update effects
     this.effectRenderer.update(deltaTime);
 
-    // Update radar scanning
-    this.radar.scan(this.targets);
-
-    // Update target tracking system - automatic tracking
-    this.updateTargetTracking();
-
-    // Check collisions (GS-08, GS-09)
+    // Check collisions
     this.checkCollisions();
 
-    // Check stage clear condition
-    if (this.targets.every(target => target.isDestroyed)) {
-      this.gameState = GameState.STAGE_CLEAR;
-      this.gameLoop.stop();
+    // Update targeting system
+    this.updateTargeting();
+
+    // Check win/lose conditions
+    this.checkGameConditions();
+  }
+
+  /**
+   * Render the game scene
+   */
+  render(): void {
+    this.clearCanvas();
+    this.renderLayout();
+    this.renderControlPanel();
+    this.renderHorizontalRadar();
+    this.renderVerticalRadar();
+    this.renderGameStateOverlay();
+    this.renderScanLines();
+
+    // Render effects on top
+    this.effectRenderer.render();
+  }
+
+  /**
+   * Cleanup resources
+   */
+  destroy(): void {
+    this.mouseHandler.destroy();
+    window.removeEventListener('keydown', this.handleKeyDown);
+  }
+
+  /**
+   * Update target states
+   */
+  private updateTargets(deltaTime: number): void {
+    this.targets.forEach(target => {
+      if (target.isDestroyed) return;
+
+      // Check if target should spawn
+      if (this.gameTime < target.spawnTime) return;
+
+      // Update position based on velocity
+      if (target.velocity) {
+        target.position = target.position.add(
+          target.velocity.multiply(deltaTime)
+        );
+      }
+
+      // Check if target reached artillery position (game over condition)
+      const distance = target.position
+        .subtract(this.artilleryPosition)
+        .magnitude();
+      if (distance < 1000) {
+        // 1km collision radius
+        this.gameState = GameState.GAME_OVER;
+      }
+    });
+  }
+
+  /**
+   * Update projectile states
+   */
+  private updateProjectiles(deltaTime: number): void {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const projectile = this.projectiles[i];
+      if (!projectile.isActive) continue;
+
+      // Update position
+      projectile.position = projectile.position.add(
+        projectile.velocity.multiply(deltaTime)
+      );
+
+      // Apply gravity
+      projectile.velocity = new Vector3(
+        projectile.velocity.x,
+        projectile.velocity.y,
+        projectile.velocity.z - 9.81 * deltaTime
+      );
+
+      // Remove if hit ground or out of range
+      if (
+        projectile.position.z <= 0 ||
+        this.gameTime - projectile.spawnTime > 30
+      ) {
+        // Create impact explosion
+        if (projectile.position.z <= 0) {
+          this.effectRenderer.createExplosion(
+            projectile.position,
+            'projectile_impact'
+          );
+        }
+        this.projectiles.splice(i, 1);
+      }
     }
   }
 
@@ -225,30 +315,33 @@ export class GameScene {
    * Check collisions between projectiles and targets
    */
   private checkCollisions(): void {
-    const projectiles = this.projectileManager.getActiveProjectiles();
+    this.projectiles.forEach(projectile => {
+      if (!projectile.isActive) return;
 
-    projectiles.forEach(projectile => {
       this.targets.forEach(target => {
-        if (
-          !target.isDestroyed &&
-          this.collisionDetector.checkCollision(projectile, target)
-        ) {
-          // Hit detected (GS-08) - Create explosion effect
+        if (target.isDestroyed || this.gameTime < target.spawnTime) return;
+
+        const distance = projectile.position
+          .subtract(target.position)
+          .magnitude();
+        if (distance < 50) {
+          // 50m collision radius
+          // Hit!
+          target.isDestroyed = true;
+          projectile.isActive = false;
+
+          // Create destruction explosion
           this.effectRenderer.createExplosion(
             target.position,
             'target_destruction'
           );
-          target.destroy();
-          projectile.markAsTargetHit();
 
-          // Clean up targeting state if the destroyed target was being tracked (GS-09)
+          // Clear targeting if this target was being tracked/locked
+          if (this.trackedTarget === target) {
+            this.trackedTarget = null;
+          }
           if (this.lockedTarget === target) {
             this.lockedTarget = null;
-            this.targetingState = TargetingState.NO_TARGET;
-            this.trackedTarget = null;
-          } else if (this.trackedTarget === target) {
-            // If we were only tracking this target, clear tracking state
-            this.trackedTarget = null;
             this.targetingState = TargetingState.NO_TARGET;
           }
         }
@@ -257,1272 +350,756 @@ export class GameScene {
   }
 
   /**
-   * Render the game screen
-   * Implements UI-04: 3-pane layout
+   * Update targeting system
    */
-  render(): void {
-    // Update HTML control panel elements
-    this.updateControlPanel();
+  private updateTargeting(): void {
+    // If we have a locked target, keep tracking it
+    if (this.lockedTarget && !this.lockedTarget.isDestroyed) {
+      this.targetingState = TargetingState.LOCKED_ON;
+      this.trackedTarget = this.lockedTarget;
 
-    // Render horizontal radar (center pane)
-    this.renderHorizontalRadar();
-
-    // Render vertical radar (right pane)
-    this.renderVerticalRadar();
-
-    // Render effects (explosions, particles)
-    this.effectRenderer.render();
-
-    // Render game state overlays
-    this.renderGameStateOverlay();
+      // Auto-track locked target with radar
+      this.updateRadarToTarget(this.lockedTarget);
+    } else {
+      // Find target near cursor for tracking
+      const nearestTarget = this.findTargetNearCursor();
+      if (nearestTarget) {
+        this.targetingState = TargetingState.TRACKING;
+        this.trackedTarget = nearestTarget;
+      } else {
+        this.targetingState = TargetingState.NO_TARGET;
+        this.trackedTarget = null;
+      }
+    }
   }
 
   /**
-   * Update HTML control panel elements
+   * Check game win/lose conditions
    */
-  private updateControlPanel(): void {
-    // TR-02 Compliance: Render control panel info to Canvas instead of HTML DOM
-    this.renderControlPanelToCanvas();
+  private checkGameConditions(): void {
+    // Check stage clear (all targets destroyed)
+    const activeTargets = this.targets.filter(
+      t => !t.isDestroyed && this.gameTime >= t.spawnTime
+    );
+
+    if (activeTargets.length === 0 && this.targets.length > 0) {
+      this.gameState = GameState.STAGE_CLEAR;
+    }
   }
 
   /**
-   * Render control panel information to Canvas (TR-02 compliant)
+   * Clear canvas with CRT background
    */
-  private renderControlPanelToCanvas(): void {
-    // Get or create control panel canvas
-    const controlPanelCanvas = document.getElementById(
-      'control-panel-canvas'
-    ) as HTMLCanvasElement;
-    if (!controlPanelCanvas) return;
+  private clearCanvas(): void {
+    const ctx = this.canvasManager.context;
+    ctx.fillStyle = this.CRT_COLORS.BACKGROUND;
+    ctx.fillRect(0, 0, this.canvasManager.width, this.canvasManager.height);
+  }
 
-    const ctx = controlPanelCanvas.getContext('2d');
-    if (!ctx) return;
+  /**
+   * Render UI layout structure (UI-04: 3-pane layout)
+   */
+  private renderLayout(): void {
+    const ctx = this.canvasManager.context;
+    ctx.save();
 
-    const width = controlPanelCanvas.width;
-    const height = controlPanelCanvas.height;
+    // Draw layout dividers
+    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.lineWidth = 2;
 
-    // Clear canvas with console-style background
-    ctx.fillStyle = '#001100';
-    ctx.fillRect(0, 0, width, height);
+    // Vertical divider between control panel and radar
+    const controlPanelRight = this.UI_LAYOUT.CONTROL_PANEL_WIDTH;
+    ctx.beginPath();
+    ctx.moveTo(controlPanelRight, 0);
+    ctx.lineTo(controlPanelRight, this.canvasManager.height);
+    ctx.stroke();
 
-    // Set text style for control panel
-    ctx.font = '14px monospace';
+    // Vertical divider between horizontal and vertical radar
+    const verticalRadarLeft =
+      this.canvasManager.width - this.UI_LAYOUT.VERTICAL_RADAR_WIDTH;
+    ctx.beginPath();
+    ctx.moveTo(verticalRadarLeft, 0);
+    ctx.lineTo(verticalRadarLeft, this.canvasManager.height);
+    ctx.stroke();
+
+    // Horizontal divider in radar area
+    const horizontalRadarBottom =
+      this.canvasManager.height - this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT;
+    ctx.beginPath();
+    ctx.moveTo(controlPanelRight, horizontalRadarBottom);
+    ctx.lineTo(this.canvasManager.width, horizontalRadarBottom);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Render control panel (left pane)
+   */
+  private renderControlPanel(): void {
+    const ctx = this.canvasManager.context;
+    const margin = 15;
+    let y = margin;
+    const lineHeight = 20;
+
+    ctx.save();
+
+    // Panel title
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.TITLE;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
+    ctx.fillText('FIRE CONTROL', margin, y);
+    y += lineHeight * 1.5;
 
-    let yPos = 20;
-    const leftMargin = 20;
-    const lineHeight = 25;
+    // Artillery controls
+    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillText('Artillery', margin, y);
+    y += lineHeight;
 
-    // Artillery azimuth display
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Azimuth:', leftMargin, yPos);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${this.azimuthAngle.toFixed(1)}°`, leftMargin + 80, yPos);
-    yPos += lineHeight;
-
-    // Artillery elevation display
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Elevation:', leftMargin, yPos);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${this.elevationAngle.toFixed(1)}°`, leftMargin + 80, yPos);
-    yPos += lineHeight * 1.5;
-
-    // Lead angle display
-    const calculationTarget = this.lockedTarget || this.trackedTarget;
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Lead Angle:', leftMargin, yPos);
-    yPos += lineHeight;
-
-    if (calculationTarget) {
-      const leadAngle = this.leadCalculator.calculateLeadAngle(
-        this.artillery.position,
-        calculationTarget.position,
-        calculationTarget.velocity
-      );
-
-      if (leadAngle) {
-        const isLocked = calculationTarget === this.lockedTarget;
-        const color = isLocked ? '#ff0000' : '#ffff00';
-
-        ctx.fillStyle = color;
-        ctx.fillText(
-          `Az: ${leadAngle.azimuth.toFixed(1)}°`,
-          leftMargin + 20,
-          yPos
-        );
-        yPos += lineHeight;
-        ctx.fillText(
-          `El: ${leadAngle.elevation.toFixed(1)}°`,
-          leftMargin + 20,
-          yPos
-        );
-      } else {
-        ctx.fillStyle = '#666666';
-        ctx.fillText('Az: ---°', leftMargin + 20, yPos);
-        yPos += lineHeight;
-        ctx.fillText('El: ---°', leftMargin + 20, yPos);
-      }
-    } else {
-      ctx.fillStyle = '#666666';
-      ctx.fillText('Az: ---°', leftMargin + 20, yPos);
-      yPos += lineHeight;
-      ctx.fillText('El: ---°', leftMargin + 20, yPos);
-    }
-    yPos += lineHeight;
-
-    // Game time display
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Game Time:', leftMargin, yPos);
-    const minutes = Math.floor(this.gameTime / 60);
-    const seconds = Math.floor(this.gameTime % 60);
-    const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(timeStr, leftMargin + 80, yPos);
-    yPos += lineHeight * 1.5;
-
-    // Radar information
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Radar Az:', leftMargin, yPos);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${this.radarAzimuth.toFixed(1)}°`, leftMargin + 80, yPos);
-    yPos += lineHeight;
-
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Range:', leftMargin, yPos);
-    ctx.fillStyle = '#ffffff';
+    ctx.font = this.FONTS.DATA;
+    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.fillText(`Azimuth: ${this.azimuthAngle.toFixed(1)}°`, margin + 10, y);
+    y += lineHeight;
     ctx.fillText(
-      `${(this.radarRangeCursor / 1000).toFixed(1)}km`,
-      leftMargin + 80,
-      yPos
+      `Elevation: ${this.elevationAngle.toFixed(1)}°`,
+      margin + 10,
+      y
     );
-    yPos += lineHeight;
+    y += lineHeight * 1.5;
 
-    // Targeting mode display
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Targeting:', leftMargin, yPos);
+    // Radar controls
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillText('Radar', margin, y);
+    y += lineHeight;
 
-    let modeText = 'MANUAL';
-    let modeColor = '#00ff00';
+    ctx.font = this.FONTS.DATA;
+    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.fillText(`Azimuth: ${this.radarAzimuth.toFixed(1)}°`, margin + 10, y);
+    y += lineHeight;
+    ctx.fillText(
+      `Range: ${(this.radarRange / 1000).toFixed(1)}km`,
+      margin + 10,
+      y
+    );
+    y += lineHeight * 1.5;
 
-    switch (this.targetingState) {
-      case TargetingState.LOCKED_ON:
-        modeText = 'AUTO TRACK';
-        modeColor = '#ff0000';
-        break;
-      case TargetingState.TRACKING:
-        modeText = 'ACQUIRING';
-        modeColor = '#ffff00';
-        break;
-    }
+    // Targeting information
+    this.renderTargetingInfo(ctx, margin, y, lineHeight);
 
-    ctx.fillStyle = modeColor;
-    ctx.fillText(modeText, leftMargin + 80, yPos);
-    yPos += lineHeight * 1.5;
-
-    // Target information
-    this.renderTargetInfoToCanvas(ctx, leftMargin, yPos, lineHeight);
+    ctx.restore();
   }
 
   /**
-   * Render target information to Canvas (TR-02 compliant)
+   * Render targeting information in control panel
    */
-  private renderTargetInfoToCanvas(
+  private renderTargetingInfo(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
     lineHeight: number
   ): void {
+    // Targeting status
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillText('Targeting', x, y);
+    y += lineHeight;
+
+    // Status indicator
+    let statusText = 'MANUAL';
+    let statusColor = this.CRT_COLORS.SECONDARY_TEXT;
+
+    switch (this.targetingState) {
+      case TargetingState.TRACKING:
+        statusText = 'TRACKING';
+        statusColor = this.CRT_COLORS.WARNING_TEXT;
+        break;
+      case TargetingState.LOCKED_ON:
+        statusText = 'LOCKED ON';
+        statusColor = this.CRT_COLORS.CRITICAL_TEXT;
+        break;
+    }
+
+    ctx.font = this.FONTS.DATA;
+    ctx.fillStyle = statusColor;
+    ctx.fillText(`Status: ${statusText}`, x + 10, y);
+    y += lineHeight;
+
+    // Target information
     const displayTarget = this.lockedTarget || this.trackedTarget;
-
-    // Target status header
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Target Info:', x, y);
-    y += lineHeight;
-
     if (displayTarget) {
-      // Target status
-      let statusText = 'NO TARGET';
-      let statusColor = '#666666';
+      const distance = displayTarget.position
+        .subtract(this.artilleryPosition)
+        .magnitude();
+      const speed = displayTarget.velocity
+        ? displayTarget.velocity.magnitude()
+        : 0;
 
-      switch (this.targetingState) {
-        case TargetingState.LOCKED_ON:
-          statusText = 'LOCKED ON';
-          statusColor = '#ff0000';
-          break;
-        case TargetingState.TRACKING:
-          statusText = 'TRACKING';
-          statusColor = '#ffff00';
-          break;
-      }
-
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText('Status:', x, y);
-      ctx.fillStyle = statusColor;
-      ctx.fillText(statusText, x + 60, y);
+      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+      ctx.fillText(`Type: ${displayTarget.type}`, x + 10, y);
       y += lineHeight;
-
-      // Target type
-      const typeColor =
-        displayTarget === this.lockedTarget ? '#ff0000' : '#ffff00';
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText('Type:', x, y);
-      ctx.fillStyle = typeColor;
-      ctx.fillText(displayTarget.type, x + 60, y);
+      ctx.fillText(`Range: ${(distance / 1000).toFixed(1)}km`, x + 10, y);
       y += lineHeight;
-
-      // Target range
-      const currentRange = displayTarget.distanceFrom(this.artillery.position);
-      let rangeColor = '#00ff00'; // Long range - green
-      if (currentRange < 5000) {
-        rangeColor = '#ff0000'; // Close range - red
-      } else if (currentRange < 15000) {
-        rangeColor = '#ffff00'; // Medium range - yellow
-      }
-
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText('Range:', x, y);
-      ctx.fillStyle = rangeColor;
-      ctx.fillText(`${currentRange.toFixed(0)} m`, x + 60, y);
+      ctx.fillText(`Speed: ${speed.toFixed(1)}m/s`, x + 10, y);
       y += lineHeight;
-
-      // Target speed
-      const currentSpeed = displayTarget.speed;
-      let speedColor = '#00ff00'; // Slow - easier target
-      if (currentSpeed > 200) {
-        speedColor = '#ff0000'; // Fast - high threat
-      } else if (currentSpeed > 50) {
-        speedColor = '#ffff00'; // Medium speed
-      }
-
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText('Speed:', x, y);
-      ctx.fillStyle = speedColor;
-      ctx.fillText(`${currentSpeed.toFixed(1)} m/s`, x + 60, y);
-      y += lineHeight;
-
-      // Target altitude
-      const currentAltitude = displayTarget.altitude;
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText('Altitude:', x, y);
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText(`${currentAltitude.toFixed(0)} m`, x + 60, y);
-      y += lineHeight;
-
-      // Additional target details
-      this.renderAdditionalTargetDetailsToCanvas(
-        ctx,
-        x,
-        y,
-        lineHeight,
-        displayTarget
-      );
     } else {
-      // No target - show placeholder
       ctx.fillStyle = '#666666';
-      ctx.fillText('Status: NO TARGET', x, y);
+      ctx.fillText('Type: ---', x + 10, y);
       y += lineHeight;
-      ctx.fillText('Type: ---', x, y);
+      ctx.fillText('Range: ---', x + 10, y);
       y += lineHeight;
-      ctx.fillText('Range: --- m', x, y);
+      ctx.fillText('Speed: ---', x + 10, y);
       y += lineHeight;
-      ctx.fillText('Speed: --- m/s', x, y);
-      y += lineHeight;
-      ctx.fillText('Altitude: --- m', x, y);
     }
+
+    y += lineHeight;
+
+    // Game time
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillText('Mission Time', x, y);
+    y += lineHeight;
+
+    const minutes = Math.floor(this.gameTime / 60);
+    const seconds = Math.floor(this.gameTime % 60);
+    const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    ctx.font = this.FONTS.DATA;
+    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.fillText(timeStr, x + 10, y);
   }
 
   /**
-   * Render additional target details to Canvas (TR-02 compliant)
-   */
-  private renderAdditionalTargetDetailsToCanvas(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    lineHeight: number,
-    target: Target
-  ): void {
-    // Target bearing
-    const bearing = RadarCoordinateConverter.calculateAzimuth(
-      this.artillery.position,
-      target.position
-    );
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('Bearing:', x, y);
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText(`${bearing.toFixed(1)}°`, x + 60, y);
-    y += lineHeight;
-
-    // Time to intercept estimation
-    const range = target.distanceFrom(this.artillery.position);
-    const muzzleVelocity = 850; // m/s - from ammunition display
-    const estimatedTTI = range / muzzleVelocity;
-
-    let ttiText: string;
-    if (estimatedTTI < 60) {
-      ttiText = `${estimatedTTI.toFixed(1)}s`;
-    } else {
-      ttiText = `${(estimatedTTI / 60).toFixed(1)}m`;
-    }
-
-    let ttiColor = '#00ff00'; // Plenty of time
-    if (estimatedTTI < 10) {
-      ttiColor = '#ff0000'; // Critical - very fast engagement needed
-    } else if (estimatedTTI < 30) {
-      ttiColor = '#ffff00'; // Moderate time
-    }
-
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('TTI:', x, y);
-    ctx.fillStyle = ttiColor;
-    ctx.fillText(ttiText, x + 60, y);
-    y += lineHeight;
-
-    // Target heading if available
-    if (target.velocity) {
-      const heading =
-        Math.atan2(target.velocity.x, target.velocity.y) * (180 / Math.PI);
-      const normalizedHeading = heading < 0 ? heading + 360 : heading;
-
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText('Heading:', x, y);
-      ctx.fillStyle = '#00ff00';
-      ctx.fillText(`${normalizedHeading.toFixed(0)}°`, x + 60, y);
-    }
-  }
-
-  /**
-   * Render center pane: Horizontal Radar (UI-11 to UI-14)
+   * Render horizontal radar (center-bottom pane)
    */
   private renderHorizontalRadar(): void {
-    const horizontalRadarCanvas = document.getElementById(
-      'horizontal-radar-ui'
-    ) as HTMLCanvasElement;
-    if (!horizontalRadarCanvas) return;
+    const ctx = this.canvasManager.context;
+    const radarLeft = this.UI_LAYOUT.CONTROL_PANEL_WIDTH + 10;
+    const radarTop =
+      this.canvasManager.height - this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT + 10;
+    const radarWidth =
+      this.canvasManager.width -
+      this.UI_LAYOUT.CONTROL_PANEL_WIDTH -
+      this.UI_LAYOUT.VERTICAL_RADAR_WIDTH -
+      20;
+    const radarHeight = this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT - 20;
 
-    const ctx = horizontalRadarCanvas.getContext('2d');
-    if (!ctx) return;
+    ctx.save();
 
-    const width = horizontalRadarCanvas.width;
-    const height = horizontalRadarCanvas.height;
-
-    // Clear canvas
-    ctx.fillStyle = '#001100';
-    ctx.fillRect(0, 0, width, height);
-
-    // Draw radar grid (UI-11)
-    this.drawHorizontalRadarGrid(ctx, width, height);
+    // Draw radar grid
+    this.drawRadarGrid(ctx, radarLeft, radarTop, radarWidth, radarHeight, true);
 
     // Draw targets
-    this.drawTargetsOnHorizontalRadar(ctx, width, height);
+    this.drawTargetsOnRadar(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight,
+      true
+    );
 
     // Draw projectiles
-    this.drawProjectilesOnHorizontalRadar(ctx, width, height);
-
-    // Draw radar center line and cursor
-    this.drawRadarControls(ctx, width, height);
-  }
-
-  /**
-   * Draw horizontal radar grid
-   */
-  private drawHorizontalRadarGrid(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ): void {
-    const centerX = width / 2;
-    const gunY = height - 20;
-    const maxRange = height - 40;
-
-    ctx.strokeStyle = '#00ff00';
-    ctx.lineWidth = 1;
-
-    // Draw distance lines (horizontal)
-    for (let i = 1; i <= 4; i++) {
-      const y = gunY - (maxRange / 4) * i;
-      ctx.beginPath();
-      ctx.moveTo(20, y);
-      ctx.lineTo(width - 20, y);
-      ctx.stroke();
-
-      // Distance labels
-      ctx.fillStyle = '#00ff00';
-      ctx.font = '10px Consolas';
-      ctx.textAlign = 'left';
-      ctx.fillText(`${i * 5}km`, 2, y - 2);
-    }
-
-    // Draw bearing lines (vertical)
-    const bearingRange = 120;
-    const degreesPerPixel = bearingRange / (width - 40);
-
-    for (let bearing = -60; bearing <= 60; bearing += 30) {
-      const x = centerX + bearing / degreesPerPixel;
-      if (x >= 20 && x <= width - 20) {
-        ctx.beginPath();
-        ctx.moveTo(x, 20);
-        ctx.lineTo(x, gunY);
-        ctx.stroke();
-
-        // Bearing labels
-        const label =
-          bearing === 0 ? '0°' : `${bearing > 0 ? '+' : ''}${bearing}°`;
-        ctx.fillStyle = '#00ff00';
-        ctx.font = '10px Consolas';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, x, gunY + 15);
-      }
-    }
-
-    // Draw radar center line
-    ctx.strokeStyle = '#ffff00';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(centerX, 20);
-    ctx.lineTo(centerX, gunY);
-    ctx.stroke();
-
-    // Draw gun position
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(centerX, gunY, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Gun label
-    ctx.fillStyle = '#00ff00';
-    ctx.font = '12px Consolas';
-    ctx.textAlign = 'center';
-    ctx.fillText('GUN', centerX - 15, gunY + 15);
-  }
-
-  /**
-   * Draw targets on horizontal radar
-   */
-  private drawTargetsOnHorizontalRadar(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ): void {
-    this.targets.forEach(target => {
-      if (!target.isDestroyed) {
-        const dx = target.position.x - this.artillery.position.x;
-        const dy = target.position.y - this.artillery.position.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance <= 20000) {
-          // Within radar range - use new coordinate converter
-          const screenPos =
-            RadarCoordinateConverter.worldToHorizontalRadarScreen(
-              target.position,
-              this.artillery.position,
-              this.radarAzimuth,
-              { width, height },
-              20000
-            );
-          const x = screenPos.x;
-          const y = screenPos.y;
-
-          // Draw target with state-based visual feedback
-          this.drawTargetWithState(ctx, x, y, target);
-        }
-      }
-    });
-  }
-
-  /**
-   * Draw projectiles on horizontal radar
-   */
-  private drawProjectilesOnHorizontalRadar(
-    _ctx: CanvasRenderingContext2D,
-    _width: number,
-    _height: number
-  ): void {
-    // Update projectiles in renderer and delegate rendering
-    const projectiles = this.projectileManager.getActiveProjectiles();
-    projectiles.forEach((projectile, index) => {
-      this.projectileRenderer.updateProjectile(
-        `projectile-${index}`,
-        projectile.position,
-        projectile.velocity,
-        {
-          color: '#ffff00',
-          size: 2,
-          isActive: true,
-        }
-      );
-    });
-
-    // Use ProjectileRenderer for consistent rendering
-    this.projectileRenderer.renderOnHorizontalRadar(this.canvasManager);
-  }
-
-  /**
-   * Draw radar controls (center line, cursor)
-   */
-  private drawRadarControls(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ): void {
-    const gunY = height - 20;
-    const maxRange = height - 40;
-
-    // Draw distance cursor (horizontal line) - UI-12
-    const cursorRange = this.radarRangeCursor;
-    const scale = maxRange / 20000; // 20km range
-    const cursorY = gunY - cursorRange * scale;
-
-    if (cursorY >= 20 && cursorY <= gunY) {
-      ctx.strokeStyle = '#ffff00';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(20, cursorY);
-      ctx.lineTo(width - 20, cursorY);
-      ctx.stroke();
-
-      // Draw cursor range label
-      ctx.fillStyle = '#ffff00';
-      ctx.font = '10px Consolas';
-      ctx.textAlign = 'right';
-      ctx.fillText(
-        `${(cursorRange / 1000).toFixed(1)}km`,
-        width - 25,
-        cursorY - 2
-      );
-    }
-
-    // Display radar azimuth and elevation (UI-14)
-    ctx.fillStyle = '#ffff00';
-    ctx.font = '12px Consolas';
-    ctx.textAlign = 'left';
-    ctx.fillText(`Radar Az: ${this.radarAzimuth.toFixed(1)}°`, 10, 35);
-    ctx.fillText(
-      `Cursor Range: ${(this.radarRangeCursor / 1000).toFixed(1)}km`,
-      10,
-      50
+    this.drawProjectilesOnRadar(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight,
+      true
     );
+
+    ctx.restore();
   }
 
   /**
-   * Render right pane: Vertical Radar (UI-15 to UI-16)
+   * Render vertical radar (right pane)
    */
   private renderVerticalRadar(): void {
-    const verticalRadarCanvas = document.getElementById(
-      'vertical-radar'
-    ) as HTMLCanvasElement;
-    if (!verticalRadarCanvas) return;
+    const ctx = this.canvasManager.context;
+    const radarLeft =
+      this.canvasManager.width - this.UI_LAYOUT.VERTICAL_RADAR_WIDTH + 10;
+    const radarTop = 10;
+    const radarWidth = this.UI_LAYOUT.VERTICAL_RADAR_WIDTH - 20;
+    const radarHeight =
+      this.canvasManager.height - this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT - 20;
 
-    const ctx = verticalRadarCanvas.getContext('2d');
-    if (!ctx) return;
+    ctx.save();
 
-    const width = verticalRadarCanvas.width;
-    const height = verticalRadarCanvas.height;
+    // Draw radar grid
+    this.drawRadarGrid(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight,
+      false
+    );
 
-    // Clear canvas
-    ctx.fillStyle = '#001100';
-    ctx.fillRect(0, 0, width, height);
+    // Draw targets
+    this.drawTargetsOnRadar(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight,
+      false
+    );
 
-    // Draw vertical radar grid (UI-15)
-    this.drawVerticalRadarGrid(ctx, width, height);
+    // Draw projectiles
+    this.drawProjectilesOnRadar(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight,
+      false
+    );
 
-    // Draw targets on vertical radar
-    this.drawTargetsOnVerticalRadar(ctx, width, height);
-
-    // Draw projectiles on vertical radar
-    this.drawProjectilesOnVerticalRadar(ctx, width, height);
-
-    // Draw altitude markers and information
-    this.drawVerticalRadarInfo(ctx, width, height);
+    ctx.restore();
   }
 
   /**
-   * Draw vertical radar grid (UI-15)
+   * Draw radar grid (horizontal or vertical)
    */
-  private drawVerticalRadarGrid(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ): void {
-    const gunX = 20; // Gun position (left side)
-    const groundY = height - 20; // Ground level
-
-    ctx.strokeStyle = '#00ff00';
-    ctx.lineWidth = 1;
-
-    // Draw range lines (vertical)
-    for (let i = 1; i <= 4; i++) {
-      const x = gunX + ((width - 40) / 4) * i;
-      ctx.beginPath();
-      ctx.moveTo(x, 20);
-      ctx.lineTo(x, groundY);
-      ctx.stroke();
-
-      // Range labels
-      ctx.fillStyle = '#00ff00';
-      ctx.font = '10px Consolas';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${i * 5}km`, x, groundY + 15);
-    }
-
-    // Draw altitude lines (horizontal)
-    for (let i = 1; i <= 4; i++) {
-      const y = groundY - ((height - 40) / 4) * i;
-      ctx.beginPath();
-      ctx.moveTo(gunX, y);
-      ctx.lineTo(width - 20, y);
-      ctx.stroke();
-
-      // Altitude labels
-      ctx.fillStyle = '#00ff00';
-      ctx.font = '10px Consolas';
-      ctx.textAlign = 'left';
-      ctx.fillText(`${i * 250}m`, 2, y - 2);
-    }
-
-    // Draw ground line
-    ctx.strokeStyle = '#ffff00';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(gunX, groundY);
-    ctx.lineTo(width - 20, groundY);
-    ctx.stroke();
-
-    // Draw gun position
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(gunX, groundY, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Gun label
-    ctx.fillStyle = '#00ff00';
-    ctx.font = '12px Consolas';
-    ctx.textAlign = 'left';
-    ctx.fillText('GUN', gunX - 5, groundY + 15);
-  }
-
-  /**
-   * Draw targets on vertical radar
-   */
-  private drawTargetsOnVerticalRadar(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ): void {
-    this.targets.forEach(target => {
-      if (!target.isDestroyed) {
-        const dx = target.position.x - this.artillery.position.x;
-        const dy = target.position.y - this.artillery.position.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance <= 20000) {
-          // Use coordinate converter for vertical radar
-          const screenPos = RadarCoordinateConverter.worldToVerticalRadarScreen(
-            target.position,
-            this.artillery.position,
-            this.radarAzimuth,
-            { width, height },
-            20000
-          );
-
-          // Only draw if within screen bounds
-          if (
-            screenPos.x >= 20 &&
-            screenPos.x <= width - 20 &&
-            screenPos.y >= 20 &&
-            screenPos.y <= height - 20
-          ) {
-            // Draw target with state-based feedback (smaller than horizontal radar)
-            this.drawTargetWithStateVertical(
-              ctx,
-              screenPos.x,
-              screenPos.y,
-              target
-            );
-          }
-        }
-      }
-    });
-  }
-
-  /**
-   * Draw projectiles on vertical radar
-   */
-  private drawProjectilesOnVerticalRadar(
-    _ctx: CanvasRenderingContext2D,
-    _width: number,
-    _height: number
-  ): void {
-    // Update projectiles in renderer and delegate rendering
-    const projectiles = this.projectileManager.getActiveProjectiles();
-    projectiles.forEach((projectile, index) => {
-      this.projectileRenderer.updateProjectile(
-        `projectile-${index}`,
-        projectile.position,
-        projectile.velocity,
-        {
-          color: '#ffff00',
-          size: 1.5,
-          isActive: true,
-        }
-      );
-    });
-
-    // Use ProjectileRenderer for consistent rendering
-    this.projectileRenderer.renderOnVerticalRadar(this.canvasManager);
-  }
-
-  /**
-   * Draw vertical radar information and markers
-   */
-  private drawVerticalRadarInfo(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number
-  ): void {
-    // Draw radar beam indicator
-    const beamWidth = 30; // pixels
-    const centerX = 20 + (width - 40) * 0.5;
-
-    ctx.fillStyle = 'rgba(255, 255, 0, 0.1)';
-    ctx.fillRect(centerX - beamWidth / 2, 20, beamWidth, height - 40);
-
-    // Draw elevation angle indicator if there's a locked target
-    if (this.lockedTarget) {
-      const targetElevation = this.calculateTargetElevation(this.lockedTarget);
-
-      // Draw elevation line
-      const elevationY = height - 20 - (targetElevation / 90) * (height - 40);
-      if (elevationY >= 20 && elevationY <= height - 20) {
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.moveTo(20, elevationY);
-        ctx.lineTo(width - 20, elevationY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Elevation label
-        ctx.fillStyle = '#ff0000';
-        ctx.font = '10px Consolas';
-        ctx.textAlign = 'right';
-        ctx.fillText(
-          `${targetElevation.toFixed(1)}°`,
-          width - 25,
-          elevationY - 2
-        );
-      }
-    }
-
-    // Display vertical radar information
-    ctx.fillStyle = '#ffff00';
-    ctx.font = '12px Consolas';
-    ctx.textAlign = 'left';
-    ctx.fillText(`Vertical Radar Az: ${this.radarAzimuth.toFixed(1)}°`, 10, 35);
-
-    if (this.lockedTarget) {
-      const elevation = this.calculateTargetElevation(this.lockedTarget);
-      ctx.fillText(`Target Elevation: ${elevation.toFixed(1)}°`, 10, 50);
-    }
-  }
-
-  /**
-   * Draw target with state-based visual feedback for vertical radar
-   */
-  private drawTargetWithStateVertical(
+  private drawRadarGrid(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
-    target: Target
+    width: number,
+    height: number,
+    isHorizontal: boolean
   ): void {
-    let fillColor = '#ff0000';
-    let strokeColor = '#ff0000';
-    let labelText = 'T';
-    let symbolRadius = 3; // Smaller for vertical radar
+    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.lineWidth = 1;
 
-    // Determine target state and apply visual feedback
-    if (target === this.lockedTarget) {
-      fillColor = '#ffff00';
-      strokeColor = '#ffffff';
-      labelText = 'L';
-      symbolRadius = 4;
+    // Draw range circles/lines
+    const centerX = x + width / 2;
+    const centerY = y + height - 10; // Gun position at bottom for horizontal, different for vertical
+    const gunY = isHorizontal ? centerY : y + height - 10;
 
-      // Draw smaller lock-on indicator
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.stroke();
+    if (isHorizontal) {
+      // Horizontal radar - distance lines
+      for (let i = 1; i <= 4; i++) {
+        const lineY = gunY - ((height - 20) / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(x + 10, lineY);
+        ctx.lineTo(x + width - 10, lineY);
+        ctx.stroke();
 
-      // Draw cross-hairs
-      ctx.beginPath();
-      ctx.moveTo(x - 5, y);
-      ctx.lineTo(x + 5, y);
-      ctx.moveTo(x, y - 5);
-      ctx.lineTo(x, y + 5);
-      ctx.stroke();
-    } else if (
-      target === this.trackedTarget &&
-      this.targetingState === TargetingState.TRACKING
-    ) {
-      fillColor = '#ff8800';
-      strokeColor = '#ffaa00';
-      labelText = 'T';
-      symbolRadius = 3.5;
+        // Range labels
+        ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+        ctx.font = this.FONTS.SMALL;
+        ctx.textAlign = 'left';
+        ctx.fillText(`${i * 5}km`, x + 5, lineY - 2);
+      }
 
-      // Draw tracking indicator
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(x, y, 6, 0, Math.PI * 2);
-      ctx.stroke();
+      // Bearing lines
+      for (let bearing = -60; bearing <= 60; bearing += 30) {
+        const lineX = centerX + (bearing / 120) * (width - 20);
+        if (lineX >= x + 10 && lineX <= x + width - 10) {
+          ctx.beginPath();
+          ctx.moveTo(lineX, y + 10);
+          ctx.lineTo(lineX, gunY);
+          ctx.stroke();
+
+          // Bearing labels
+          const label =
+            bearing === 0 ? '0°' : `${bearing > 0 ? '+' : ''}${bearing}°`;
+          ctx.textAlign = 'center';
+          ctx.fillText(label, lineX, gunY + 15);
+        }
+      }
+    } else {
+      // Vertical radar - range lines
+      for (let i = 1; i <= 4; i++) {
+        const lineX = x + 10 + ((width - 20) / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(lineX, y + 10);
+        ctx.lineTo(lineX, y + height - 10);
+        ctx.stroke();
+
+        // Range labels
+        ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+        ctx.font = this.FONTS.SMALL;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${i * 5}km`, lineX, y + height - 5);
+      }
+
+      // Altitude lines
+      for (let i = 1; i <= 4; i++) {
+        const lineY = y + height - 10 - ((height - 20) / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(x + 10, lineY);
+        ctx.lineTo(x + width - 10, lineY);
+        ctx.stroke();
+
+        // Altitude labels
+        ctx.textAlign = 'left';
+        ctx.fillText(`${i * 2500}m`, x + 5, lineY - 2);
+      }
     }
 
-    // Draw main target symbol
-    ctx.fillStyle = fillColor;
+    // Draw gun position
+    const gunX = isHorizontal ? centerX : x + 10;
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
     ctx.beginPath();
-    ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
+    ctx.arc(gunX, gunY, 3, 0, Math.PI * 2);
     ctx.fill();
-
-    // Draw target border
-    if (target === this.trackedTarget || target === this.lockedTarget) {
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Draw smaller target label
-    ctx.fillStyle = fillColor;
-    ctx.font = '8px Consolas';
-    ctx.textAlign = 'center';
-    ctx.fillText(labelText, x, y - 8);
   }
 
   /**
-   * Calculate target elevation angle
+   * Draw targets on radar
    */
-  private calculateTargetElevation(target: Target): number {
-    const dx = target.position.x - this.artillery.position.x;
-    const dy = target.position.y - this.artillery.position.y;
-    const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
-    const verticalDistance = target.position.z - this.artillery.position.z;
+  private drawTargetsOnRadar(
+    ctx: CanvasRenderingContext2D,
+    radarX: number,
+    radarY: number,
+    radarWidth: number,
+    radarHeight: number,
+    isHorizontal: boolean
+  ): void {
+    this.targets.forEach(target => {
+      if (target.isDestroyed || this.gameTime < target.spawnTime) return;
 
-    const elevationRad = Math.atan2(verticalDistance, horizontalDistance);
-    const elevationDeg = elevationRad * (180 / Math.PI);
+      // Calculate screen position
+      const screenPos = this.worldToRadarScreen(
+        target.position,
+        radarX,
+        radarY,
+        radarWidth,
+        radarHeight,
+        isHorizontal
+      );
 
-    return Math.max(0, Math.min(90, elevationDeg));
+      if (!screenPos) return;
+
+      // Draw target with state-based styling
+      let color = this.CRT_COLORS.TARGET_NORMAL;
+      let size = 3;
+
+      if (target === this.lockedTarget) {
+        color = this.CRT_COLORS.TARGET_LOCKED;
+        size = 5;
+
+        // Draw lock indicator
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(screenPos.x, screenPos.y, 8, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (target === this.trackedTarget) {
+        color = this.CRT_COLORS.TARGET_TRACKED;
+        size = 4;
+      }
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   /**
-   * Render game state overlay (game over, stage clear)
+   * Draw projectiles on radar
+   */
+  private drawProjectilesOnRadar(
+    ctx: CanvasRenderingContext2D,
+    radarX: number,
+    radarY: number,
+    radarWidth: number,
+    radarHeight: number,
+    isHorizontal: boolean
+  ): void {
+    this.projectiles.forEach(projectile => {
+      if (!projectile.isActive) return;
+
+      const screenPos = this.worldToRadarScreen(
+        projectile.position,
+        radarX,
+        radarY,
+        radarWidth,
+        radarHeight,
+        isHorizontal
+      );
+
+      if (!screenPos) return;
+
+      ctx.fillStyle = this.CRT_COLORS.PROJECTILE;
+      ctx.beginPath();
+      ctx.arc(screenPos.x, screenPos.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  /**
+   * Convert world position to radar screen coordinates
+   */
+  private worldToRadarScreen(
+    worldPos: Vector3,
+    radarX: number,
+    radarY: number,
+    radarWidth: number,
+    radarHeight: number,
+    isHorizontal: boolean
+  ): Vector2 | null {
+    const dx = worldPos.x - this.artilleryPosition.x;
+    const dy = worldPos.y - this.artilleryPosition.y;
+    const dz = worldPos.z - this.artilleryPosition.z;
+
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > this.maxRadarRange) return null;
+
+    if (isHorizontal) {
+      // Horizontal radar view (top-down)
+      const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
+      const normalizedBearing =
+        ((bearing - this.radarAzimuth + 180) % 360) - 180;
+
+      if (Math.abs(normalizedBearing) > 60) return null; // Outside radar arc
+
+      const screenX =
+        radarX + radarWidth / 2 + (normalizedBearing / 120) * (radarWidth - 20);
+      const screenY =
+        radarY +
+        radarHeight -
+        10 -
+        (distance / this.maxRadarRange) * (radarHeight - 20);
+
+      return new Vector2(screenX, screenY);
+    } else {
+      // Vertical radar view (side view)
+      const screenX =
+        radarX + 10 + (distance / this.maxRadarRange) * (radarWidth - 20);
+      const screenY =
+        radarY + radarHeight - 10 - (dz / 10000) * (radarHeight - 20); // 10km altitude max
+
+      return new Vector2(screenX, screenY);
+    }
+  }
+
+  /**
+   * Render game state overlay
    */
   private renderGameStateOverlay(): void {
-    // Game state overlay would be implemented here
-    // For now, we'll use a simple overlay on the main canvas
-    const canvas = this.canvasManager.getCanvas();
+    if (this.gameState === GameState.PLAYING) return;
+
     const ctx = this.canvasManager.context;
+    const centerX = this.canvasManager.width / 2;
+    const centerY = this.canvasManager.height / 2;
+
+    ctx.save();
+
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, this.canvasManager.width, this.canvasManager.height);
+
+    // State text
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
     if (this.gameState === GameState.GAME_OVER) {
-      ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = this.CRT_COLORS.CRITICAL_TEXT;
       ctx.font = 'bold 48px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2);
+      ctx.fillText('MISSION FAILED', centerX, centerY - 30);
 
-      ctx.font = '24px monospace';
-      ctx.fillText(
-        'Press R to restart',
-        canvas.width / 2,
-        canvas.height / 2 + 60
-      );
+      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+      ctx.font = '20px monospace';
+      ctx.fillText('Press R to restart', centerX, centerY + 30);
     } else if (this.gameState === GameState.STAGE_CLEAR) {
-      ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
       ctx.font = 'bold 48px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('STAGE CLEAR', canvas.width / 2, canvas.height / 2);
+      ctx.fillText('MISSION SUCCESS', centerX, centerY - 30);
 
-      ctx.font = '24px monospace';
-      ctx.fillText(
-        'Press SPACE to continue',
-        canvas.width / 2,
-        canvas.height / 2 + 60
-      );
+      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+      ctx.font = '20px monospace';
+      ctx.fillText('Press SPACE to continue', centerX, centerY + 30);
     }
+
+    ctx.restore();
   }
 
   /**
-   * Handle all mouse events through MouseHandler (GS-T01, GS-T02, GS-T04)
+   * Render CRT scan lines effect
+   */
+  private renderScanLines(): void {
+    const ctx = this.canvasManager.context;
+
+    ctx.save();
+    ctx.fillStyle = this.CRT_COLORS.SCAN_LINE;
+
+    // Horizontal scan lines
+    for (let y = 0; y < this.canvasManager.height; y += 3) {
+      ctx.fillRect(0, y, this.canvasManager.width, 1);
+    }
+
+    // Moving scan line
+    const movingLineY = (this.animationTime * 100) % this.canvasManager.height;
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+    ctx.fillRect(0, movingLineY, this.canvasManager.width, 2);
+
+    ctx.restore();
+  }
+
+  /**
+   * Handle mouse events
    */
   private handleMouseEvent(event: MouseEventData): void {
     switch (event.type) {
       case 'mousedown':
-        this.handleMouseDownEvent(event);
+        this.handleMouseDown(event);
         break;
       case 'mousemove':
-        this.handleMouseMoveEvent(event);
+        this.handleMouseMove(event);
         break;
       case 'mouseup':
-        this.handleMouseUpEvent(event);
+        this.handleMouseUp(event);
         break;
       case 'click':
-        if (event.button === 2) {
-          // Right click for target lock-on (GS-T04)
-          this.handleRightClickEvent(event);
-        }
+        this.handleMouseClick(event);
         break;
     }
   }
 
   /**
-   * Handle mouse down events (GS-T04)
+   * Handle mouse down events
    */
-  private handleMouseDownEvent(event: MouseEventData): void {
+  private handleMouseDown(event: MouseEventData): void {
     this.isMouseDragging = true;
-    this.lastMousePosition = {
-      x: event.position.canvas.x,
-      y: event.position.canvas.y,
-    };
+    this.lastMousePosition = new Vector2(
+      event.position.canvas.x,
+      event.position.canvas.y
+    );
   }
 
   /**
-   * Handle mouse move events (GS-T01, GS-T02)
+   * Handle mouse move events
    */
-  private handleMouseMoveEvent(event: MouseEventData): void {
+  private handleMouseMove(event: MouseEventData): void {
     if (!this.isMouseDragging) return;
 
-    // Calculate mouse movement delta
-    const deltaX = event.position.canvas.x - this.lastMousePosition.x;
-    const deltaY = event.position.canvas.y - this.lastMousePosition.y;
+    const currentPos = new Vector2(
+      event.position.canvas.x,
+      event.position.canvas.y
+    );
+    const deltaX = currentPos.x - this.lastMousePosition.x;
+    const deltaY = currentPos.y - this.lastMousePosition.y;
 
-    // Update radar azimuth based on horizontal mouse movement (GS-T01)
-    const azimuthDelta = RadarCoordinateConverter.mouseToAzimuthDelta(
-      deltaX,
-      this.mouseSensitivity
-    );
-    this.radarAzimuth = RadarCoordinateConverter.normalizeAzimuth(
-      this.radarAzimuth + azimuthDelta
-    );
-
-    // Update distance cursor based on vertical mouse movement (GS-T02)
-    const maxRange = 20000; // 20km
-    const canvasHeight = this.canvasManager.getCanvas().height;
-    const rangeDelta = RadarCoordinateConverter.mouseToRangeDelta(
-      deltaY,
-      maxRange,
-      canvasHeight
-    );
-    this.radarRangeCursor = Math.max(
-      0,
-      Math.min(maxRange, this.radarRangeCursor + rangeDelta)
+    // Update radar controls
+    this.radarAzimuth += deltaX * this.mouseSensitivity;
+    this.radarRange = Math.max(
+      1000,
+      Math.min(this.maxRadarRange, this.radarRange - deltaY * 50)
     );
 
-    // Update last mouse position
-    this.lastMousePosition = {
-      x: event.position.canvas.x,
-      y: event.position.canvas.y,
-    };
+    // Normalize azimuth
+    this.radarAzimuth = ((this.radarAzimuth % 360) + 360) % 360;
 
-    // Check for target tracking (GS-T03)
-    this.updateTargetTracking();
+    this.lastMousePosition = currentPos;
   }
 
   /**
    * Handle mouse up events
    */
-  private handleMouseUpEvent(_event: MouseEventData): void {
+  private handleMouseUp(_event: MouseEventData): void {
     this.isMouseDragging = false;
   }
 
   /**
-   * Handle right click for target lock-on (GS-T04)
+   * Handle mouse click events
    */
-  private handleRightClickEvent(_event: MouseEventData): void {
-    // Find target under cursor using improved collision detection
-    const targetUnderCursor = this.findTargetNearCursor();
+  private handleMouseClick(event: MouseEventData): void {
+    if (event.button === 0) {
+      // Left click - fire projectile
+      this.fireProjectile();
+    } else if (event.button === 2) {
+      // Right click - target lock/unlock
+      this.handleTargetLock();
+    }
+  }
 
-    if (targetUnderCursor) {
-      // Check if we're clicking on the same target that's already locked
-      if (this.lockedTarget === targetUnderCursor) {
-        // Unlock current target (toggle behavior)
+  /**
+   * Fire a projectile
+   */
+  private fireProjectile(): void {
+    const muzzleVelocity = 850; // m/s
+    const azimuthRad = this.azimuthAngle * (Math.PI / 180);
+    const elevationRad = this.elevationAngle * (Math.PI / 180);
+
+    const velocity = new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
+
+    const projectile: ProjectileState = {
+      id: `projectile-${Date.now()}`,
+      position: this.artilleryPosition.copy(),
+      velocity,
+      isActive: true,
+      spawnTime: this.gameTime,
+    };
+
+    this.projectiles.push(projectile);
+  }
+
+  /**
+   * Handle target lock/unlock
+   */
+  private handleTargetLock(): void {
+    const nearestTarget = this.findTargetNearCursor();
+
+    if (nearestTarget) {
+      if (this.lockedTarget === nearestTarget) {
+        // Unlock
         this.lockedTarget = null;
         this.targetingState = TargetingState.NO_TARGET;
-        this.trackedTarget = null;
       } else {
-        // Lock onto new target (GS-T04)
-        this.lockedTarget = targetUnderCursor;
+        // Lock onto new target
+        this.lockedTarget = nearestTarget;
         this.targetingState = TargetingState.LOCKED_ON;
-        this.trackedTarget = targetUnderCursor;
-
-        // Immediately update radar to track the locked target
-        this.updateRadarToTrackTarget(targetUnderCursor);
+        this.updateRadarToTarget(nearestTarget);
       }
-    } else {
-      // Right-click in empty space unlocks current target
-      if (this.lockedTarget) {
-        this.lockedTarget = null;
-        this.targetingState = TargetingState.NO_TARGET;
-        this.trackedTarget = null;
-      }
+    } else if (this.lockedTarget) {
+      // Unlock current target
+      this.lockedTarget = null;
+      this.targetingState = TargetingState.NO_TARGET;
     }
   }
 
   /**
-   * Handle mouse wheel events (GS-T02 alternative)
+   * Find target near cursor
    */
-  private handleWheel(event: WheelEvent): void {
-    const maxRange = 20000; // 20km
-    const scrollSensitivity = 100; // meters per wheel tick
-
-    // Update distance cursor based on wheel movement
-    const rangeDelta =
-      event.deltaY > 0 ? scrollSensitivity : -scrollSensitivity;
-    this.radarRangeCursor = Math.max(
-      0,
-      Math.min(maxRange, this.radarRangeCursor + rangeDelta)
+  private findTargetNearCursor(): TargetState | null {
+    // For now, return the first active target
+    // In a full implementation, this would check cursor position against radar screen positions
+    return (
+      this.targets.find(t => !t.isDestroyed && this.gameTime >= t.spawnTime) ||
+      null
     );
-
-    // Check for target tracking after cursor movement
-    this.updateTargetTracking();
-
-    event.preventDefault();
   }
 
   /**
-   * Update radar to immediately track a target (for lock-on)
+   * Update radar to track target
    */
-  private updateRadarToTrackTarget(target: Target): void {
-    // Calculate target azimuth
-    const targetAzimuth = RadarCoordinateConverter.calculateAzimuth(
-      this.artillery.position,
-      target.position
-    );
-    this.radarAzimuth = targetAzimuth;
+  private updateRadarToTarget(target: TargetState): void {
+    const dx = target.position.x - this.artilleryPosition.x;
+    const dy = target.position.y - this.artilleryPosition.y;
 
-    // Update range cursor to target distance
-    const targetDistance = target.distanceFrom(this.artillery.position);
-    this.radarRangeCursor = targetDistance;
-  }
-
-  /**
-   * Update target tracking state (GS-T03)
-   */
-  private updateTargetTracking(): void {
-    // If a target is locked, continuously update radar to follow it (GS-T05)
-    if (this.lockedTarget && !this.lockedTarget.isDestroyed) {
-      // Automatic continuous tracking for locked targets
-      const targetAzimuth = RadarCoordinateConverter.calculateAzimuth(
-        this.artillery.position,
-        this.lockedTarget.position
-      );
-      this.radarAzimuth = targetAzimuth;
-
-      // Update range cursor to target distance for real-time tracking
-      const targetDistance = this.lockedTarget.distanceFrom(
-        this.artillery.position
-      );
-      this.radarRangeCursor = targetDistance;
-
-      // Maintain locked state
-      this.targetingState = TargetingState.LOCKED_ON;
-      this.trackedTarget = this.lockedTarget;
-    } else {
-      // Clean up if locked target was destroyed
-      if (this.lockedTarget && this.lockedTarget.isDestroyed) {
-        this.lockedTarget = null;
-      }
-
-      // Check for target under cursor for TRACKING state (GS-T03)
-      const targetUnderCursor = this.findTargetNearCursor();
-
-      if (targetUnderCursor) {
-        this.targetingState = TargetingState.TRACKING;
-        this.trackedTarget = targetUnderCursor;
-      } else {
-        this.targetingState = TargetingState.NO_TARGET;
-        this.trackedTarget = null;
-      }
-    }
-  }
-
-  /**
-   * Draw target with state-based visual feedback (GS-T03)
-   */
-  private drawTargetWithState(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    target: Target
-  ): void {
-    let fillColor = '#ff0000'; // Default red
-    let strokeColor = '#ff0000';
-    let labelText = 'TGT';
-    let symbolRadius = 4;
-
-    // Determine target state and apply visual feedback
-    if (target === this.lockedTarget) {
-      // LOCKED ON state - bright yellow with pulsing effect
-      fillColor = '#ffff00';
-      strokeColor = '#ffffff';
-      labelText = 'LOCK';
-      symbolRadius = 6;
-
-      // Draw lock-on reticle
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(x, y, 12, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Draw cross-hairs
-      ctx.beginPath();
-      ctx.moveTo(x - 8, y);
-      ctx.lineTo(x + 8, y);
-      ctx.moveTo(x, y - 8);
-      ctx.lineTo(x, y + 8);
-      ctx.stroke();
-    } else if (
-      target === this.trackedTarget &&
-      this.targetingState === TargetingState.TRACKING
-    ) {
-      // TRACKING state - orange with highlight
-      fillColor = '#ff8800';
-      strokeColor = '#ffaa00';
-      labelText = 'TRCK';
-      symbolRadius = 5;
-
-      // Draw tracking indicator
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Draw main target symbol
-    ctx.fillStyle = fillColor;
-    ctx.beginPath();
-    ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Draw target border
-    if (target === this.trackedTarget || target === this.lockedTarget) {
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(x, y, symbolRadius, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Draw target label
-    ctx.fillStyle = fillColor;
-    ctx.font = '10px Consolas';
-    ctx.textAlign = 'center';
-    ctx.fillText(labelText, x, y - 10);
-  }
-
-  /**
-   * Calculate cursor screen position on horizontal radar
-   */
-  private calculateCursorScreenPosition(
-    width: number,
-    height: number,
-    maxRange: number
-  ): ScreenCoordinates {
-    const centerX = width / 2;
-    const gunY = height - 20;
-    const maxRenderRange = height - 40;
-    const scale = maxRenderRange / maxRange;
-
-    // Distance cursor position
-    const cursorY = gunY - this.radarRangeCursor * scale;
-
-    // Cursor is always at center X (radar center line)
-    return { x: centerX, y: cursorY };
-  }
-
-  private findTargetNearCursor(): Target | null {
-    // Get horizontal radar canvas for coordinate calculations
-    const horizontalRadarCanvas = document.getElementById(
-      'horizontal-radar-ui'
-    ) as HTMLCanvasElement;
-    if (!horizontalRadarCanvas) return null;
-
-    const width = horizontalRadarCanvas.width;
-    const height = horizontalRadarCanvas.height;
-    const maxRange = 20000; // 20km radar range
-
-    // Calculate cursor screen position
-    const cursorScreenPos = this.calculateCursorScreenPosition(
-      width,
-      height,
-      maxRange
-    );
-
-    let closestTarget: Target | null = null;
-    let closestDistance = Infinity;
-    const screenTolerance = 15; // pixels
-
-    for (const target of this.targets) {
-      if (target.isDestroyed) continue;
-
-      const dx = target.position.x - this.artillery.position.x;
-      const dy = target.position.y - this.artillery.position.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      // Only consider targets within radar range
-      if (distance <= maxRange) {
-        // Convert target position to screen coordinates
-        const targetScreenPos =
-          RadarCoordinateConverter.worldToHorizontalRadarScreen(
-            target.position,
-            this.artillery.position,
-            this.radarAzimuth,
-            { width, height },
-            maxRange
-          );
-
-        // Check if target is within screen tolerance of cursor
-        if (
-          RadarCoordinateConverter.isTargetUnderCursor(
-            targetScreenPos,
-            cursorScreenPos,
-            screenTolerance
-          )
-        ) {
-          // Find the closest target if multiple are under cursor
-          const screenDistance = Math.sqrt(
-            Math.pow(targetScreenPos.x - cursorScreenPos.x, 2) +
-              Math.pow(targetScreenPos.y - cursorScreenPos.y, 2)
-          );
-
-          if (screenDistance < closestDistance) {
-            closestDistance = screenDistance;
-            closestTarget = target;
-          }
-        }
-      }
-    }
-
-    return closestTarget;
+    this.radarAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+    this.radarRange = Math.sqrt(dx * dx + dy * dy);
   }
 
   /**
    * Handle keyboard events
    */
-  private handleKeyDown(event: KeyboardEvent): void {
+  private handleKeyDown = (event: KeyboardEvent): void => {
     switch (event.key) {
       case 'r':
       case 'R':
         if (this.gameState === GameState.GAME_OVER) {
-          this.restartGame();
+          this.initializeGame();
         }
         break;
       case ' ':
@@ -1530,29 +1107,10 @@ export class GameScene {
           this.onSceneTransition({ type: SceneType.STAGE_SELECT });
         }
         break;
+      case 'f':
+      case 'F':
+        this.fireProjectile();
+        break;
     }
-  }
-
-  /**
-   * Restart the game
-   */
-  private restartGame(): void {
-    this.gameState = GameState.PLAYING;
-    this.startTime = Date.now();
-    this.lockedTarget = null;
-    this.initializeGame();
-  }
-
-  /**
-   * Cleanup resources
-   */
-  destroy(): void {
-    this.gameLoop.stop();
-    // Cleanup MouseHandler
-    this.mouseHandler.destroy();
-    // Remove manual event listeners
-    const canvas = this.canvasManager.getCanvas();
-    canvas.removeEventListener('wheel', this.handleWheel);
-    window.removeEventListener('keydown', this.handleKeyDown);
-  }
+  };
 }

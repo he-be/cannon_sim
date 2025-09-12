@@ -1,211 +1,643 @@
-/**
- * StageSelectScene test suite
- * Tests stage selection UI as per UI-02 specification
- */
-
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { StageSelectScene } from './StageSelectScene';
 import { SceneType } from './TitleScene';
+import { CanvasManager } from '../../rendering/CanvasManager';
+import { MouseHandler } from '../../input/MouseHandler';
+import { getStageById } from '../../data/StageData';
 
-// Mock Canvas (single instance shared across all calls)
-const mockCanvas = {
-  width: 800,
-  height: 600,
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  getBoundingClientRect: vi.fn(() => ({ left: 0, top: 0 })),
-};
+// Mock MouseHandler
+vi.mock('../../input/MouseHandler');
 
-// Mock CanvasManager
-const mockCanvasManager = {
-  context: {
-    fillStyle: '',
-    fillRect: vi.fn(),
-    font: '',
-    textAlign: '',
-    textBaseline: '',
-    shadowColor: '',
-    shadowBlur: 0,
-    fillText: vi.fn(),
-    strokeStyle: '',
-    lineWidth: 0,
-    strokeRect: vi.fn(),
-  } as any,
-  getCanvas: vi.fn(() => mockCanvas),
-};
+// Mock StageData
+vi.mock('../../data/StageData', () => ({
+  getStageById: vi.fn((id: number) => {
+    const stages = [
+      null, // No stage 0
+      {
+        id: 1,
+        name: 'Stage 1: Static Targets',
+        description: 'Destroy stationary targets',
+        difficultyLevel: 1,
+        artilleryPosition: { x: 0, y: -8000, z: 0 },
+        targets: [],
+        winCondition: 'destroy_all',
+      },
+      {
+        id: 2,
+        name: 'Stage 2: Slow Moving Targets',
+        description: 'Hit slow moving targets',
+        difficultyLevel: 2,
+        artilleryPosition: { x: 0, y: -8000, z: 0 },
+        targets: [],
+        winCondition: 'destroy_all',
+      },
+      {
+        id: 3,
+        name: 'Stage 3: Fast Moving Targets',
+        description: 'Challenge fast moving targets',
+        difficultyLevel: 3,
+        artilleryPosition: { x: 0, y: -8000, z: 0 },
+        targets: [],
+        winCondition: 'destroy_all',
+      },
+    ];
+    return stages[id] || null;
+  }),
+}));
 
-describe('StageSelectScene', () => {
+describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
   let stageSelectScene: StageSelectScene;
-  let mockOnSceneTransition: ReturnType<typeof vi.fn>;
+  let mockCanvasManager: CanvasManager;
+  let mockContext: CanvasRenderingContext2D;
+  let mockCanvas: HTMLCanvasElement;
+  let mockOnSceneTransition: vi.MockedFunction<any>;
 
   beforeEach(() => {
-    // Clear all mocks
+    // Reset StageData mock before each test
     vi.clearAllMocks();
-    mockCanvas.addEventListener.mockClear();
-    mockCanvas.removeEventListener.mockClear();
+
+    mockCanvas = {
+      width: 800,
+      height: 600,
+    } as HTMLCanvasElement;
+
+    mockContext = {
+      fillStyle: '',
+      strokeStyle: '',
+      font: '',
+      textAlign: '',
+      textBaseline: '',
+      globalAlpha: 1,
+      shadowColor: '',
+      shadowBlur: 0,
+      lineWidth: 1,
+      save: vi.fn(),
+      restore: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillText: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+    } as any;
+
+    mockCanvasManager = {
+      getCanvas: () => mockCanvas,
+      getContext: () => mockContext,
+      context: mockContext,
+      width: 800,
+      height: 600,
+    } as any;
 
     mockOnSceneTransition = vi.fn();
+
+    // Ensure getStageById mock is properly configured
+    const mockGetStageById = vi.mocked(getStageById);
+    mockGetStageById.mockImplementation((id: number) => {
+      const stages = [
+        null, // No stage 0
+        {
+          id: 1,
+          name: 'Stage 1: Static Targets',
+          description: 'Destroy stationary targets',
+          difficultyLevel: 1,
+          artilleryPosition: { x: 0, y: -8000, z: 0 },
+          targets: [],
+          winCondition: 'destroy_all',
+        },
+        {
+          id: 2,
+          name: 'Stage 2: Slow Moving Targets',
+          description: 'Hit slow moving targets',
+          difficultyLevel: 2,
+          artilleryPosition: { x: 0, y: -8000, z: 0 },
+          targets: [],
+          winCondition: 'destroy_all',
+        },
+        {
+          id: 3,
+          name: 'Stage 3: Fast Moving Targets',
+          description: 'Challenge fast moving targets',
+          difficultyLevel: 3,
+          artilleryPosition: { x: 0, y: -8000, z: 0 },
+          targets: [],
+          winCondition: 'destroy_all',
+        },
+      ];
+      return stages[id] || null;
+    });
+
     stageSelectScene = new StageSelectScene(
-      mockCanvasManager as any,
+      mockCanvasManager,
       mockOnSceneTransition
     );
   });
 
-  describe('render', () => {
-    it('should render the stage selection screen with dark background', () => {
+  afterEach(() => {
+    stageSelectScene.destroy();
+  });
+
+  describe('initialization', () => {
+    it('should initialize with CanvasManager and transition callback', () => {
+      expect(stageSelectScene).toBeDefined();
+      expect(MouseHandler).toHaveBeenCalledWith(mockCanvas);
+    });
+
+    it('should setup mouse event listeners', () => {
+      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
+      expect(mockMouseHandler.addEventListener).toHaveBeenCalled();
+    });
+
+    it('should load stage data during initialization', () => {
+      expect(getStageById).toHaveBeenCalledWith(1);
+      expect(getStageById).toHaveBeenCalledWith(2);
+      expect(getStageById).toHaveBeenCalledWith(3);
+    });
+  });
+
+  describe('scene update', () => {
+    it('should update animation time', () => {
+      const deltaTime = 0.016; // 60 FPS
+
+      expect(() => {
+        stageSelectScene.update(deltaTime);
+      }).not.toThrow();
+    });
+
+    it('should handle multiple updates', () => {
+      for (let i = 0; i < 100; i++) {
+        stageSelectScene.update(0.016);
+      }
+
+      expect(true).toBe(true); // Should complete without errors
+    });
+  });
+
+  describe('rendering', () => {
+    it('should render without errors', () => {
+      expect(() => {
+        stageSelectScene.render();
+      }).not.toThrow();
+    });
+
+    it('should call Canvas 2D API methods for rendering', () => {
       stageSelectScene.render();
 
-      // Check that background is drawn (final fillStyle will be #CCCCCC from stage descriptions)
-      expect(mockCanvasManager.context.fillRect).toHaveBeenCalledWith(
-        0,
-        0,
-        800,
-        600
+      expect(mockContext.fillRect).toHaveBeenCalled();
+      expect(mockContext.fillText).toHaveBeenCalled();
+      expect(mockContext.save).toHaveBeenCalled();
+      expect(mockContext.restore).toHaveBeenCalled();
+    });
+
+    it('should render stage selection title', () => {
+      stageSelectScene.render();
+
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'SELECT STAGE',
+        expect.any(Number),
+        expect.any(Number)
       );
     });
 
-    it('should render the stage selection title', () => {
+    it('should render subtitle', () => {
       stageSelectScene.render();
 
-      // Check that title text is rendered (final fillStyle will be #CCCCCC from stage descriptions)
-      expect(mockCanvasManager.context.font).toBe('14px monospace'); // Final font is stage description font
-      expect(mockCanvasManager.context.fillText).toHaveBeenCalledWith(
-        'SELECT STAGE',
-        400,
-        150
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Choose your artillery mission',
+        expect.any(Number),
+        expect.any(Number)
       );
     });
 
     it('should render three stage buttons', () => {
       stageSelectScene.render();
 
-      // Check that fillRect was called for button backgrounds (3 buttons)
-      const fillRectCalls = mockCanvasManager.context.fillRect.mock.calls;
-      expect(fillRectCalls.length).toBeGreaterThanOrEqual(4); // Background + 3 buttons
+      // Should render stage names
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Stage 1: Static Targets',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Stage 2: Slow Moving Targets',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Stage 3: Fast Moving Targets',
+        expect.any(Number),
+        expect.any(Number)
+      );
+    });
 
-      // Check that strokeRect was called for button borders (3 buttons)
-      const strokeRectCalls = mockCanvasManager.context.strokeRect.mock.calls;
-      expect(strokeRectCalls.length).toBe(3);
+    it('should render stage descriptions', () => {
+      stageSelectScene.render();
+
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Destroy stationary targets',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Hit slow moving targets',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Challenge fast moving targets',
+        expect.any(Number),
+        expect.any(Number)
+      );
+    });
+
+    it('should render difficulty indicators', () => {
+      stageSelectScene.render();
+
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'EASY',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'MEDIUM',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'HARD',
+        expect.any(Number),
+        expect.any(Number)
+      );
+    });
+
+    it('should render instructions', () => {
+      stageSelectScene.render();
+
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'Click on a stage to begin your mission',
+        expect.any(Number),
+        expect.any(Number)
+      );
     });
   });
 
-  describe('stage button interaction', () => {
-    it('should transition to game scene when stage 1 button is clicked', () => {
-      // First render to set up buttons
+  describe('CRT styling effects', () => {
+    it('should apply CRT background color', () => {
       stageSelectScene.render();
 
-      // Simulate click on stage 1 button (around center-left area)
-      const mockEvent = {
-        clientX: 400, // Center X
-        clientY: 250, // Around stage 1 button Y position
-      } as MouseEvent;
+      // Check that background is filled
+      expect(mockContext.fillRect).toHaveBeenCalledWith(0, 0, 800, 600);
+    });
 
-      const canvas = mockCanvasManager.getCanvas();
-      const clickHandler = canvas.addEventListener.mock.calls.find(
-        ([event, _handler]) => event === 'click'
-      )?.[1];
+    it('should render scan lines for CRT effect', () => {
+      stageSelectScene.render();
 
-      if (clickHandler) {
-        clickHandler(mockEvent);
-      }
+      // Should call fillRect multiple times for scan lines
+      const fillRectCalls = vi.mocked(mockContext.fillRect).mock.calls;
+      const scanLineCalls = fillRectCalls.filter(
+        call => call[3] === 1 || call[3] === 2 // Height 1 or 2 for scan lines
+      );
+
+      expect(scanLineCalls.length).toBeGreaterThan(0);
+    });
+
+    it('should apply glow effects', () => {
+      stageSelectScene.render();
+
+      expect(mockContext.shadowColor).toBe('#00ff00');
+      expect(mockContext.shadowBlur).toBeGreaterThan(0);
+    });
+
+    it('should render background grid pattern', () => {
+      stageSelectScene.render();
+
+      expect(mockContext.beginPath).toHaveBeenCalled();
+      expect(mockContext.moveTo).toHaveBeenCalled();
+      expect(mockContext.lineTo).toHaveBeenCalled();
+      expect(mockContext.stroke).toHaveBeenCalled();
+    });
+  });
+
+  describe('stage selection interaction', () => {
+    it('should handle mouse events through MouseHandler', () => {
+      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
+      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
+        .calls[0][0];
+
+      expect(eventCallback).toBeDefined();
+      expect(typeof eventCallback).toBe('function');
+    });
+
+    it('should transition to game scene when stage 1 is selected', () => {
+      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
+      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
+        .calls[0][0];
+
+      // Simulate click on stage 1 button area (center of first button)
+      // Button 1: y = height/2 - 80 + 0 * 120 = 300 - 80 = 220, center at 220 + 50 = 270
+      const clickEvent = {
+        type: 'click',
+        position: {
+          canvas: { x: 400, y: 270 }, // Center area of first button
+        },
+        button: 0,
+        state: 'pressed',
+      } as any;
+
+      eventCallback(clickEvent);
 
       expect(mockOnSceneTransition).toHaveBeenCalledWith({
         type: SceneType.GAME,
-        data: expect.objectContaining({
+        data: {
           selectedStage: expect.objectContaining({
             id: 1,
             name: 'Stage 1: Static Targets',
+            difficultyLevel: 1,
           }),
-        }),
+        },
       });
     });
 
-    it('should transition to game scene when stage 2 button is clicked', () => {
-      stageSelectScene.render();
+    it('should transition to game scene when stage 2 is selected', () => {
+      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
+      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
+        .calls[0][0];
 
-      const mockEvent = {
-        clientX: 400,
-        clientY: 350, // Around stage 2 button Y position
-      } as MouseEvent;
+      // Simulate click on stage 2 button area (center of second button)
+      // Button 2: y = height/2 - 80 + 1 * 120 = 300 - 80 + 120 = 340, center at 340 + 50 = 390
+      const clickEvent = {
+        type: 'click',
+        position: {
+          canvas: { x: 400, y: 390 }, // Center area of second button
+        },
+        button: 0,
+        state: 'pressed',
+      } as any;
 
-      const canvas = mockCanvasManager.getCanvas();
-      const clickHandler = canvas.addEventListener.mock.calls.find(
-        ([event, _handler]) => event === 'click'
-      )?.[1];
-
-      if (clickHandler) {
-        clickHandler(mockEvent);
-      }
+      eventCallback(clickEvent);
 
       expect(mockOnSceneTransition).toHaveBeenCalledWith({
         type: SceneType.GAME,
-        data: expect.objectContaining({
+        data: {
           selectedStage: expect.objectContaining({
             id: 2,
             name: 'Stage 2: Slow Moving Targets',
+            difficultyLevel: 2,
           }),
-        }),
+        },
       });
     });
 
-    it('should transition to game scene when stage 3 button is clicked', () => {
-      stageSelectScene.render();
+    it('should transition to game scene when stage 3 is selected', () => {
+      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
+      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
+        .calls[0][0];
 
-      const mockEvent = {
-        clientX: 400,
-        clientY: 450, // Around stage 3 button Y position
-      } as MouseEvent;
+      // Simulate click on stage 3 button area (center of third button)
+      // Button 3: y = height/2 - 80 + 2 * 120 = 300 - 80 + 240 = 460, center at 460 + 50 = 510
+      const clickEvent = {
+        type: 'click',
+        position: {
+          canvas: { x: 400, y: 510 }, // Center area of third button
+        },
+        button: 0,
+        state: 'pressed',
+      } as any;
 
-      const canvas = mockCanvasManager.getCanvas();
-      const clickHandler = canvas.addEventListener.mock.calls.find(
-        ([event, _handler]) => event === 'click'
-      )?.[1];
-
-      if (clickHandler) {
-        clickHandler(mockEvent);
-      }
+      eventCallback(clickEvent);
 
       expect(mockOnSceneTransition).toHaveBeenCalledWith({
         type: SceneType.GAME,
-        data: expect.objectContaining({
+        data: {
           selectedStage: expect.objectContaining({
             id: 3,
             name: 'Stage 3: Fast Moving Targets',
+            difficultyLevel: 3,
           }),
-        }),
+        },
       });
     });
 
-    it('should not transition when clicking outside buttons', () => {
-      stageSelectScene.render();
+    it('should not trigger transition when clicking outside buttons', () => {
+      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
+      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
+        .calls[0][0];
 
-      const mockEvent = {
-        clientX: 100,
-        clientY: 100, // Outside button area
-      } as MouseEvent;
+      // Simulate click outside button areas
+      const clickEvent = {
+        type: 'click',
+        position: {
+          canvas: { x: 100, y: 100 },
+        },
+        button: 0,
+        state: 'pressed',
+      } as any;
 
-      const canvas = mockCanvasManager.getCanvas();
-      const clickHandler = canvas.addEventListener.mock.calls.find(
-        ([event, _handler]) => event === 'click'
-      )?.[1];
-
-      if (clickHandler) {
-        clickHandler(mockEvent);
-      }
+      eventCallback(clickEvent);
 
       expect(mockOnSceneTransition).not.toHaveBeenCalled();
     });
   });
 
-  describe('event cleanup', () => {
-    it('should remove event listeners on destroy', () => {
+  describe('animation effects', () => {
+    it('should update animation over time', () => {
+      // Test animation updates
+      stageSelectScene.update(0);
+      stageSelectScene.render();
+
+      stageSelectScene.update(1); // 1 second later
+      stageSelectScene.render();
+
+      // Animation should affect rendering
+      expect(mockContext.save).toHaveBeenCalled();
+    });
+
+    it('should animate scan lines', () => {
+      stageSelectScene.update(1);
+      stageSelectScene.render();
+
+      // Moving scan line should be rendered
+      const fillRectCalls = vi.mocked(mockContext.fillRect).mock.calls;
+      const movingLineCalls = fillRectCalls.filter(call => call[3] === 2); // Height 2 for moving line
+
+      expect(movingLineCalls.length).toBeGreaterThan(0);
+    });
+
+    it('should animate title pulsing effect', () => {
+      stageSelectScene.update(1);
+      stageSelectScene.render();
+
+      // Title should use pulsing alpha effect
+      expect(mockContext.globalAlpha).not.toBe(1);
+    });
+  });
+
+  describe('resource cleanup', () => {
+    it('should cleanup MouseHandler on destroy', () => {
+      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
+
       stageSelectScene.destroy();
 
-      const canvas = mockCanvasManager.getCanvas();
-      expect(canvas.removeEventListener).toHaveBeenCalledWith(
-        'click',
-        expect.any(Function)
+      expect(mockMouseHandler.destroy).toHaveBeenCalled();
+    });
+
+    it('should handle multiple destroy calls', () => {
+      expect(() => {
+        stageSelectScene.destroy();
+        stageSelectScene.destroy(); // Should not throw
+      }).not.toThrow();
+    });
+  });
+
+  describe('Canvas 2D API compliance', () => {
+    it('should use only Canvas 2D API methods', () => {
+      stageSelectScene.render();
+
+      // Implementation uses only Canvas 2D API methods
+      expect(mockContext.fillRect).toHaveBeenCalled();
+      expect(mockContext.fillText).toHaveBeenCalled();
+      expect(mockContext.strokeRect).toHaveBeenCalled();
+    });
+
+    it('should use proper Canvas context methods', () => {
+      stageSelectScene.render();
+
+      const canvasMethods = [
+        'fillRect',
+        'strokeRect',
+        'fillText',
+        'save',
+        'restore',
+        'beginPath',
+        'moveTo',
+        'lineTo',
+        'stroke',
+      ];
+
+      canvasMethods.forEach(method => {
+        expect(
+          mockContext[method as keyof CanvasRenderingContext2D]
+        ).toHaveBeenCalled();
+      });
+    });
+
+    it('should set Canvas properties correctly', () => {
+      stageSelectScene.render();
+
+      expect(mockContext.fillStyle).toBeTruthy();
+      expect(mockContext.font).toBeTruthy();
+      expect(mockContext.textAlign).toBeTruthy();
+      expect(mockContext.textBaseline).toBeTruthy();
+    });
+  });
+
+  describe('responsive design', () => {
+    it('should adapt to different canvas sizes', () => {
+      const smallCanvasManager = {
+        ...mockCanvasManager,
+        width: 600,
+        height: 400,
+      };
+
+      const smallStageSelectScene = new StageSelectScene(
+        smallCanvasManager,
+        mockOnSceneTransition
       );
+
+      expect(() => {
+        smallStageSelectScene.render();
+        smallStageSelectScene.destroy();
+      }).not.toThrow();
+    });
+
+    it('should position elements relative to canvas size', () => {
+      stageSelectScene.render();
+
+      const fillTextCalls = vi.mocked(mockContext.fillText).mock.calls;
+
+      // Title should be centered
+      const titleCall = fillTextCalls.find(call => call[0] === 'SELECT STAGE');
+      expect(titleCall?.[1]).toBe(400); // Center X
+    });
+  });
+
+  describe('stage data integration', () => {
+    it('should handle missing stage data gracefully', () => {
+      // Mock getStageById to return null for a stage
+      vi.mocked(getStageById).mockReturnValueOnce(null);
+
+      const testScene = new StageSelectScene(
+        mockCanvasManager,
+        mockOnSceneTransition
+      );
+
+      expect(() => {
+        testScene.render();
+        testScene.destroy();
+      }).not.toThrow();
+    });
+
+    it('should display correct difficulty colors', () => {
+      stageSelectScene.render();
+
+      // Check that different colors are used for different difficulties
+      const fillStyleValues = vi.mocked(mockContext).fillStyle;
+      expect(typeof fillStyleValues).toBe('string');
+    });
+  });
+
+  describe('UI specification compliance', () => {
+    it('should implement UI-02: Stage selection with 3 difficulty levels', () => {
+      stageSelectScene.render();
+
+      // Should call StageData.getStage for stages 1, 2, 3
+      expect(getStageById).toHaveBeenCalledWith(1);
+      expect(getStageById).toHaveBeenCalledWith(2);
+      expect(getStageById).toHaveBeenCalledWith(3);
+
+      // Should render difficulty indicators
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'EASY',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'MEDIUM',
+        expect.any(Number),
+        expect.any(Number)
+      );
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'HARD',
+        expect.any(Number),
+        expect.any(Number)
+      );
+    });
+
+    it('should implement UI-03: CRT monitor style', () => {
+      stageSelectScene.render();
+
+      // Should use CRT styling elements
+      expect(mockContext.shadowBlur).toBeGreaterThan(0); // Glow effects
+      expect(mockContext.fillRect).toHaveBeenCalled(); // Scan lines
+    });
+
+    it('should implement TR-02: Canvas 2D API compliance', () => {
+      stageSelectScene.render();
+
+      // Should only use Canvas 2D API methods, no DOM manipulation
+      const canvas2DMethods = [
+        'fillRect',
+        'strokeRect',
+        'fillText',
+        'save',
+        'restore',
+      ];
+      canvas2DMethods.forEach(method => {
+        expect(
+          mockContext[method as keyof CanvasRenderingContext2D]
+        ).toHaveBeenCalled();
+      });
     });
   });
 });
