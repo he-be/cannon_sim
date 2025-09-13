@@ -18,6 +18,7 @@ import {
   AccelerationFunction,
 } from '../../physics/PhysicsEngine';
 import { Forces } from '../../physics/Forces';
+import { TrajectoryRenderer } from '../../rendering/TrajectoryRenderer';
 import {
   PHYSICS_CONSTANTS,
   GAME_CONSTANTS,
@@ -69,6 +70,7 @@ export class GameScene {
   private config: GameSceneConfig;
   private effectRenderer: EffectRenderer;
   private physicsEngine: PhysicsEngine;
+  private trajectoryRenderer: TrajectoryRenderer;
 
   // Game state
   private gameState: GameState = GameState.PLAYING;
@@ -153,11 +155,35 @@ export class GameScene {
         PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
       );
 
+      // Add Coriolis force for realistic ballistics (T006 complete implementation)
+      const earthAngularVelocity = new Vector3(0, 0, 7.2921159e-5); // Earth's rotation rate (rad/s)
+      const coriolis = Forces.coriolis(
+        mass,
+        earthAngularVelocity,
+        state.velocity
+      );
+
       // Convert force to acceleration: a = F/m
-      const totalForce = Forces.sum(gravity, drag);
+      const totalForce = Forces.sum(gravity, drag, coriolis);
       return totalForce.multiply(1 / mass);
     };
     this.physicsEngine = new PhysicsEngine(accelerationFunction);
+
+    // Initialize trajectory renderer
+    this.trajectoryRenderer = new TrajectoryRenderer({
+      maxTrailLength: 200,
+      trailFadeTime: 5000, // milliseconds
+      projectileSize: 2,
+      trailWidth: 1,
+      showVelocityVector: false,
+      showPredictedPath: true,
+      colors: {
+        active: CRT_COLORS.PRIMARY_TEXT,
+        fading: CRT_COLORS.SECONDARY_TEXT,
+        impact: CRT_COLORS.WARNING_TEXT,
+        predicted: CRT_COLORS.TARGET_TRACKED,
+      },
+    });
 
     // Initialize artillery position
     this.artilleryPosition = new Vector3(
@@ -218,6 +244,11 @@ export class GameScene {
       this.handleMouseEvent(event);
     });
 
+    // Disable right-click context menu to enable right-click targeting
+    this.canvasManager.getCanvas().addEventListener('contextmenu', e => {
+      e.preventDefault();
+    });
+
     // Keyboard events for game controls
     window.addEventListener('keydown', event => this.handleKeyDown(event));
   }
@@ -245,6 +276,9 @@ export class GameScene {
 
     // Update targeting system
     this.updateTargeting();
+
+    // Update trajectory prediction (UI-13/UI-16)
+    this.updateTrajectoryPrediction();
 
     // Check win/lose conditions
     this.checkGameConditions();
@@ -325,6 +359,13 @@ export class GameScene {
       projectile.position = newState.position;
       projectile.velocity = newState.velocity;
 
+      // Update projectile trajectory trail (T023 requirement)
+      this.trajectoryRenderer.updateTrajectory(
+        projectile.id,
+        [projectile.position],
+        projectile.velocity
+      );
+
       // Remove if hit ground or out of range
       if (
         projectile.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL ||
@@ -338,6 +379,9 @@ export class GameScene {
             'projectile_impact'
           );
         }
+
+        // Remove trajectory trail when projectile is destroyed (T023)
+        this.trajectoryRenderer.removeTrajectory(projectile.id);
         this.projectiles.splice(i, 1);
       }
     }
@@ -686,6 +730,25 @@ export class GameScene {
     );
     y += lineHeight * 1.8;
 
+    // Lock On Button
+    const lockButtonY = y + 5;
+    const lockButtonText =
+      this.targetingState === TargetingState.TRACKING
+        ? 'LOCK ON'
+        : this.targetingState === TargetingState.LOCKED_ON
+          ? 'UNLOCK'
+          : 'LOCK ON';
+    this.renderButton(
+      ctx,
+      x + 10,
+      lockButtonY,
+      buttonWidth,
+      buttonHeight,
+      lockButtonText,
+      'lock-button'
+    );
+    y += lineHeight * 1.8;
+
     // Cancel Tracking Button
     const cancelButtonY = y + 5;
     this.renderButton(
@@ -837,6 +900,9 @@ export class GameScene {
       true
     );
 
+    // Draw trajectory prediction lines (UI-13 requirement)
+    this.trajectoryRenderer.renderOnHorizontalRadar(this.canvasManager);
+
     ctx.restore();
   }
 
@@ -882,6 +948,9 @@ export class GameScene {
       radarHeight,
       false
     );
+
+    // Draw trajectory prediction lines (UI-16 requirement)
+    this.trajectoryRenderer.renderOnVerticalRadar(this.canvasManager);
 
     // Draw target information panel below
     const infoTop = radarTop + radarHeight + 10;
@@ -1427,16 +1496,19 @@ export class GameScene {
     );
     const clickedElement = this.getClickedUIElement(mousePos);
 
+    console.log(
+      `Mouse click: button=${event.button}, element=${clickedElement}, targetingState=${this.targetingState}`
+    );
+
     if (event.button === 0) {
-      // Left click
+      // Left click - only handle button clicks, no default projectile firing
       if (clickedElement && this.isButton(clickedElement)) {
         this.handleButtonClick(clickedElement);
-      } else {
-        // Default behavior - fire projectile
-        this.fireProjectile();
       }
+      // Removed: Default behavior - fire projectile (UI-07 violation fix)
     } else if (event.button === 2) {
       // Right click - target lock/unlock
+      console.log(`Right click detected, calling handleTargetLock()`);
       this.handleTargetLock();
     }
   }
@@ -1464,29 +1536,61 @@ export class GameScene {
     };
 
     this.projectiles.push(projectile);
+
+    // Add trajectory trail for UI-13/UI-16 (trajectory prediction)
+    this.trajectoryRenderer.updateTrajectory(
+      projectile.id,
+      [projectile.position],
+      projectile.velocity
+    );
+  }
+
+  /**
+   * Calculate and display trajectory prediction based on current aim
+   * Implements UI-13/UI-16 requirements for real-time trajectory prediction
+   */
+  private updateTrajectoryPrediction(): void {
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
+    const azimuthRad = this.azimuthAngle * (Math.PI / 180);
+    const elevationRad = this.elevationAngle * (Math.PI / 180);
+
+    const predictedVelocity = new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
+
+    // Update trajectory prediction with ID "prediction"
+    this.trajectoryRenderer.updateTrajectory(
+      'prediction',
+      [this.artilleryPosition.copy()],
+      predictedVelocity
+    );
   }
 
   /**
    * Handle target lock/unlock
    */
   private handleTargetLock(): void {
-    const nearestTarget = this.findTargetNearCursor();
+    console.log(
+      `handleTargetLock: targetingState=${this.targetingState}, trackedTarget=${!!this.trackedTarget}, lockedTarget=${!!this.lockedTarget}`
+    );
 
-    if (nearestTarget) {
-      if (this.lockedTarget === nearestTarget) {
-        // Unlock
-        this.lockedTarget = null;
-        this.targetingState = TargetingState.NO_TARGET;
-      } else {
-        // Lock onto new target
-        this.lockedTarget = nearestTarget;
-        this.targetingState = TargetingState.LOCKED_ON;
-        this.updateRadarToTarget(nearestTarget);
-      }
+    // GS-05: Right-click to lock onto TRACKING target
+    if (this.targetingState === TargetingState.TRACKING && this.trackedTarget) {
+      console.log(`Locking onto target: ${this.trackedTarget.id}`);
+      // Lock onto currently tracked target
+      this.lockedTarget = this.trackedTarget;
+      this.targetingState = TargetingState.LOCKED_ON;
+      this.updateRadarToTarget(this.trackedTarget);
     } else if (this.lockedTarget) {
-      // Unlock current target
+      console.log(`Unlocking target: ${this.lockedTarget.id}`);
+      // Unlock current target if already locked
       this.lockedTarget = null;
       this.targetingState = TargetingState.NO_TARGET;
+      this.trackedTarget = null;
+    } else {
+      console.log(`No action: not in TRACKING state or no target available`);
     }
   }
 
@@ -1494,11 +1598,41 @@ export class GameScene {
    * Find target near cursor
    */
   private findTargetNearCursor(): TargetState | null {
-    // For now, return the first active target
-    // In a full implementation, this would check cursor position against radar screen positions
+    // Find target that matches radar crosshairs (azimuth + range)
+    const BEAM_WIDTH_DEGREES = 5; // 5 degree radar beam width as per spec
+    const RANGE_TOLERANCE = 200; // 200m range tolerance
+
     return (
-      this.targets.find(t => !t.isDestroyed && this.gameTime >= t.spawnTime) ||
-      null
+      this.targets.find(target => {
+        if (target.isDestroyed || this.gameTime < target.spawnTime) {
+          return false;
+        }
+
+        // Calculate target's bearing and distance from artillery position
+        // Using XY plane for horizontal radar calculations
+        const dx = target.position.x - this.artilleryPosition.x;
+        const dy = target.position.y - this.artilleryPosition.y;
+        const targetDistance = Math.sqrt(dx * dx + dy * dy);
+
+        // Calculate target's azimuth angle (normalized to 0-360)
+        let targetAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+        if (targetAzimuth < 0) targetAzimuth += 360;
+
+        // Normalize radar azimuth to 0-360
+        let radarAz = this.radarAzimuth;
+        if (radarAz < 0) radarAz += 360;
+
+        // Calculate angular difference (handling 360-degree boundary)
+        let angleDiff = Math.abs(targetAzimuth - radarAz);
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
+
+        // Check if target is within radar beam width and range cursor tolerance
+        const withinBeam = angleDiff <= BEAM_WIDTH_DEGREES / 2;
+        const withinRange =
+          Math.abs(targetDistance - this.radarRange) <= RANGE_TOLERANCE;
+
+        return withinBeam && withinRange;
+      }) || null
     );
   }
 
@@ -1509,7 +1643,10 @@ export class GameScene {
     const dx = target.position.x - this.artilleryPosition.x;
     const dy = target.position.y - this.artilleryPosition.y;
 
+    // Calculate azimuth angle from artillery to target (統一: XY平面)
     this.radarAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+
+    // Calculate horizontal distance (radar range)
     this.radarRange = Math.sqrt(dx * dx + dy * dy);
   }
 
@@ -1572,6 +1709,9 @@ export class GameScene {
     switch (buttonId) {
       case 'fire-button':
         this.fireProjectile();
+        break;
+      case 'lock-button':
+        this.handleTargetLock();
         break;
       case 'cancel-button':
         this.lockedTarget = null;
