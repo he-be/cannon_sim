@@ -12,6 +12,18 @@ import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
 import { Vector2 } from '../../math/Vector2';
 import { Vector3 } from '../../math/Vector3';
 import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
+import {
+  PhysicsEngine,
+  State3D,
+  AccelerationFunction,
+} from '../../physics/PhysicsEngine';
+import { Forces } from '../../physics/Forces';
+import {
+  PHYSICS_CONSTANTS,
+  GAME_CONSTANTS,
+  CRT_COLORS,
+  FONTS,
+} from '../../data/Constants';
 
 export enum GameState {
   PLAYING = 'playing',
@@ -56,6 +68,7 @@ export class GameScene {
   private onSceneTransition: (transition: SceneTransition) => void;
   private config: GameSceneConfig;
   private effectRenderer: EffectRenderer;
+  private physicsEngine: PhysicsEngine;
 
   // Game state
   private gameState: GameState = GameState.PLAYING;
@@ -78,8 +91,8 @@ export class GameScene {
 
   // Radar controls
   private radarAzimuth: number = 0;
-  private radarRange: number = 10000; // 10km
-  private maxRadarRange: number = 20000; // 20km
+  private radarRange: number = GAME_CONSTANTS.DEFAULT_RADAR_RANGE;
+  private maxRadarRange: number = GAME_CONSTANTS.MAX_RADAR_RANGE;
 
   // Mouse control state
   private isMouseDragging: boolean = false;
@@ -107,30 +120,6 @@ export class GameScene {
     // Removed HORIZONTAL_RADAR_HEIGHT - now uses full center area
   } as const;
 
-  // CRT styling constants
-  private readonly CRT_COLORS = {
-    BACKGROUND: '#001100',
-    PRIMARY_TEXT: '#00ff00',
-    SECONDARY_TEXT: '#66ff66',
-    WARNING_TEXT: '#ffff00',
-    DANGER_TEXT: '#ff6600',
-    CRITICAL_TEXT: '#ff0000',
-    GRID_LINE: '#003300',
-    RADAR_LINE: '#00ff00',
-    TARGET_NORMAL: '#ff0000',
-    TARGET_TRACKED: '#ff8800',
-    TARGET_LOCKED: '#ffff00',
-    PROJECTILE: '#ffffff',
-    SCAN_LINE: 'rgba(0, 255, 0, 0.1)',
-  } as const;
-
-  private readonly FONTS = {
-    TITLE: 'bold 18px monospace',
-    SUBTITLE: '14px monospace',
-    DATA: '12px monospace',
-    SMALL: '10px monospace',
-  } as const;
-
   constructor(
     canvasManager: CanvasManager,
     onSceneTransition: (transition: SceneTransition) => void,
@@ -141,6 +130,32 @@ export class GameScene {
     this.config = config;
     this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
     this.effectRenderer = new EffectRenderer(this.canvasManager);
+
+    // Initialize physics engine with RK4 integration
+    const accelerationFunction: AccelerationFunction = (
+      state: State3D,
+      _time: number
+    ) => {
+      const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
+      const gravity = Forces.gravity(
+        mass,
+        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
+        new Vector3(
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
+        )
+      );
+      const drag = Forces.drag(
+        state.velocity,
+        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
+        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
+        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
+      );
+
+      return Forces.sum(gravity, drag);
+    };
+    this.physicsEngine = new PhysicsEngine(accelerationFunction);
 
     // Initialize artillery position
     this.artilleryPosition = new Vector3(
@@ -293,22 +308,26 @@ export class GameScene {
       const projectile = this.projectiles[i];
       if (!projectile.isActive) continue;
 
-      // Update position
-      projectile.position = projectile.position.add(
-        projectile.velocity.multiply(deltaTime)
+      // Use physics engine for accurate RK4 integration
+      const currentState: State3D = {
+        position: projectile.position,
+        velocity: projectile.velocity,
+      };
+
+      const newState = this.physicsEngine.integrate(
+        currentState,
+        this.gameTime,
+        deltaTime
       );
 
-      // Apply gravity
-      projectile.velocity = new Vector3(
-        projectile.velocity.x,
-        projectile.velocity.y,
-        projectile.velocity.z - 9.81 * deltaTime
-      );
+      projectile.position = newState.position;
+      projectile.velocity = newState.velocity;
 
       // Remove if hit ground or out of range
       if (
-        projectile.position.z <= 0 ||
-        this.gameTime - projectile.spawnTime > 30
+        projectile.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL ||
+        this.gameTime - projectile.spawnTime >
+          PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME
       ) {
         // Create impact explosion
         if (projectile.position.z <= 0) {
@@ -403,7 +422,7 @@ export class GameScene {
    */
   private clearCanvas(): void {
     const ctx = this.canvasManager.context;
-    ctx.fillStyle = this.CRT_COLORS.BACKGROUND;
+    ctx.fillStyle = CRT_COLORS.BACKGROUND;
     ctx.fillRect(0, 0, this.canvasManager.width, this.canvasManager.height);
   }
 
@@ -415,7 +434,7 @@ export class GameScene {
     ctx.save();
 
     // Draw layout dividers
-    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.strokeStyle = CRT_COLORS.GRID_LINE;
     ctx.lineWidth = 2;
 
     // Vertical divider between control panel and center radar
@@ -450,20 +469,20 @@ export class GameScene {
     ctx.save();
 
     // Panel title
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.TITLE;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.TITLE;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('FIRE CONTROL', margin, y);
     y += lineHeight * 1.5;
 
     // Artillery controls
-    ctx.font = this.FONTS.SUBTITLE;
+    ctx.font = FONTS.SUBTITLE;
     ctx.fillText('Artillery', margin, y);
     y += lineHeight;
 
-    ctx.font = this.FONTS.DATA;
-    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = FONTS.DATA;
+    ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
     ctx.fillText(`Azimuth: ${this.azimuthAngle.toFixed(1)}°`, margin + 10, y);
     y += lineHeight;
     ctx.fillText(
@@ -474,13 +493,13 @@ export class GameScene {
     y += lineHeight * 1.5;
 
     // Radar controls
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
     ctx.fillText('Radar', margin, y);
     y += lineHeight;
 
-    ctx.font = this.FONTS.DATA;
-    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = FONTS.DATA;
+    ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
     ctx.fillText(`Azimuth: ${this.radarAzimuth.toFixed(1)}°`, margin + 10, y);
     y += lineHeight;
     ctx.fillText(
@@ -510,27 +529,27 @@ export class GameScene {
     lineHeight: number
   ): number {
     // Targeting status
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
     ctx.fillText('Targeting', x, y);
     y += lineHeight;
 
     // Status indicator
     let statusText = 'MANUAL';
-    let statusColor = this.CRT_COLORS.SECONDARY_TEXT;
+    let statusColor: string = CRT_COLORS.SECONDARY_TEXT;
 
     switch (this.targetingState) {
       case TargetingState.TRACKING:
         statusText = 'TRACKING';
-        statusColor = this.CRT_COLORS.WARNING_TEXT;
+        statusColor = CRT_COLORS.WARNING_TEXT;
         break;
       case TargetingState.LOCKED_ON:
         statusText = 'LOCKED ON';
-        statusColor = this.CRT_COLORS.CRITICAL_TEXT;
+        statusColor = CRT_COLORS.CRITICAL_TEXT;
         break;
     }
 
-    ctx.font = this.FONTS.DATA;
+    ctx.font = FONTS.DATA;
     ctx.fillStyle = statusColor;
     ctx.fillText(`Status: ${statusText}`, x + 10, y);
     y += lineHeight;
@@ -545,7 +564,7 @@ export class GameScene {
         ? displayTarget.velocity.magnitude()
         : 0;
 
-      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.fillText(`Type: ${displayTarget.type}`, x + 10, y);
       y += lineHeight;
       ctx.fillText(`Range: ${(distance / 1000).toFixed(1)}km`, x + 10, y);
@@ -565,8 +584,8 @@ export class GameScene {
     y += lineHeight;
 
     // Game time
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
     ctx.fillText('Mission Time', x, y);
     y += lineHeight;
 
@@ -574,8 +593,8 @@ export class GameScene {
     const seconds = Math.floor(this.gameTime % 60);
     const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-    ctx.font = this.FONTS.DATA;
-    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = FONTS.DATA;
+    ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
     ctx.fillText(timeStr, x + 10, y);
     y += lineHeight;
 
@@ -597,8 +616,8 @@ export class GameScene {
     const buttonHeight = 25;
 
     // Artillery Control Sliders
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
     ctx.fillText('Artillery Control', x, y);
     y += lineHeight;
 
@@ -615,8 +634,8 @@ export class GameScene {
       180,
       'azimuth-slider'
     );
-    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
-    ctx.font = this.FONTS.DATA;
+    ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = FONTS.DATA;
     ctx.fillText(
       `Azimuth: ${this.azimuthAngle.toFixed(1)}°`,
       x + sliderWidth + 20,
@@ -637,8 +656,8 @@ export class GameScene {
       90,
       'elevation-slider'
     );
-    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
-    ctx.font = this.FONTS.DATA;
+    ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = FONTS.DATA;
     ctx.fillText(
       `Elevation: ${this.elevationAngle.toFixed(1)}°`,
       x + sliderWidth + 20,
@@ -647,8 +666,8 @@ export class GameScene {
     y += lineHeight * 2;
 
     // Control Buttons
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
     ctx.fillText('Actions', x, y);
     y += lineHeight;
 
@@ -709,7 +728,7 @@ export class GameScene {
     this.uiElements.set(elementId, { x, y, width, height });
 
     // Slider track
-    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.strokeStyle = CRT_COLORS.GRID_LINE;
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, width, height);
 
@@ -718,7 +737,7 @@ export class GameScene {
     const handleX = x + normalizedValue * (width - height);
 
     // Slider handle
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
     ctx.fillRect(handleX, y, height, height);
 
     // Slider fill
@@ -749,16 +768,16 @@ export class GameScene {
 
     // Button border
     ctx.strokeStyle = isHovered
-      ? this.CRT_COLORS.WARNING_TEXT
-      : this.CRT_COLORS.PRIMARY_TEXT;
+      ? CRT_COLORS.WARNING_TEXT
+      : CRT_COLORS.PRIMARY_TEXT;
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, width, height);
 
     // Button text
     ctx.fillStyle = isHovered
-      ? this.CRT_COLORS.WARNING_TEXT
-      : this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.DATA;
+      ? CRT_COLORS.WARNING_TEXT
+      : CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.DATA;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, x + width / 2, y + height / 2);
@@ -887,7 +906,7 @@ export class GameScene {
       gunY - (this.radarRange / this.maxRadarRange) * (radarHeight - 20);
 
     // Draw horizontal range cursor line
-    ctx.strokeStyle = this.CRT_COLORS.WARNING_TEXT;
+    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT;
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -897,8 +916,8 @@ export class GameScene {
     ctx.setLineDash([]);
 
     // Range text on the left side of the line
-    ctx.fillStyle = this.CRT_COLORS.WARNING_TEXT;
-    ctx.font = this.FONTS.SMALL;
+    ctx.fillStyle = CRT_COLORS.WARNING_TEXT;
+    ctx.font = FONTS.SMALL;
     ctx.textAlign = 'left';
     ctx.fillText(
       `${(this.radarRange / 1000).toFixed(1)}km`,
@@ -922,7 +941,7 @@ export class GameScene {
     ctx.fillRect(x, y, width, height);
 
     // Panel border
-    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.strokeStyle = CRT_COLORS.GRID_LINE;
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, width, height);
 
@@ -930,8 +949,8 @@ export class GameScene {
     const lineHeight = 15;
 
     // Title
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
     ctx.fillText('TARGET INFO', x + 5, textY);
     textY += lineHeight * 1.5;
 
@@ -945,8 +964,8 @@ export class GameScene {
         ? displayTarget.velocity.magnitude()
         : 0;
 
-      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
-      ctx.font = this.FONTS.SMALL;
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+      ctx.font = FONTS.SMALL;
 
       ctx.fillText(`Type: ${displayTarget.type}`, x + 5, textY);
       textY += lineHeight;
@@ -969,7 +988,7 @@ export class GameScene {
       }
     } else {
       ctx.fillStyle = '#666666';
-      ctx.font = this.FONTS.SMALL;
+      ctx.font = FONTS.SMALL;
       ctx.fillText('No target selected', x + 5, textY);
     }
   }
@@ -985,7 +1004,7 @@ export class GameScene {
     height: number,
     isHorizontal: boolean
   ): void {
-    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.strokeStyle = CRT_COLORS.GRID_LINE;
     ctx.lineWidth = 1;
 
     // Draw range circles/lines
@@ -1003,8 +1022,8 @@ export class GameScene {
         ctx.stroke();
 
         // Range labels
-        ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
-        ctx.font = this.FONTS.SMALL;
+        ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+        ctx.font = FONTS.SMALL;
         ctx.textAlign = 'left';
         ctx.fillText(`${i * 5}km`, x + 5, lineY - 2);
       }
@@ -1035,8 +1054,8 @@ export class GameScene {
         ctx.stroke();
 
         // Range labels
-        ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
-        ctx.font = this.FONTS.SMALL;
+        ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+        ctx.font = FONTS.SMALL;
         ctx.textAlign = 'center';
         ctx.fillText(`${i * 5}km`, lineX, y + height - 5);
       }
@@ -1057,7 +1076,7 @@ export class GameScene {
 
     // Draw gun position
     const gunX = isHorizontal ? centerX : x + 10;
-    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
     ctx.beginPath();
     ctx.arc(gunX, gunY, 3, 0, Math.PI * 2);
     ctx.fill();
@@ -1090,11 +1109,11 @@ export class GameScene {
       if (!screenPos) return;
 
       // Draw target with state-based styling
-      let color = this.CRT_COLORS.TARGET_NORMAL;
+      let color: string = CRT_COLORS.TARGET_NORMAL;
       let size = 3;
 
       if (target === this.lockedTarget) {
-        color = this.CRT_COLORS.TARGET_LOCKED;
+        color = CRT_COLORS.TARGET_LOCKED;
         size = 5;
 
         // Draw lock indicator
@@ -1104,7 +1123,7 @@ export class GameScene {
         ctx.arc(screenPos.x, screenPos.y, 8, 0, Math.PI * 2);
         ctx.stroke();
       } else if (target === this.trackedTarget) {
-        color = this.CRT_COLORS.TARGET_TRACKED;
+        color = CRT_COLORS.TARGET_TRACKED;
         size = 4;
       }
 
@@ -1140,7 +1159,7 @@ export class GameScene {
 
       if (!screenPos) return;
 
-      ctx.fillStyle = this.CRT_COLORS.PROJECTILE;
+      ctx.fillStyle = CRT_COLORS.PROJECTILE;
       ctx.beginPath();
       ctx.arc(screenPos.x, screenPos.y, 2, 0, Math.PI * 2);
       ctx.fill();
@@ -1266,19 +1285,19 @@ export class GameScene {
     ctx.textBaseline = 'middle';
 
     if (this.gameState === GameState.GAME_OVER) {
-      ctx.fillStyle = this.CRT_COLORS.CRITICAL_TEXT;
+      ctx.fillStyle = CRT_COLORS.CRITICAL_TEXT;
       ctx.font = 'bold 48px monospace';
       ctx.fillText('MISSION FAILED', centerX, centerY - 30);
 
-      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.font = '20px monospace';
       ctx.fillText('Press R to restart', centerX, centerY + 30);
     } else if (this.gameState === GameState.STAGE_CLEAR) {
-      ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+      ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
       ctx.font = 'bold 48px monospace';
       ctx.fillText('MISSION SUCCESS', centerX, centerY - 30);
 
-      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.font = '20px monospace';
       ctx.fillText('Press SPACE to continue', centerX, centerY + 30);
     }
@@ -1293,7 +1312,7 @@ export class GameScene {
     const ctx = this.canvasManager.context;
 
     ctx.save();
-    ctx.fillStyle = this.CRT_COLORS.SCAN_LINE;
+    ctx.fillStyle = CRT_COLORS.SCAN_LINE;
 
     // Static horizontal scan lines only (removed moving scan line)
     for (let y = 0; y < this.canvasManager.height; y += 3) {
@@ -1424,7 +1443,7 @@ export class GameScene {
    * Fire a projectile
    */
   private fireProjectile(): void {
-    const muzzleVelocity = 850; // m/s
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
     const azimuthRad = this.azimuthAngle * (Math.PI / 180);
     const elevationRad = this.elevationAngle * (Math.PI / 180);
 
