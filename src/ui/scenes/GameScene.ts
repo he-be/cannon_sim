@@ -153,7 +153,9 @@ export class GameScene {
         PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
       );
 
-      return Forces.sum(gravity, drag);
+      // Convert force to acceleration: a = F/m
+      const totalForce = Forces.sum(gravity, drag);
+      return totalForce.multiply(1 / mass);
     };
     this.physicsEngine = new PhysicsEngine(accelerationFunction);
 
