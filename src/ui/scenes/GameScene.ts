@@ -86,6 +86,17 @@ export class GameScene {
   private lastMousePosition: Vector2 = new Vector2(0, 0);
   private mouseSensitivity: number = 0.5;
 
+  // UI interaction state
+  private isDraggingAzimuthSlider: boolean = false;
+  private isDraggingElevationSlider: boolean = false;
+  private hoveredButton: string | null = null;
+
+  // UI element bounds (calculated during render)
+  private uiElements: Map<
+    string,
+    { x: number; y: number; width: number; height: number }
+  > = new Map();
+
   // Animation
   private animationTime: number = 0;
 
@@ -93,7 +104,7 @@ export class GameScene {
   private readonly UI_LAYOUT = {
     CONTROL_PANEL_WIDTH: 300,
     VERTICAL_RADAR_WIDTH: 250,
-    HORIZONTAL_RADAR_HEIGHT: 350,
+    // Removed HORIZONTAL_RADAR_HEIGHT - now uses full center area
   } as const;
 
   // CRT styling constants
@@ -397,7 +408,7 @@ export class GameScene {
   }
 
   /**
-   * Render UI layout structure (UI-04: 3-pane layout)
+   * Render UI layout structure (UI-04: 3-pane layout - modified for full center radar)
    */
   private renderLayout(): void {
     const ctx = this.canvasManager.context;
@@ -407,14 +418,14 @@ export class GameScene {
     ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
     ctx.lineWidth = 2;
 
-    // Vertical divider between control panel and radar
+    // Vertical divider between control panel and center radar
     const controlPanelRight = this.UI_LAYOUT.CONTROL_PANEL_WIDTH;
     ctx.beginPath();
     ctx.moveTo(controlPanelRight, 0);
     ctx.lineTo(controlPanelRight, this.canvasManager.height);
     ctx.stroke();
 
-    // Vertical divider between horizontal and vertical radar
+    // Vertical divider between center radar and vertical radar
     const verticalRadarLeft =
       this.canvasManager.width - this.UI_LAYOUT.VERTICAL_RADAR_WIDTH;
     ctx.beginPath();
@@ -422,13 +433,7 @@ export class GameScene {
     ctx.lineTo(verticalRadarLeft, this.canvasManager.height);
     ctx.stroke();
 
-    // Horizontal divider in radar area
-    const horizontalRadarBottom =
-      this.canvasManager.height - this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT;
-    ctx.beginPath();
-    ctx.moveTo(controlPanelRight, horizontalRadarBottom);
-    ctx.lineTo(this.canvasManager.width, horizontalRadarBottom);
-    ctx.stroke();
+    // Removed horizontal divider - center radar now uses full height
 
     ctx.restore();
   }
@@ -486,7 +491,11 @@ export class GameScene {
     y += lineHeight * 1.5;
 
     // Targeting information
-    this.renderTargetingInfo(ctx, margin, y, lineHeight);
+    y = this.renderTargetingInfo(ctx, margin, y, lineHeight);
+
+    // Control buttons and sliders
+    y += lineHeight;
+    this.renderControlElements(ctx, margin, y, lineHeight);
 
     ctx.restore();
   }
@@ -499,7 +508,7 @@ export class GameScene {
     x: number,
     y: number,
     lineHeight: number
-  ): void {
+  ): number {
     // Targeting status
     ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
     ctx.font = this.FONTS.SUBTITLE;
@@ -568,27 +577,224 @@ export class GameScene {
     ctx.font = this.FONTS.DATA;
     ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
     ctx.fillText(timeStr, x + 10, y);
+    y += lineHeight;
+
+    return y;
   }
 
   /**
-   * Render horizontal radar (center-bottom pane)
+   * Render control elements (sliders and buttons) in control panel
+   */
+  private renderControlElements(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    lineHeight: number
+  ): void {
+    const sliderWidth = 200;
+    const sliderHeight = 15;
+    const buttonWidth = 120;
+    const buttonHeight = 25;
+
+    // Artillery Control Sliders
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillText('Artillery Control', x, y);
+    y += lineHeight;
+
+    // Azimuth Slider
+    const azimuthSliderY = y + 5;
+    this.renderSlider(
+      ctx,
+      x + 10,
+      azimuthSliderY,
+      sliderWidth,
+      sliderHeight,
+      this.azimuthAngle,
+      -180,
+      180,
+      'azimuth-slider'
+    );
+    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = this.FONTS.DATA;
+    ctx.fillText(
+      `Azimuth: ${this.azimuthAngle.toFixed(1)}°`,
+      x + sliderWidth + 20,
+      azimuthSliderY + 10
+    );
+    y += lineHeight * 1.5;
+
+    // Elevation Slider
+    const elevationSliderY = y + 5;
+    this.renderSlider(
+      ctx,
+      x + 10,
+      elevationSliderY,
+      sliderWidth,
+      sliderHeight,
+      this.elevationAngle,
+      0,
+      90,
+      'elevation-slider'
+    );
+    ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = this.FONTS.DATA;
+    ctx.fillText(
+      `Elevation: ${this.elevationAngle.toFixed(1)}°`,
+      x + sliderWidth + 20,
+      elevationSliderY + 10
+    );
+    y += lineHeight * 2;
+
+    // Control Buttons
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillText('Actions', x, y);
+    y += lineHeight;
+
+    // Fire Button
+    const fireButtonY = y + 5;
+    this.renderButton(
+      ctx,
+      x + 10,
+      fireButtonY,
+      buttonWidth,
+      buttonHeight,
+      'FIRE',
+      'fire-button'
+    );
+    y += lineHeight * 1.8;
+
+    // Cancel Tracking Button
+    const cancelButtonY = y + 5;
+    this.renderButton(
+      ctx,
+      x + 10,
+      cancelButtonY,
+      buttonWidth,
+      buttonHeight,
+      'CANCEL TRACK',
+      'cancel-button'
+    );
+    y += lineHeight * 1.8;
+
+    // Back to Menu Button
+    const menuButtonY = y + 5;
+    this.renderButton(
+      ctx,
+      x + 10,
+      menuButtonY,
+      buttonWidth,
+      buttonHeight,
+      'BACK TO MENU',
+      'menu-button'
+    );
+  }
+
+  /**
+   * Render a slider control
+   */
+  private renderSlider(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    value: number,
+    min: number,
+    max: number,
+    elementId: string
+  ): void {
+    // Store element bounds for interaction
+    this.uiElements.set(elementId, { x, y, width, height });
+
+    // Slider track
+    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, width, height);
+
+    // Slider handle position
+    const normalizedValue = (value - min) / (max - min);
+    const handleX = x + normalizedValue * (width - height);
+
+    // Slider handle
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.fillRect(handleX, y, height, height);
+
+    // Slider fill
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+    ctx.fillRect(x, y, handleX - x + height, height);
+  }
+
+  /**
+   * Render a button control
+   */
+  private renderButton(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    text: string,
+    elementId: string
+  ): void {
+    // Store element bounds for interaction
+    this.uiElements.set(elementId, { x, y, width, height });
+
+    const isHovered = this.hoveredButton === elementId;
+
+    // Button background
+    ctx.fillStyle = isHovered ? 'rgba(0, 255, 0, 0.2)' : 'rgba(0, 255, 0, 0.1)';
+    ctx.fillRect(x, y, width, height);
+
+    // Button border
+    ctx.strokeStyle = isHovered
+      ? this.CRT_COLORS.WARNING_TEXT
+      : this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, width, height);
+
+    // Button text
+    ctx.fillStyle = isHovered
+      ? this.CRT_COLORS.WARNING_TEXT
+      : this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.DATA;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + width / 2, y + height / 2);
+
+    // Reset text alignment
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+  }
+
+  /**
+   * Render horizontal radar (center full area)
    */
   private renderHorizontalRadar(): void {
     const ctx = this.canvasManager.context;
     const radarLeft = this.UI_LAYOUT.CONTROL_PANEL_WIDTH + 10;
-    const radarTop =
-      this.canvasManager.height - this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT + 10;
+    const radarTop = 10;
     const radarWidth =
       this.canvasManager.width -
       this.UI_LAYOUT.CONTROL_PANEL_WIDTH -
       this.UI_LAYOUT.VERTICAL_RADAR_WIDTH -
       20;
-    const radarHeight = this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT - 20;
+    const radarHeight = this.canvasManager.height - 20;
 
     ctx.save();
 
     // Draw radar grid
     this.drawRadarGrid(ctx, radarLeft, radarTop, radarWidth, radarHeight, true);
+
+    // Draw range cursor if adjusting radar range
+    if (
+      this.isMouseDragging &&
+      !this.isDraggingAzimuthSlider &&
+      !this.isDraggingElevationSlider
+    ) {
+      this.drawRangeCursor(ctx, radarLeft, radarTop, radarWidth, radarHeight);
+    }
 
     // Draw targets
     this.drawTargetsOnRadar(
@@ -614,7 +820,7 @@ export class GameScene {
   }
 
   /**
-   * Render vertical radar (right pane)
+   * Render vertical radar (right pane - upper portion)
    */
   private renderVerticalRadar(): void {
     const ctx = this.canvasManager.context;
@@ -622,8 +828,7 @@ export class GameScene {
       this.canvasManager.width - this.UI_LAYOUT.VERTICAL_RADAR_WIDTH + 10;
     const radarTop = 10;
     const radarWidth = this.UI_LAYOUT.VERTICAL_RADAR_WIDTH - 20;
-    const radarHeight =
-      this.canvasManager.height - this.UI_LAYOUT.HORIZONTAL_RADAR_HEIGHT - 20;
+    const radarHeight = Math.floor((this.canvasManager.height - 30) * 0.65); // 65% of height
 
     ctx.save();
 
@@ -637,7 +842,7 @@ export class GameScene {
       false
     );
 
-    // Draw targets
+    // Draw targets (filtered by radar beam)
     this.drawTargetsOnRadar(
       ctx,
       radarLeft,
@@ -657,7 +862,116 @@ export class GameScene {
       false
     );
 
+    // Draw target information panel below
+    const infoTop = radarTop + radarHeight + 10;
+    const infoHeight = this.canvasManager.height - infoTop - 10;
+    this.renderTargetInfoPanel(ctx, radarLeft, infoTop, radarWidth, infoHeight);
+
     ctx.restore();
+  }
+
+  /**
+   * Draw range cursor during radar range adjustment (horizontal line)
+   */
+  private drawRangeCursor(
+    ctx: CanvasRenderingContext2D,
+    radarX: number,
+    radarY: number,
+    radarWidth: number,
+    radarHeight: number
+  ): void {
+    const gunY = radarY + radarHeight - 10;
+
+    // Calculate range cursor position (horizontal line)
+    const rangeY =
+      gunY - (this.radarRange / this.maxRadarRange) * (radarHeight - 20);
+
+    // Draw horizontal range cursor line
+    ctx.strokeStyle = this.CRT_COLORS.WARNING_TEXT;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(radarX + 10, rangeY);
+    ctx.lineTo(radarX + radarWidth - 10, rangeY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Range text on the left side of the line
+    ctx.fillStyle = this.CRT_COLORS.WARNING_TEXT;
+    ctx.font = this.FONTS.SMALL;
+    ctx.textAlign = 'left';
+    ctx.fillText(
+      `${(this.radarRange / 1000).toFixed(1)}km`,
+      radarX + 5,
+      rangeY - 3
+    );
+  }
+
+  /**
+   * Render target information panel (right pane bottom)
+   */
+  private renderTargetInfoPanel(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): void {
+    // Panel background
+    ctx.fillStyle = 'rgba(0, 50, 0, 0.3)';
+    ctx.fillRect(x, y, width, height);
+
+    // Panel border
+    ctx.strokeStyle = this.CRT_COLORS.GRID_LINE;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, width, height);
+
+    let textY = y + 15;
+    const lineHeight = 15;
+
+    // Title
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = this.FONTS.SUBTITLE;
+    ctx.fillText('TARGET INFO', x + 5, textY);
+    textY += lineHeight * 1.5;
+
+    // Display information for locked or tracked target
+    const displayTarget = this.lockedTarget || this.trackedTarget;
+    if (displayTarget) {
+      const distance = displayTarget.position
+        .subtract(this.artilleryPosition)
+        .magnitude();
+      const speed = displayTarget.velocity
+        ? displayTarget.velocity.magnitude()
+        : 0;
+
+      ctx.fillStyle = this.CRT_COLORS.SECONDARY_TEXT;
+      ctx.font = this.FONTS.SMALL;
+
+      ctx.fillText(`Type: ${displayTarget.type}`, x + 5, textY);
+      textY += lineHeight;
+      ctx.fillText(`Range: ${(distance / 1000).toFixed(1)}km`, x + 5, textY);
+      textY += lineHeight;
+      ctx.fillText(
+        `Altitude: ${displayTarget.position.z.toFixed(0)}m`,
+        x + 5,
+        textY
+      );
+      textY += lineHeight;
+      ctx.fillText(`Speed: ${speed.toFixed(1)}m/s`, x + 5, textY);
+      textY += lineHeight;
+
+      if (displayTarget.velocity) {
+        const heading =
+          Math.atan2(displayTarget.velocity.x, displayTarget.velocity.y) *
+          (180 / Math.PI);
+        ctx.fillText(`Heading: ${heading.toFixed(0)}°`, x + 5, textY);
+      }
+    } else {
+      ctx.fillStyle = '#666666';
+      ctx.font = this.FONTS.SMALL;
+      ctx.fillText('No target selected', x + 5, textY);
+    }
   }
 
   /**
@@ -854,13 +1168,38 @@ export class GameScene {
     if (isHorizontal) {
       // Horizontal radar view (top-down)
       const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
-      const normalizedBearing =
-        ((bearing - this.radarAzimuth + 180) % 360) - 180;
 
-      if (Math.abs(normalizedBearing) > 60) return null; // Outside radar arc
+      // Calculate relative bearing with improved 360-degree boundary handling
+      let relativeBearing = bearing - this.radarAzimuth;
+
+      // Normalize to -180 to +180 range
+      while (relativeBearing > 180) relativeBearing -= 360;
+      while (relativeBearing < -180) relativeBearing += 360;
+
+      // Check if target is within radar arc (±60 degrees)
+      // Handle 360-degree boundary cases by checking both directions
+      const isInArc = Math.abs(relativeBearing) <= 60;
+
+      if (!isInArc) {
+        // Additional check for 360-degree boundary crossing
+        // If radar is near 0°/360°, check if target appears on the other side
+        let altRelativeBearing = relativeBearing;
+        if (relativeBearing > 0) {
+          altRelativeBearing = relativeBearing - 360;
+        } else {
+          altRelativeBearing = relativeBearing + 360;
+        }
+
+        if (Math.abs(altRelativeBearing) > 60) {
+          return null; // Truly outside radar arc
+        }
+
+        // Use the alternative bearing for display
+        relativeBearing = altRelativeBearing;
+      }
 
       const screenX =
-        radarX + radarWidth / 2 + (normalizedBearing / 120) * (radarWidth - 20);
+        radarX + radarWidth / 2 + (relativeBearing / 120) * (radarWidth - 20);
       const screenY =
         radarY +
         radarHeight -
@@ -870,6 +1209,33 @@ export class GameScene {
       return new Vector2(screenX, screenY);
     } else {
       // Vertical radar view (side view)
+      // Apply beam width filtering: only show targets within 5-degree beam width (±2.5 degrees)
+      const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
+
+      let relativeBearing = bearing - this.radarAzimuth;
+
+      // Normalize to -180 to +180 range
+      while (relativeBearing > 180) relativeBearing -= 360;
+      while (relativeBearing < -180) relativeBearing += 360;
+
+      // Filter by beam width: only show targets within ±2.5 degrees of radar center
+      // Handle 360-degree boundary for beam width as well
+      const isInBeam = Math.abs(relativeBearing) <= 2.5;
+
+      if (!isInBeam) {
+        // Check alternative bearing for 360-degree boundary
+        let altRelativeBearing = relativeBearing;
+        if (relativeBearing > 0) {
+          altRelativeBearing = relativeBearing - 360;
+        } else {
+          altRelativeBearing = relativeBearing + 360;
+        }
+
+        if (Math.abs(altRelativeBearing) > 2.5) {
+          return null; // Outside beam width
+        }
+      }
+
       const screenX =
         radarX + 10 + (distance / this.maxRadarRange) * (radarWidth - 20);
       const screenY =
@@ -921,7 +1287,7 @@ export class GameScene {
   }
 
   /**
-   * Render CRT scan lines effect
+   * Render CRT scan lines effect (static only)
    */
   private renderScanLines(): void {
     const ctx = this.canvasManager.context;
@@ -929,15 +1295,10 @@ export class GameScene {
     ctx.save();
     ctx.fillStyle = this.CRT_COLORS.SCAN_LINE;
 
-    // Horizontal scan lines
+    // Static horizontal scan lines only (removed moving scan line)
     for (let y = 0; y < this.canvasManager.height; y += 3) {
       ctx.fillRect(0, y, this.canvasManager.width, 1);
     }
-
-    // Moving scan line
-    const movingLineY = (this.animationTime * 100) % this.canvasManager.height;
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
-    ctx.fillRect(0, movingLineY, this.canvasManager.width, 2);
 
     ctx.restore();
   }
@@ -966,35 +1327,62 @@ export class GameScene {
    * Handle mouse down events
    */
   private handleMouseDown(event: MouseEventData): void {
-    this.isMouseDragging = true;
-    this.lastMousePosition = new Vector2(
+    const mousePos = new Vector2(
       event.position.canvas.x,
       event.position.canvas.y
     );
+
+    // Check if clicking on UI elements
+    const clickedElement = this.getClickedUIElement(mousePos);
+
+    if (clickedElement) {
+      if (clickedElement === 'azimuth-slider') {
+        this.isDraggingAzimuthSlider = true;
+        this.updateSliderValue(clickedElement, mousePos);
+      } else if (clickedElement === 'elevation-slider') {
+        this.isDraggingElevationSlider = true;
+        this.updateSliderValue(clickedElement, mousePos);
+      }
+    } else {
+      // Default radar dragging behavior
+      this.isMouseDragging = true;
+    }
+
+    this.lastMousePosition = mousePos;
   }
 
   /**
    * Handle mouse move events
    */
   private handleMouseMove(event: MouseEventData): void {
-    if (!this.isMouseDragging) return;
-
     const currentPos = new Vector2(
       event.position.canvas.x,
       event.position.canvas.y
     );
-    const deltaX = currentPos.x - this.lastMousePosition.x;
-    const deltaY = currentPos.y - this.lastMousePosition.y;
 
-    // Update radar controls
-    this.radarAzimuth += deltaX * this.mouseSensitivity;
-    this.radarRange = Math.max(
-      1000,
-      Math.min(this.maxRadarRange, this.radarRange - deltaY * 50)
-    );
+    // Update hover state for buttons
+    this.hoveredButton = this.getHoveredButton(currentPos);
 
-    // Normalize azimuth
-    this.radarAzimuth = ((this.radarAzimuth % 360) + 360) % 360;
+    // Handle slider dragging
+    if (this.isDraggingAzimuthSlider) {
+      this.updateSliderValue('azimuth-slider', currentPos);
+    } else if (this.isDraggingElevationSlider) {
+      this.updateSliderValue('elevation-slider', currentPos);
+    } else if (this.isMouseDragging) {
+      // Default radar control behavior
+      const deltaX = currentPos.x - this.lastMousePosition.x;
+      const deltaY = currentPos.y - this.lastMousePosition.y;
+
+      // Update radar controls
+      this.radarAzimuth += deltaX * this.mouseSensitivity;
+      this.radarRange = Math.max(
+        1000,
+        Math.min(this.maxRadarRange, this.radarRange - deltaY * 50)
+      );
+
+      // Normalize azimuth
+      this.radarAzimuth = ((this.radarAzimuth % 360) + 360) % 360;
+    }
 
     this.lastMousePosition = currentPos;
   }
@@ -1004,15 +1392,28 @@ export class GameScene {
    */
   private handleMouseUp(_event: MouseEventData): void {
     this.isMouseDragging = false;
+    this.isDraggingAzimuthSlider = false;
+    this.isDraggingElevationSlider = false;
   }
 
   /**
    * Handle mouse click events
    */
   private handleMouseClick(event: MouseEventData): void {
+    const mousePos = new Vector2(
+      event.position.canvas.x,
+      event.position.canvas.y
+    );
+    const clickedElement = this.getClickedUIElement(mousePos);
+
     if (event.button === 0) {
-      // Left click - fire projectile
-      this.fireProjectile();
+      // Left click
+      if (clickedElement && this.isButton(clickedElement)) {
+        this.handleButtonClick(clickedElement);
+      } else {
+        // Default behavior - fire projectile
+        this.fireProjectile();
+      }
     } else if (event.button === 2) {
       // Right click - target lock/unlock
       this.handleTargetLock();
@@ -1089,6 +1490,77 @@ export class GameScene {
 
     this.radarAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
     this.radarRange = Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /**
+   * Get the UI element at the given mouse position
+   */
+  private getClickedUIElement(mousePos: Vector2): string | null {
+    for (const [elementId, bounds] of this.uiElements) {
+      if (
+        mousePos.x >= bounds.x &&
+        mousePos.x <= bounds.x + bounds.width &&
+        mousePos.y >= bounds.y &&
+        mousePos.y <= bounds.y + bounds.height
+      ) {
+        return elementId;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get the hovered button at the given mouse position
+   */
+  private getHoveredButton(mousePos: Vector2): string | null {
+    const element = this.getClickedUIElement(mousePos);
+    return element && this.isButton(element) ? element : null;
+  }
+
+  /**
+   * Check if element is a button
+   */
+  private isButton(elementId: string): boolean {
+    return elementId.endsWith('-button');
+  }
+
+  /**
+   * Update slider value based on mouse position
+   */
+  private updateSliderValue(sliderId: string, mousePos: Vector2): void {
+    const sliderBounds = this.uiElements.get(sliderId);
+    if (!sliderBounds) return;
+
+    const relativeX = Math.max(
+      0,
+      Math.min(sliderBounds.width, mousePos.x - sliderBounds.x)
+    );
+    const normalizedValue = relativeX / sliderBounds.width;
+
+    if (sliderId === 'azimuth-slider') {
+      this.azimuthAngle = -180 + normalizedValue * 360;
+    } else if (sliderId === 'elevation-slider') {
+      this.elevationAngle = normalizedValue * 90;
+    }
+  }
+
+  /**
+   * Handle button clicks
+   */
+  private handleButtonClick(buttonId: string): void {
+    switch (buttonId) {
+      case 'fire-button':
+        this.fireProjectile();
+        break;
+      case 'cancel-button':
+        this.lockedTarget = null;
+        this.trackedTarget = null;
+        this.targetingState = TargetingState.NO_TARGET;
+        break;
+      case 'menu-button':
+        this.onSceneTransition({ type: SceneType.TITLE });
+        break;
+    }
   }
 
   /**
