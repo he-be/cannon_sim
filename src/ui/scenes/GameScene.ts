@@ -415,11 +415,19 @@ export class GameScene {
           target.isDestroyed = true;
           projectile.isActive = false;
 
-          // Create destruction explosion
-          this.effectRenderer.createExplosion(
-            target.position,
-            'target_destruction'
+          // Calculate actual collision point (T047)
+          const collisionPoint = this.calculateCollisionPoint(
+            projectile.position,
+            target.position
           );
+
+          // Create destruction explosion only if within radar range (T047)
+          if (this.isPositionInRadarRange(collisionPoint)) {
+            this.effectRenderer.createExplosion(
+              collisionPoint,
+              'target_destruction'
+            );
+          }
 
           // Clear targeting if this target was being tracked/locked
           if (this.trackedTarget === target) {
@@ -2045,5 +2053,24 @@ export class GameScene {
     ctx.fillText(elevationText, displayX, displayY);
 
     ctx.restore();
+  }
+
+  /**
+   * Check if position is within radar range for explosion effects (T047)
+   */
+  private isPositionInRadarRange(position: Vector3): boolean {
+    const distance = this.artilleryPosition.subtract(position).magnitude();
+    return distance <= this.maxRadarRange;
+  }
+
+  /**
+   * Calculate collision point between projectile and target (T047)
+   */
+  private calculateCollisionPoint(
+    projectilePos: Vector3,
+    targetPos: Vector3
+  ): Vector3 {
+    // Return midpoint between projectile and target at collision
+    return projectilePos.add(targetPos).multiply(0.5);
   }
 }
