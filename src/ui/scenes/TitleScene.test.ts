@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TitleScene } from './TitleScene';
 import { CanvasManager } from '../../rendering/CanvasManager';
 import { MouseHandler } from '../../input/MouseHandler';
+import { Vector2 } from '../../math/Vector2';
 
 // Mock MouseHandler
 vi.mock('../../input/MouseHandler');
@@ -210,10 +211,23 @@ describe('TitleScene (T027-2 - Complete Rewrite)', () => {
         .calls[0][0];
 
       // Simulate click outside button area
+      const position = {
+        canvas: new Vector2(100, 100),
+        screen: new Vector2(100, 100),
+        game: new Vector2(100, 100),
+      };
+
       const clickEvent = {
-        type: 'click',
-        position: {
-          canvas: { x: 100, y: 100 },
+        type: 'click' as const,
+        button: 0,
+        position,
+        state: {
+          isDown: true,
+          button: 0,
+          position,
+          isDragging: false,
+          dragStart: null,
+          dragDistance: new Vector2(0, 0),
         },
       };
 
@@ -310,11 +324,19 @@ describe('TitleScene (T027-2 - Complete Rewrite)', () => {
 
   describe('responsive design', () => {
     it('should adapt to different canvas sizes', () => {
-      const smallCanvasManager = {
-        ...mockCanvasManager,
+      const smallCanvas = {
         width: 400,
         height: 300,
-      };
+      } as HTMLCanvasElement;
+
+      const smallCanvasManager = {
+        getCanvas: () => smallCanvas,
+        getContext: () => mockContext,
+        context: mockContext,
+        width: 400,
+        height: 300,
+        center: { x: 200, y: 150 },
+      } as any;
 
       const smallTitleScene = new TitleScene(
         smallCanvasManager,

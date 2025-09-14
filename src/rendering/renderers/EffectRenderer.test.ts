@@ -261,14 +261,18 @@ describe('EffectRenderer (T025-2 - Complete Rewrite)', () => {
     });
 
     it('should handle invalid canvas center gracefully', () => {
-      // Mock invalid center
-      mockCanvasManager.center = new Vector2(0, 0);
+      // Create a new mock with invalid center instead of modifying readonly property
+      const invalidCanvasManager = {
+        ...mockCanvasManager,
+        center: new Vector2(0, 0),
+      } as any;
 
       const position = new Vector3(100, 100, 100);
 
+      const invalidEffectRenderer = new EffectRenderer(invalidCanvasManager);
       expect(() => {
-        effectRenderer.createExplosion(position, 'projectile_impact');
-        effectRenderer.render();
+        invalidEffectRenderer.createExplosion(position, 'projectile_impact');
+        invalidEffectRenderer.render();
       }).not.toThrow();
     });
   });

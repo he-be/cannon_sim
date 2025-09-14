@@ -113,6 +113,11 @@ export class GameScene {
     { x: number; y: number; width: number; height: number }
   > = new Map();
 
+  // Fine control button state
+  private buttonHoldTimer: number | null = null;
+  private buttonHoldInterval: number | null = null;
+  private isButtonHeld = false;
+
   // Animation
   private animationTime: number = 0;
 
@@ -307,6 +312,8 @@ export class GameScene {
   destroy(): void {
     this.mouseHandler.destroy();
     window.removeEventListener('keydown', this.handleKeyDown);
+    // Clean up button hold timers
+    this.stopButtonHold();
   }
 
   /**
@@ -753,18 +760,55 @@ export class GameScene {
     );
     y += lineHeight * 1.8;
 
-    // Cancel Tracking Button
-    const cancelButtonY = y + 5;
+    // Fine control buttons for Azimuth
+    const azFineButtonY = azimuthSliderY;
+    const azDecButtonX = x + sliderWidth + 120;
+    const azIncButtonX = azDecButtonX + 35;
+    const fineButtonWidth = 30;
+    const fineButtonHeight = 15;
+
     this.renderButton(
       ctx,
-      x + 10,
-      cancelButtonY,
-      buttonWidth,
-      buttonHeight,
-      'CANCEL TRACK',
-      'cancel-button'
+      azDecButtonX,
+      azFineButtonY,
+      fineButtonWidth,
+      fineButtonHeight,
+      'AZ-',
+      'az-dec-button'
     );
-    y += lineHeight * 1.8;
+    this.renderButton(
+      ctx,
+      azIncButtonX,
+      azFineButtonY,
+      fineButtonWidth,
+      fineButtonHeight,
+      'AZ+',
+      'az-inc-button'
+    );
+
+    // Fine control buttons for Elevation
+    const elFineButtonY = elevationSliderY;
+    const elDecButtonX = x + sliderWidth + 120;
+    const elIncButtonX = elDecButtonX + 35;
+
+    this.renderButton(
+      ctx,
+      elDecButtonX,
+      elFineButtonY,
+      fineButtonWidth,
+      fineButtonHeight,
+      'EL-',
+      'el-dec-button'
+    );
+    this.renderButton(
+      ctx,
+      elIncButtonX,
+      elFineButtonY,
+      fineButtonWidth,
+      fineButtonHeight,
+      'EL+',
+      'el-inc-button'
+    );
 
     // Back to Menu Button
     const menuButtonY = y + 5;
@@ -1444,6 +1488,17 @@ export class GameScene {
       } else if (clickedElement === 'elevation-slider') {
         this.isDraggingElevationSlider = true;
         this.updateSliderValue(clickedElement, mousePos);
+      } else if (clickedElement.endsWith('-button')) {
+        // Handle fine control button presses
+        if (clickedElement === 'az-dec-button') {
+          this.startButtonHold('az-');
+        } else if (clickedElement === 'az-inc-button') {
+          this.startButtonHold('az+');
+        } else if (clickedElement === 'el-dec-button') {
+          this.startButtonHold('el-');
+        } else if (clickedElement === 'el-inc-button') {
+          this.startButtonHold('el+');
+        }
       }
     } else {
       // Default radar dragging behavior
@@ -1496,6 +1551,8 @@ export class GameScene {
     this.isMouseDragging = false;
     this.isDraggingAzimuthSlider = false;
     this.isDraggingElevationSlider = false;
+    // Stop any button hold operations
+    this.stopButtonHold();
   }
 
   /**
@@ -1725,13 +1782,20 @@ export class GameScene {
       case 'lock-button':
         this.handleTargetLock();
         break;
-      case 'cancel-button':
-        this.lockedTarget = null;
-        this.trackedTarget = null;
-        this.targetingState = TargetingState.NO_TARGET;
-        break;
       case 'menu-button':
         this.onSceneTransition({ type: SceneType.TITLE });
+        break;
+      case 'az-dec-button':
+        this.adjustAngle('azimuth', -0.1);
+        break;
+      case 'az-inc-button':
+        this.adjustAngle('azimuth', 0.1);
+        break;
+      case 'el-dec-button':
+        this.adjustAngle('elevation', -0.1);
+        break;
+      case 'el-inc-button':
+        this.adjustAngle('elevation', 0.1);
         break;
     }
   }
@@ -1861,4 +1925,70 @@ export class GameScene {
         break;
     }
   };
+
+  /**
+   * Adjust angle values for fine control
+   */
+  private adjustAngle(type: 'azimuth' | 'elevation', delta: number): void {
+    if (type === 'azimuth') {
+      this.azimuthAngle = Math.max(
+        -180,
+        Math.min(180, this.azimuthAngle + delta)
+      );
+    } else {
+      this.elevationAngle = Math.max(
+        0,
+        Math.min(90, this.elevationAngle + delta)
+      );
+    }
+  }
+
+  /**
+   * Start continuous angle adjustment on button hold
+   */
+  private startButtonHold(buttonType: 'az+' | 'az-' | 'el+' | 'el-'): void {
+    if (this.isButtonHeld) return;
+
+    this.isButtonHeld = true;
+    const adjustmentRate = 0.1; // 0.1 degrees per adjustment
+    const intervalTime = 100; // 100ms = 10 adjustments per second = 1 degree per second
+
+    // Clear any existing intervals
+    this.stopButtonHold();
+
+    // Start adjustment after initial delay
+    this.buttonHoldTimer = window.setTimeout(() => {
+      this.buttonHoldInterval = window.setInterval(() => {
+        switch (buttonType) {
+          case 'az+':
+            this.adjustAngle('azimuth', adjustmentRate);
+            break;
+          case 'az-':
+            this.adjustAngle('azimuth', -adjustmentRate);
+            break;
+          case 'el+':
+            this.adjustAngle('elevation', adjustmentRate);
+            break;
+          case 'el-':
+            this.adjustAngle('elevation', -adjustmentRate);
+            break;
+        }
+      }, intervalTime);
+    }, 300); // 300ms initial delay
+  }
+
+  /**
+   * Stop continuous angle adjustment
+   */
+  private stopButtonHold(): void {
+    this.isButtonHeld = false;
+    if (this.buttonHoldTimer) {
+      window.clearTimeout(this.buttonHoldTimer);
+      this.buttonHoldTimer = null;
+    }
+    if (this.buttonHoldInterval) {
+      window.clearInterval(this.buttonHoldInterval);
+      this.buttonHoldInterval = null;
+    }
+  }
 }

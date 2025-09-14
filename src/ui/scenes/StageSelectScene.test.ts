@@ -4,6 +4,7 @@ import { SceneType } from './TitleScene';
 import { CanvasManager } from '../../rendering/CanvasManager';
 import { MouseHandler } from '../../input/MouseHandler';
 import { getStageById } from '../../data/StageData';
+import { Vector3 } from '../../math/Vector3';
 
 // Mock MouseHandler
 vi.mock('../../input/MouseHandler');
@@ -17,28 +18,28 @@ vi.mock('../../data/StageData', () => ({
         id: 1,
         name: 'Stage 1: Static Targets',
         description: 'Destroy stationary targets',
-        difficultyLevel: 1,
-        artilleryPosition: { x: 0, y: -8000, z: 0 },
+        difficultyLevel: 1 as const,
+        artilleryPosition: new Vector3(0, -8000, 0),
         targets: [],
-        winCondition: 'destroy_all',
+        winCondition: 'destroy_all' as const,
       },
       {
         id: 2,
         name: 'Stage 2: Slow Moving Targets',
         description: 'Hit slow moving targets',
-        difficultyLevel: 2,
-        artilleryPosition: { x: 0, y: -8000, z: 0 },
+        difficultyLevel: 2 as const,
+        artilleryPosition: new Vector3(0, -8000, 0),
         targets: [],
-        winCondition: 'destroy_all',
+        winCondition: 'destroy_all' as const,
       },
       {
         id: 3,
         name: 'Stage 3: Fast Moving Targets',
         description: 'Challenge fast moving targets',
-        difficultyLevel: 3,
-        artilleryPosition: { x: 0, y: -8000, z: 0 },
+        difficultyLevel: 3 as const,
+        artilleryPosition: new Vector3(0, -8000, 0),
         targets: [],
-        winCondition: 'destroy_all',
+        winCondition: 'destroy_all' as const,
       },
     ];
     return stages[id] || null;
@@ -101,28 +102,28 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
           id: 1,
           name: 'Stage 1: Static Targets',
           description: 'Destroy stationary targets',
-          difficultyLevel: 1,
-          artilleryPosition: { x: 0, y: -8000, z: 0 },
+          difficultyLevel: 1 as const,
+          artilleryPosition: new Vector3(0, -8000, 0),
           targets: [],
-          winCondition: 'destroy_all',
+          winCondition: 'destroy_all' as const,
         },
         {
           id: 2,
           name: 'Stage 2: Slow Moving Targets',
           description: 'Hit slow moving targets',
-          difficultyLevel: 2,
-          artilleryPosition: { x: 0, y: -8000, z: 0 },
+          difficultyLevel: 2 as const,
+          artilleryPosition: new Vector3(0, -8000, 0),
           targets: [],
-          winCondition: 'destroy_all',
+          winCondition: 'destroy_all' as const,
         },
         {
           id: 3,
           name: 'Stage 3: Fast Moving Targets',
           description: 'Challenge fast moving targets',
-          difficultyLevel: 3,
-          artilleryPosition: { x: 0, y: -8000, z: 0 },
+          difficultyLevel: 3 as const,
+          artilleryPosition: new Vector3(0, -8000, 0),
           targets: [],
-          winCondition: 'destroy_all',
+          winCondition: 'destroy_all' as const,
         },
       ];
       return stages[id] || null;
@@ -353,7 +354,7 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
           selectedStage: expect.objectContaining({
             id: 1,
             name: 'Stage 1: Static Targets',
-            difficultyLevel: 1,
+            difficultyLevel: 1 as const,
           }),
         },
       });
@@ -383,7 +384,7 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
           selectedStage: expect.objectContaining({
             id: 2,
             name: 'Stage 2: Slow Moving Targets',
-            difficultyLevel: 2,
+            difficultyLevel: 2 as const,
           }),
         },
       });
@@ -413,7 +414,7 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
           selectedStage: expect.objectContaining({
             id: 3,
             name: 'Stage 3: Fast Moving Targets',
-            difficultyLevel: 3,
+            difficultyLevel: 3 as const,
           }),
         },
       });
@@ -534,11 +535,19 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
 
   describe('responsive design', () => {
     it('should adapt to different canvas sizes', () => {
-      const smallCanvasManager = {
-        ...mockCanvasManager,
+      const smallCanvas = {
         width: 600,
         height: 400,
-      };
+      } as HTMLCanvasElement;
+
+      const smallCanvasManager = {
+        getCanvas: () => smallCanvas,
+        getContext: () => mockContext,
+        context: mockContext,
+        width: 600,
+        height: 400,
+        center: { x: 300, y: 200 },
+      } as any;
 
       const smallStageSelectScene = new StageSelectScene(
         smallCanvasManager,

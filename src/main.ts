@@ -11,18 +11,17 @@ import { GameManager } from './game/GameManager';
  */
 class BrowserArtillery {
   private gameManager: GameManager;
-  private canvas: HTMLCanvasElement;
   private isInitialized: boolean = false;
 
   constructor() {
-    this.canvas = this.initializeCanvas();
+    this.initializeCanvas();
     this.gameManager = new GameManager('game-canvas');
   }
 
   /**
    * Initialize the main game canvas
    */
-  private initializeCanvas(): HTMLCanvasElement {
+  private initializeCanvas(): void {
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
     if (!canvas) {
       throw new Error('Game canvas element not found');
@@ -33,8 +32,6 @@ class BrowserArtillery {
 
     // Handle window resize
     window.addEventListener('resize', () => this.resizeCanvas(canvas));
-
-    return canvas;
   }
 
   /**

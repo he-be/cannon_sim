@@ -4,6 +4,8 @@ import {} from './TitleScene';
 import { CanvasManager } from '../../rendering/CanvasManager';
 import { MouseHandler } from '../../input/MouseHandler';
 import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
+import { Vector3 } from '../../math/Vector3';
+import { TargetType } from '../../game/entities/Target';
 
 // Mock MouseHandler
 vi.mock('../../input/MouseHandler');
@@ -16,18 +18,18 @@ const mockStageConfig = {
   id: 1,
   name: 'Test Stage',
   description: 'Test stage for GameScene',
-  artilleryPosition: { x: 0, y: -8000, z: 0 },
+  artilleryPosition: new Vector3(0, -8000, 0),
   targets: [
     {
-      position: { x: 1000, y: 5000, z: 500 },
-      type: 'STATIC',
+      position: new Vector3(1000, 5000, 500),
+      type: TargetType.STATIC,
       velocity: undefined,
       spawnDelay: 0,
     },
     {
-      position: { x: -2000, y: 8000, z: 800 },
-      type: 'MOVING_SLOW',
-      velocity: { x: 50, y: 0, z: 0 },
+      position: new Vector3(-2000, 8000, 800),
+      type: TargetType.MOVING_SLOW,
+      velocity: new Vector3(50, 0, 0),
       spawnDelay: 2,
     },
   ],
@@ -473,11 +475,19 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
 
   describe('responsive design', () => {
     it('should adapt to different canvas sizes', () => {
-      const smallCanvasManager = {
-        ...mockCanvasManager,
+      const smallCanvas = {
         width: 800,
         height: 600,
-      };
+      } as HTMLCanvasElement;
+
+      const smallCanvasManager = {
+        getCanvas: () => smallCanvas,
+        getContext: () => mockContext,
+        context: mockContext,
+        width: 800,
+        height: 600,
+        center: { x: 400, y: 300 },
+      } as any;
 
       const smallGameScene = new GameScene(
         smallCanvasManager,
