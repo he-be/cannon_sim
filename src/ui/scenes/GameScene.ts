@@ -958,7 +958,13 @@ export class GameScene {
     );
 
     // Draw trajectory prediction lines (UI-13 requirement)
-    this.trajectoryRenderer.renderOnHorizontalRadar(this.canvasManager);
+    this.renderTrajectoryPrediction(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight
+    );
 
     // Draw radar elevation display (T046)
     this.renderRadarElevationDisplay(
@@ -2072,5 +2078,114 @@ export class GameScene {
   ): Vector3 {
     // Return midpoint between projectile and target at collision
     return projectilePos.add(targetPos).multiply(0.5);
+  }
+
+  /**
+   * Render trajectory prediction on horizontal radar (T048)
+   */
+  private renderTrajectoryPrediction(
+    ctx: CanvasRenderingContext2D,
+    radarLeft: number,
+    radarTop: number,
+    radarWidth: number,
+    radarHeight: number
+  ): void {
+    // Only show prediction when locked onto a target
+    if (
+      this.targetingState !== TargetingState.LOCKED_ON ||
+      !this.lockedTarget
+    ) {
+      return;
+    }
+
+    ctx.save();
+
+    // Calculate predicted trajectory
+    const trajectory = this.calculateTrajectoryToTarget(this.lockedTarget);
+
+    if (trajectory.length === 0) {
+      ctx.restore();
+      return;
+    }
+
+    // Draw trajectory line
+    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT; // Yellow for prediction
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]); // Dashed line for prediction
+    ctx.beginPath();
+
+    let firstPoint = true;
+    trajectory.forEach(point => {
+      const screenPos = this.worldToRadarScreen(
+        point,
+        radarLeft,
+        radarTop,
+        radarWidth,
+        radarHeight,
+        true // horizontal radar
+      );
+
+      if (screenPos && firstPoint) {
+        ctx.moveTo(screenPos.x, screenPos.y);
+        firstPoint = false;
+      } else if (screenPos) {
+        ctx.lineTo(screenPos.x, screenPos.y);
+      }
+    });
+
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Calculate trajectory to current locked target (T048)
+   */
+  private calculateTrajectoryToTarget(_target: TargetState): Vector3[] {
+    const trajectory: Vector3[] = [];
+
+    // Use current artillery angle settings
+    const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
+    const elevationRad = (this.elevationAngle * Math.PI) / 180;
+
+    // Initial velocity calculation
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
+    const initialVelocity = new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
+
+    // Simulate trajectory for prediction
+    let position = new Vector3(
+      this.artilleryPosition.x,
+      this.artilleryPosition.y,
+      this.artilleryPosition.z
+    );
+    const velocity = new Vector3(
+      initialVelocity.x,
+      initialVelocity.y,
+      initialVelocity.z
+    );
+    const dt = 0.1; // 0.1 second time steps
+    const maxTime = 30; // Maximum 30 seconds prediction
+
+    for (let t = 0; t < maxTime; t += dt) {
+      trajectory.push(new Vector3(position.x, position.y, position.z));
+
+      // Simple ballistic physics (gravity only for prediction)
+      velocity.z += PHYSICS_CONSTANTS.GRAVITY_ACCELERATION * dt;
+      position = position.add(velocity.multiply(dt));
+
+      // Stop if trajectory goes too far below ground or too far away
+      if (
+        position.z < -100 ||
+        position.subtract(this.artilleryPosition).magnitude() >
+          this.maxRadarRange * 2
+      ) {
+        break;
+      }
+    }
+
+    return trajectory;
   }
 }
