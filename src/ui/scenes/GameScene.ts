@@ -611,8 +611,11 @@ export class GameScene {
         ? displayTarget.velocity.magnitude()
         : 0;
 
+      const displayName = this.getTargetDisplayName(
+        displayTarget.type as TargetType
+      );
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
-      ctx.fillText(`Type: ${displayTarget.type}`, x + 10, y);
+      ctx.fillText(`Type: ${displayName}`, x + 10, y);
       y += lineHeight;
       ctx.fillText(`Range: ${(distance / 1000).toFixed(1)}km`, x + 10, y);
       y += lineHeight;
@@ -1039,7 +1042,10 @@ export class GameScene {
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.font = FONTS.SMALL;
 
-      ctx.fillText(`Type: ${displayTarget.type}`, x + 5, textY);
+      const displayName = this.getTargetDisplayName(
+        displayTarget.type as TargetType
+      );
+      ctx.fillText(`Type: ${displayName}`, x + 5, textY);
       textY += lineHeight;
       ctx.fillText(`Range: ${(distance / 1000).toFixed(1)}km`, x + 5, textY);
       textY += lineHeight;
@@ -1727,6 +1733,28 @@ export class GameScene {
       case 'menu-button':
         this.onSceneTransition({ type: SceneType.TITLE });
         break;
+    }
+  }
+
+  /**
+   * Get target display name for UI
+   */
+  private getTargetDisplayName(targetType: TargetType): string {
+    switch (targetType) {
+      case TargetType.BALLOON:
+        return '気球';
+      case TargetType.FRIGATE:
+        return 'フリゲート';
+      case TargetType.CRUISER:
+        return '巡洋艦';
+      case TargetType.STATIC:
+        return 'Static Target';
+      case TargetType.MOVING_SLOW:
+        return 'Slow Target';
+      case TargetType.MOVING_FAST:
+        return 'Fast Target';
+      default:
+        return 'Unknown Target';
     }
   }
 
