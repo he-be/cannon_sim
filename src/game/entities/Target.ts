@@ -6,14 +6,32 @@
 import { Vector3 } from '../../math/Vector3';
 
 export enum TargetType {
+  // 既存のタイプを維持（後方互換性）
   STATIC = 'static', // Stage 1: Static targets
   MOVING_SLOW = 'moving_slow', // Stage 2: Slow moving targets
   MOVING_FAST = 'moving_fast', // Stage 3: Fast moving targets
+
+  // 新しい空中戦艦タイプ
+  BALLOON = 'balloon', // 気球（固定目標）
+  FRIGATE = 'frigate', // フリゲート（低速移動目標）
+  CRUISER = 'cruiser', // 巡洋艦（高速移動目標）
 }
 
 export enum TargetState {
   ACTIVE = 'active',
   DESTROYED = 'destroyed',
+}
+
+/**
+ * 艦船特性インターフェース
+ * 各艦船タイプの物理的特性を定義
+ */
+export interface VesselCharacteristics {
+  size: number; // 当たり判定半径 (m)
+  durability: number; // 耐久力（将来の拡張用）
+  maxSpeed: number; // 最大速度 (m/s)
+  altitude: number; // 標準高度 (m)
+  displayName: string; // UI表示名
 }
 
 /**

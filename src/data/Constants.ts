@@ -62,3 +62,75 @@ export const FONTS = {
   DATA: '12px monospace',
   SMALL: '10px monospace',
 } as const;
+
+/**
+ * 艦船特性データ
+ * 各艦船タイプの物理的特性を定義
+ */
+export const VESSEL_CHARACTERISTICS = {
+  // 従来のタイプ（後方互換性）
+  static: {
+    size: 50,
+    durability: 1,
+    maxSpeed: 0,
+    altitude: 0,
+    displayName: 'Static Target',
+  },
+  moving_slow: {
+    size: 50,
+    durability: 1,
+    maxSpeed: 50,
+    altitude: 0,
+    displayName: 'Slow Target',
+  },
+  moving_fast: {
+    size: 50,
+    durability: 1,
+    maxSpeed: 100,
+    altitude: 0,
+    displayName: 'Fast Target',
+  },
+
+  // 空中戦艦タイプ
+  balloon: {
+    size: 80, // 大きな当たり判定（容易）
+    durability: 1,
+    maxSpeed: 0, // 静止
+    altitude: 1000, // 1000m高度
+    displayName: '気球',
+  },
+  frigate: {
+    size: 60, // 中程度の当たり判定
+    durability: 2,
+    maxSpeed: 70, // 70m/s
+    altitude: 800, // 800m高度
+    displayName: 'フリゲート',
+  },
+  cruiser: {
+    size: 90, // 大きいが高速
+    durability: 3,
+    maxSpeed: 120, // 120m/s
+    altitude: 1200, // 1200m高度
+    displayName: '巡洋艦',
+  },
+} as const;
+
+/**
+ * 艦船配置用定数
+ */
+export const VESSEL_DEPLOYMENT = {
+  BALLOON: {
+    ALTITUDE_RANGE: [800, 1200],
+    COUNT_PER_STAGE: [3, 4, 5],
+  },
+  FRIGATE: {
+    ALTITUDE_RANGE: [600, 1000],
+    SPEED_RANGE: [50, 80],
+    COUNT_PER_STAGE: [2, 3, 4],
+  },
+  CRUISER: {
+    ALTITUDE_RANGE: [800, 1400],
+    SPEED_RANGE: [100, 150],
+    COUNT_PER_STAGE: [1, 2, 3],
+  },
+} as const;
