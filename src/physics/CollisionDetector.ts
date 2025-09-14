@@ -54,6 +54,7 @@ export class CollisionDetector {
 
   /**
    * Check collision between a projectile and target
+   * Uses dynamic target hit radius from vessel characteristics
    */
   checkCollision(projectile: Projectile, target: Target): CollisionResult {
     // Skip collision check if entities are inactive
@@ -74,7 +75,11 @@ export class CollisionDetector {
 
     const distance = this.calculateDistance(projectilePos, targetPos);
 
-    if (distance <= this._parameters.minCollisionDistance) {
+    // Use dynamic collision threshold based on target's hit radius
+    const collisionThreshold =
+      this._parameters.projectileRadius + target.hitRadius;
+
+    if (distance <= collisionThreshold) {
       return {
         hasCollision: true,
         collisionType: CollisionType.DIRECT_HIT,
@@ -131,11 +136,15 @@ export class CollisionDetector {
     const relativeVel = projectileVel.subtract(targetVel);
     const relativePos = projectilePos.subtract(targetPos);
 
+    // Use dynamic collision threshold based on target's hit radius
+    const collisionThreshold =
+      this._parameters.projectileRadius + target.hitRadius;
+
     // Solve quadratic equation for collision time
     const collisionTime = this.solveCollisionTime(
       relativePos,
       relativeVel,
-      this._parameters.minCollisionDistance
+      collisionThreshold
     );
 
     if (collisionTime >= 0 && collisionTime <= deltaTime) {
