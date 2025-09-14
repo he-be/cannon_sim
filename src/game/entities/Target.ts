@@ -4,6 +4,7 @@
  */
 
 import { Vector3 } from '../../math/Vector3';
+import { VESSEL_CHARACTERISTICS } from '../../data/Constants';
 
 export enum TargetType {
   // 既存のタイプを維持（後方互換性）
@@ -95,13 +96,34 @@ export class Target {
   }
 
   /**
+   * 艦船特性を取得
+   */
+  get vesselCharacteristics(): VesselCharacteristics {
+    return getVesselCharacteristics(this._type);
+  }
+
+  /**
+   * UI表示用の名前
+   */
+  get displayName(): string {
+    return this.vesselCharacteristics.displayName;
+  }
+
+  /**
+   * 当たり判定半径
+   */
+  get hitRadius(): number {
+    return this.vesselCharacteristics.size;
+  }
+
+  /**
    * Update target position based on movement
    */
   update(deltaTime: number): void {
     if (this._state !== TargetState.ACTIVE) return;
 
-    // Simple linear movement for moving targets
-    if (this._type !== TargetType.STATIC) {
+    // Simple linear movement for moving targets (exclude static and balloon)
+    if (this._type !== TargetType.STATIC && this._type !== TargetType.BALLOON) {
       this._position = this._position.add(this._velocity.multiply(deltaTime));
     }
   }
@@ -112,4 +134,29 @@ export class Target {
   destroy(): void {
     this._state = TargetState.DESTROYED;
   }
+}
+
+/**
+ * 艦船タイプに基づく特性を取得
+ */
+export function getVesselCharacteristics(
+  type: TargetType
+): VesselCharacteristics {
+  const characteristics =
+    VESSEL_CHARACTERISTICS[type as keyof typeof VESSEL_CHARACTERISTICS];
+  if (!characteristics) {
+    throw new Error(`Unknown target type: ${type}`);
+  }
+  return characteristics;
+}
+
+/**
+ * 空中戦艦かどうかを判定
+ */
+export function isAirVessel(type: TargetType): boolean {
+  return (
+    type === TargetType.BALLOON ||
+    type === TargetType.FRIGATE ||
+    type === TargetType.CRUISER
+  );
 }
