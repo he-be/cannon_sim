@@ -94,6 +94,7 @@ export class GameScene {
 
   // Radar controls
   private radarAzimuth: number = 0;
+  private radarElevation: number = 0; // レーダー仰角（度）
   private radarRange: number = GAME_CONSTANTS.DEFAULT_RADAR_RANGE;
   private maxRadarRange: number = GAME_CONSTANTS.MAX_RADAR_RANGE;
 
@@ -951,6 +952,15 @@ export class GameScene {
     // Draw trajectory prediction lines (UI-13 requirement)
     this.trajectoryRenderer.renderOnHorizontalRadar(this.canvasManager);
 
+    // Draw radar elevation display (T046)
+    this.renderRadarElevationDisplay(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight
+    );
+
     ctx.restore();
   }
 
@@ -1711,12 +1721,17 @@ export class GameScene {
   private updateRadarToTarget(target: TargetState): void {
     const dx = target.position.x - this.artilleryPosition.x;
     const dy = target.position.y - this.artilleryPosition.y;
+    const dz = target.position.z - this.artilleryPosition.z;
 
     // Calculate azimuth angle from artillery to target (統一: XY平面)
     this.radarAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
 
     // Calculate horizontal distance (radar range)
-    this.radarRange = Math.sqrt(dx * dx + dy * dy);
+    const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
+    this.radarRange = horizontalDistance;
+
+    // Calculate elevation angle from artillery to target (T046)
+    this.radarElevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
   }
 
   /**
@@ -1990,5 +2005,45 @@ export class GameScene {
       window.clearInterval(this.buttonHoldInterval);
       this.buttonHoldInterval = null;
     }
+  }
+
+  /**
+   * Render radar elevation display in horizontal radar (T046)
+   */
+  private renderRadarElevationDisplay(
+    ctx: CanvasRenderingContext2D,
+    radarLeft: number,
+    radarTop: number,
+    radarWidth: number,
+    _radarHeight: number
+  ): void {
+    ctx.save();
+
+    // Display elevation in top-right corner of radar
+    const displayX = radarLeft + radarWidth - 120;
+    const displayY = radarTop + 30;
+
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.DATA;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    // Format elevation display
+    const elevationText = `EL: ${this.radarElevation.toFixed(1)}°`;
+    ctx.fillText(elevationText, displayX, displayY);
+
+    // Add a subtle background for better visibility
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = CRT_COLORS.BACKGROUND;
+    const textMetrics = ctx.measureText(elevationText);
+    ctx.fillRect(displayX - 5, displayY - 10, textMetrics.width + 10, 20);
+    ctx.restore();
+
+    // Re-draw the text over the background
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.fillText(elevationText, displayX, displayY);
+
+    ctx.restore();
   }
 }
