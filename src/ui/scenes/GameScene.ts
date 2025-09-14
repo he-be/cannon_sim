@@ -2153,7 +2153,7 @@ export class GameScene {
     const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
     const elevationRad = (this.elevationAngle * Math.PI) / 180;
 
-    // Initial velocity calculation
+    // Initial velocity calculation using projectile physics
     const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
     const initialVelocity = new Vector3(
       muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
@@ -2161,31 +2161,61 @@ export class GameScene {
       muzzleVelocity * Math.sin(elevationRad)
     );
 
-    // Simulate trajectory for prediction
-    let position = new Vector3(
-      this.artilleryPosition.x,
-      this.artilleryPosition.y,
-      this.artilleryPosition.z
-    );
-    const velocity = new Vector3(
-      initialVelocity.x,
-      initialVelocity.y,
-      initialVelocity.z
-    );
-    const dt = 0.1; // 0.1 second time steps
-    const maxTime = 30; // Maximum 30 seconds prediction
+    // Set up physics engine with same forces as real projectiles
+    const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
+    const accelerationFunction = (state: State3D, _time: number): Vector3 => {
+      const Fg = Forces.gravity(
+        mass,
+        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
+        new Vector3(
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
+        )
+      );
 
-    for (let t = 0; t < maxTime; t += dt) {
-      trajectory.push(new Vector3(position.x, position.y, position.z));
+      const Fd = Forces.drag(
+        state.velocity,
+        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
+        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
+        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
+      );
 
-      // Simple ballistic physics (gravity only for prediction)
-      velocity.z += PHYSICS_CONSTANTS.GRAVITY_ACCELERATION * dt;
-      position = position.add(velocity.multiply(dt));
+      const totalForce = Forces.sum(Fg, Fd);
+      return totalForce.multiply(1 / mass); // F = ma -> a = F/m
+    };
 
-      // Stop if trajectory goes too far below ground or too far away
+    const physicsEngine = new PhysicsEngine(accelerationFunction);
+
+    // Initial state
+    let state: State3D = {
+      position: new Vector3(
+        this.artilleryPosition.x,
+        this.artilleryPosition.y,
+        this.artilleryPosition.z
+      ),
+      velocity: initialVelocity,
+    };
+
+    // Use same timestep as physics simulation
+    const dt = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP;
+    const maxTime = PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME;
+    let time = 0;
+
+    // Simulate trajectory using RK4 integration
+    while (time < maxTime) {
+      trajectory.push(
+        new Vector3(state.position.x, state.position.y, state.position.z)
+      );
+
+      // Integrate physics state
+      state = physicsEngine.integrate(state, time, dt);
+      time += dt;
+
+      // Stop if projectile hits ground or goes too far
       if (
-        position.z < -100 ||
-        position.subtract(this.artilleryPosition).magnitude() >
+        state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL ||
+        state.position.subtract(this.artilleryPosition).magnitude() >
           this.maxRadarRange * 2
       ) {
         break;
@@ -2262,7 +2292,7 @@ export class GameScene {
     const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
     const elevationRad = (this.elevationAngle * Math.PI) / 180;
 
-    // Initial velocity calculation
+    // Initial velocity calculation using projectile physics
     const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
     const initialVelocity = new Vector3(
       muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
@@ -2270,43 +2300,74 @@ export class GameScene {
       muzzleVelocity * Math.sin(elevationRad)
     );
 
-    // Simulate trajectory for vertical projection
-    let position = new Vector3(
-      this.artilleryPosition.x,
-      this.artilleryPosition.y,
-      this.artilleryPosition.z
-    );
-    const velocity = new Vector3(
-      initialVelocity.x,
-      initialVelocity.y,
-      initialVelocity.z
-    );
-    const dt = 0.1; // 0.1 second time steps
-    const maxTime = 30; // Maximum 30 seconds prediction
+    // Set up physics engine with same forces as real projectiles
+    const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
+    const accelerationFunction = (state: State3D, _time: number): Vector3 => {
+      const Fg = Forces.gravity(
+        mass,
+        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
+        new Vector3(
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
+        )
+      );
 
-    for (let t = 0; t < maxTime; t += dt) {
+      const Fd = Forces.drag(
+        state.velocity,
+        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
+        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
+        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
+      );
+
+      const totalForce = Forces.sum(Fg, Fd);
+      return totalForce.multiply(1 / mass); // F = ma -> a = F/m
+    };
+
+    const physicsEngine = new PhysicsEngine(accelerationFunction);
+
+    // Initial state
+    let state: State3D = {
+      position: new Vector3(
+        this.artilleryPosition.x,
+        this.artilleryPosition.y,
+        this.artilleryPosition.z
+      ),
+      velocity: initialVelocity,
+    };
+
+    // Use same timestep as physics simulation
+    const dt = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP;
+    const maxTime = PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME;
+    let time = 0;
+
+    // Simulate trajectory using RK4 integration
+    while (time < maxTime) {
       // Project 3D trajectory onto vertical plane aligned with current radar bearing
       // This creates a side-view showing altitude vs. distance
       const horizontalDistance = Math.sqrt(
-        Math.pow(position.x - this.artilleryPosition.x, 2) +
-          Math.pow(position.y - this.artilleryPosition.y, 2)
+        Math.pow(state.position.x - this.artilleryPosition.x, 2) +
+          Math.pow(state.position.y - this.artilleryPosition.y, 2)
       );
 
       // Create a pseudo-position for vertical radar display
       const verticalPoint = new Vector3(
         horizontalDistance, // X = horizontal distance from artillery
         0, // Y = 0 (not used in vertical radar)
-        position.z // Z = altitude
+        state.position.z // Z = altitude
       );
 
       trajectory.push(verticalPoint);
 
-      // Simple ballistic physics (gravity only for prediction)
-      velocity.z += PHYSICS_CONSTANTS.GRAVITY_ACCELERATION * dt;
-      position = position.add(velocity.multiply(dt));
+      // Integrate physics state
+      state = physicsEngine.integrate(state, time, dt);
+      time += dt;
 
-      // Stop if trajectory goes too far below ground or too far away
-      if (position.z < -100 || horizontalDistance > this.maxRadarRange * 2) {
+      // Stop if projectile hits ground or goes too far
+      if (
+        state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL ||
+        horizontalDistance > this.maxRadarRange * 2
+      ) {
         break;
       }
     }

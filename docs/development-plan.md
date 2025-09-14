@@ -993,3 +993,607 @@
 **最終段階**: T038 完全物理法則適用
 
 **総推定時間**: 6.5時間
+
+---
+
+## 6. 空中戦艦タイプターゲット実装計画 (2025-09-14)
+
+### 6.1 設計方針
+
+既存のコンポーネント構造を最大限活用し、段階的に空中戦艦タイプのターゲット特性を追加します。
+
+### 6.2 既存コンポーネント分析と再利用戦略
+
+**再利用可能な既存コンポーネント**:
+
+- `Target` クラス: 基本構造はそのまま活用
+- `TargetType` enum: 新しい艦船タイプを追加
+- `TargetConfig` interface: 艦船特性パラメータを拡張
+- `StageData` システム: 艦船配置データを拡張
+- `Constants.ts` システム: 艦船パラメータを統一管理
+
+### 6.3 実装タスク
+
+#### T039. 空中戦艦タイプ定義
+
+**手法**: 既存コンポーネント拡張  
+**内容**:
+
+**Step 1: TargetType拡張**
+
+```typescript
+export enum TargetType {
+  // 既存のタイプを維持（後方互換性）
+  STATIC = 'static',
+  MOVING_SLOW = 'moving_slow',
+  MOVING_FAST = 'moving_fast',
+
+  // 新しい空中戦艦タイプ
+  BALLOON = 'balloon', // 気球（固定目標）
+  FRIGATE = 'frigate', // フリゲート（低速移動目標）
+  CRUISER = 'cruiser', // 巡洋艦（高速移動目標）
+}
+```
+
+**Step 2: 艦船特性インターface追加**
+
+```typescript
+export interface VesselCharacteristics {
+  size: number; // 当たり判定半径
+  durability: number; // 耐久力（将来の拡張用）
+  maxSpeed: number; // 最大速度
+  altitude: number; // 標準高度
+  displayName: string; // UI表示名
+}
+```
+
+**Step 3: Constants.ts拡張**
+
+- `VESSEL_CHARACTERISTICS` オブジェクトを追加
+- 各艦船タイプの詳細パラメータ定義
+
+**成果物**: 拡張された型定義システム  
+**推定時間**: 1時間
+
+#### T040. Target クラス機能拡張
+
+**手法**: 既存クラス非破壊的拡張  
+**内容**:
+
+**Step 1: Targetクラスに艦船特性アクセサ追加**
+
+```typescript
+export class Target {
+  // 既存のプロパティとメソッドは維持
+
+  get vesselCharacteristics(): VesselCharacteristics {
+    return getVesselCharacteristics(this._type);
+  }
+
+  get displayName(): string {
+    return this.vesselCharacteristics.displayName;
+  }
+
+  get hitRadius(): number {
+    return this.vesselCharacteristics.size;
+  }
+}
+```
+
+**Step 2: ユーティリティ関数追加**
+
+```typescript
+export function getVesselCharacteristics(
+  type: TargetType
+): VesselCharacteristics {
+  // 艦船タイプに基づく特性返却
+}
+
+export function isAirVessel(type: TargetType): boolean {
+  // 空中戦艦判定
+}
+```
+
+**Step 3: 後方互換性確保**
+
+- 既存の `STATIC`, `MOVING_SLOW`, `MOVING_FAST` は従来通り動作
+- 新しい艦船タイプは追加の特性を持つ
+
+**成果物**: 機能拡張されたTarget システム  
+**推定時間**: 2時間
+
+#### T041. StageData 艦船配置設定
+
+**手法**: 既存データ構造拡張  
+**内容**:
+
+**Step 1: TargetConfig 拡張**
+
+```typescript
+export interface TargetConfig {
+  position: Vector3;
+  type: TargetType;
+  velocity?: Vector3;
+  spawnDelay: number;
+  // 新規追加（オプショナル）
+  customAltitude?: number; // 個別高度設定
+  patrolRoute?: Vector3[]; // 巡航ルート（将来拡張用）
+}
+```
+
+**Step 2: 各ステージの艦船配置再定義**
+
+**STAGE_1_CONFIG (気球ステージ)**:
+
+```typescript
+targets: [
+  {
+    position: new Vector3(0, -5000, 1000), // 高度1000mの気球
+    type: TargetType.BALLOON,
+    spawnDelay: 0,
+  },
+  // 複数の気球を段階的配置
+];
+```
+
+**STAGE_2_CONFIG (フリゲートステージ)**:
+
+```typescript
+targets: [
+  {
+    position: new Vector3(-3000, -6000, 800),
+    type: TargetType.FRIGATE,
+    velocity: new Vector3(60, 0, 0), // 60m/s横移動
+    spawnDelay: 0,
+  },
+  // 複数のフリゲートを配置
+];
+```
+
+**STAGE_3_CONFIG (巡洋艦ステージ)**:
+
+```typescript
+targets: [
+  {
+    position: new Vector3(-4000, -8000, 1200),
+    type: TargetType.CRUISER,
+    velocity: new Vector3(120, 30, 0), // 複雑な移動
+    spawnDelay: 0,
+  },
+  // 複数の巡洋艦を配置
+];
+```
+
+**Step 3: バランス調整用定数追加**
+
+```typescript
+VESSEL_DEPLOYMENT: {
+  BALLOON: {
+    ALTITUDE_RANGE: [800, 1200],
+    COUNT_PER_STAGE: [3, 4, 5],
+  },
+  FRIGATE: {
+    ALTITUDE_RANGE: [600, 1000],
+    SPEED_RANGE: [50, 80],
+    COUNT_PER_STAGE: [2, 3, 4],
+  },
+  CRUISER: {
+    ALTITUDE_RANGE: [800, 1400],
+    SPEED_RANGE: [100, 150],
+    COUNT_PER_STAGE: [1, 2, 3],
+  },
+}
+```
+
+**成果物**: 艦船配置データシステム  
+**推定時間**: 1.5時間
+
+#### T042. 描画システム統合
+
+**手法**: 既存レンダラー拡張  
+**内容**:
+
+**Step 1: 艦船別シンボル定義**
+
+- 気球: 円形シンボル
+- フリゲート: 小型船舶シンボル
+- 巡洋艦: 大型船舶シンボル
+
+**Step 2: サイズ差別化**
+
+- `hitRadius` に基づく動的サイズ調整
+- 距離に応じたスケーリング
+
+**Step 3: 既存レンダラーとの統合**
+
+- GameScene での艦船タイプ判別描画
+- レーダー表示での艦船情報表示
+
+**成果物**: 艦船対応描画システム  
+**推定時間**: 2時間
+
+#### T043. UI情報表示拡張
+
+**手法**: 既存UI拡張  
+**内容**:
+
+**Step 1: ターゲット情報パネル拡張**
+
+```typescript
+// ロックオン時の表示情報
+- Target Type: "気球" / "フリゲート" / "巡洋艦"
+- Size: "Small" / "Medium" / "Large"
+- Speed: [現在の速度]
+- Altitude: [現在高度]
+- Range: [現在距離]
+```
+
+**Step 2: コントロールパネル表示調整**
+
+- 艦船タイプに応じた推奨照準角の調整
+- ターゲットサイズを考慮したリード角計算
+
+**成果物**: 艦船対応UI システム  
+**推定時間**: 1時間
+
+#### T044. 衝突判定システム更新
+
+**手法**: 既存システム拡張  
+**内容**:
+
+**Step 1: 可変当たり判定半径**
+
+```typescript
+// Target.hitRadius に基づく動的判定
+const hitDistance = projectile.position.distanceTo(target.position);
+const collisionThreshold = target.hitRadius;
+```
+
+**Step 2: 艦船サイズ別命中精度**
+
+- 気球: 大きな当たり判定（容易）
+- フリゲート: 中程度の当たり判定
+- 巡洋艦: 大きいが高速のため困難
+
+**成果物**: 艦船対応衝突判定  
+**推定時間**: 1時間
+
+### 6.4 段階的実装スケジュール
+
+**Phase 1 (優先度: 最高)**
+
+- T039: 空中戦艦タイプ定義
+- T040: Target クラス機能拡張
+
+**Phase 2 (優先度: 高)**
+
+- T041: StageData 艦船配置設定
+- T044: 衝突判定システム更新
+
+**Phase 3 (優先度: 中)**
+
+- T042: 描画システム統合
+- T043: UI情報表示拡張
+
+### 6.5 品質保証
+
+**後方互換性チェック**:
+
+- 既存の `STATIC`, `MOVING_SLOW`, `MOVING_FAST` タイプが正常動作
+- 既存のテストが全て通過
+- 既存のステージデータが正常読み込み
+
+**新機能テスト**:
+
+- 各艦船タイプの特性が正しく反映
+- 艦船サイズに応じた当たり判定
+- UI での艦船情報表示
+
+### 6.6 推定工数
+
+**総推定時間**: 8.5時間
+
+- T039: 1時間
+- T040: 2時間
+- T041: 1.5時間
+- T042: 2時間
+- T043: 1時間
+- T044: 1時間
+
+**実装優先度**: 中-高（既存機能が正常動作している前提で実装）
+
+---
+
+## 7. UI改善実装計画 (2025-09-14)
+
+### 7.1 設計方針
+
+既存のUI描画システム（GameScene.ts）と入力処理システム（MouseHandler.ts）を最大限活用し、段階的にUI改善を実装します。
+
+### 7.2 UI改善要求分析
+
+**docs/ui-fix-0914.txt の要求内容**:
+
+#### **左ペイン (Artillery制御)**
+
+- **UI-F01**: Az/Elスライダーに微調整用の+/-ボタン追加（0.1度/秒の連続調整）
+- **UI-F02**: Cancel trackingボタンを削除
+
+#### **中央ペイン (水平レーダー)**
+
+- **UI-F03**: レーダーのEl表示を追加
+- **UI-F04**: 爆発エフェクトの位置修正（砲弾の実際の爆発位置で表示）
+
+#### **右ペイン (垂直レーダー)**
+
+- **UI-F05**: UI-13の要求実装（軌跡予測線表示）
+- **UI-F06**: UI-16の要求実装（垂直レーダーでの弾道予測）
+
+### 7.3 既存コンポーネント分析と再利用戦略
+
+**再利用可能な既存コンポーネント**:
+
+- `GameScene.renderControlElements()`: 左ペインUI描画システム
+- `GameScene.renderSlider()`: スライダー描画システム
+- `GameScene.handleMouseDown/Move/Up()`: マウス入力処理システム
+- `GameScene.renderHorizontalRadar()`: 水平レーダー描画システム
+- `GameScene.renderVerticalRadar()`: 垂直レーダー描画システム
+- `EffectRenderer`: 爆発エフェクト描画システム
+- `TrajectoryRenderer`: 軌跡予測描画システム
+
+### 7.4 実装タスク
+
+#### T045. Artillery制御パネル改善
+
+**手法**: 既存コンポーネント拡張  
+**内容**:
+
+**Step 1: 微調整ボタンUI追加**
+
+```typescript
+// GameScene.renderControlElements() に追加
+renderFineControlButtons(ctx: CanvasRenderingContext2D) {
+  // Az +/- ボタンを描画
+  // El +/- ボタンを描画
+  // ボタンの視覚的フィードバック
+}
+```
+
+**Step 2: 連続調整システム実装**
+
+```typescript
+// 長押し検出とタイマー処理
+private buttonHoldTimer: number | null = null;
+private buttonHoldInterval: number | null = null;
+
+handleButtonHold(buttonType: 'az+' | 'az-' | 'el+' | 'el-') {
+  // 0.1度/秒で連続調整
+  // マウスリリースで停止
+}
+```
+
+**Step 3: 既存スライダーとの同期**
+
+```typescript
+// updateSliderValue() を拡張
+// ボタン操作時もスライダー位置を更新
+// 数値表示も連動更新
+```
+
+**Step 4: Cancel trackingボタン削除**
+
+```typescript
+// uiElements配列からcancel_trackingを除去
+// 関連する描画・入力処理コードを削除
+```
+
+**成果物**: 改善されたArtillery制御パネル  
+**推定時間**: 2.5時間
+
+#### T046. レーダー表示情報拡張
+
+**手法**: 既存描画システム拡張  
+**内容**:
+
+**Step 1: レーダーElevation表示追加**
+
+```typescript
+// GameScene.renderHorizontalRadar() に追加
+renderRadarElevationDisplay(ctx: CanvasRenderingContext2D) {
+  // 現在のレーダー仰角を数値表示
+  // "EL: XX.X°" 形式での表示
+}
+```
+
+**Step 2: 既存radarElevation プロパティ活用**
+
+```typescript
+// 既存のthis.radarElevation を使用
+// マウス操作との連動は既存システムを活用
+```
+
+**Step 3: UIレイアウトの調整**
+
+```typescript
+// 既存のレーダー情報表示エリアに統合
+// 方位角表示と統一したフォーマット
+```
+
+**成果物**: Elevation表示機能  
+**推定時間**: 1時間
+
+#### T047. 爆発エフェクト位置修正
+
+**手法**: 既存EffectRenderer統合強化  
+**内容**:
+
+**Step 1: 爆発位置計算の修正**
+
+```typescript
+// GameScene.checkCollisions() での爆発エフェクト生成時
+if (result.hasCollision && result.collisionPoint) {
+  // 実際の衝突位置を使用
+  this.effectRenderer.createExplosion(result.collisionPoint);
+}
+```
+
+**Step 2: レーダー範囲内判定**
+
+```typescript
+isPositionInRadarRange(position: Vector3): boolean {
+  const distance = this.artilleryPosition.distanceTo(position);
+  return distance <= this.maxRadarRange;
+}
+
+// レーダー範囲内の爆発のみ表示
+if (this.isPositionInRadarRange(result.collisionPoint)) {
+  this.effectRenderer.createExplosion(result.collisionPoint);
+}
+```
+
+**Step 3: ワールド座標からスクリーン座標への変換**
+
+```typescript
+// 既存のworldToRadarScreen()メソッドを活用
+// 水平レーダーと垂直レーダーでの正しい位置表示
+```
+
+**成果物**: 正確な爆発エフェクト表示  
+**推定時間**: 1.5時間
+
+#### T048. 軌跡予測線実装 (UI-13対応)
+
+**手法**: 既存TrajectoryRenderer統合  
+**内容**:
+
+**Step 1: TrajectoryRenderer統合**
+
+```typescript
+// GameScene constructor で TrajectoryRenderer初期化
+// 既存の this.trajectoryRenderer を活用
+```
+
+**Step 2: 水平レーダーでの予測線表示**
+
+```typescript
+// GameScene.renderHorizontalRadar() に追加
+renderTrajectoryPrediction(ctx: CanvasRenderingContext2D) {
+  if (this.lockedTarget) {
+    // 現在の照準角度での弾道計算
+    const trajectory = this.calculateTrajectoryToTarget();
+    // 水平面での軌跡線描画
+    this.drawTrajectoryOnRadar(ctx, trajectory);
+  }
+}
+```
+
+**Step 3: 既存の物理計算システム活用**
+
+```typescript
+// T035で統合済みのPhysicsEngineを使用
+// リアルタイム弾道計算
+// ターゲットの移動予測も考慮
+```
+
+**成果物**: 水平レーダーでの軌跡予測表示  
+**推定時間**: 2時間
+
+#### T049. 垂直レーダー弾道予測 (UI-16対応)
+
+**手法**: 既存垂直レーダーシステム拡張  
+**内容**:
+
+**Step 1: 垂直断面での弾道計算**
+
+```typescript
+// GameScene.renderVerticalRadar() に追加
+renderVerticalTrajectoryPrediction(ctx: CanvasRenderingContext2D) {
+  if (this.lockedTarget) {
+    // 垂直面（高度-距離）での放物線軌道計算
+    const verticalTrajectory = this.calculateVerticalTrajectory();
+    // 放物線の描画
+    this.drawVerticalTrajectory(ctx, verticalTrajectory);
+  }
+}
+```
+
+**Step 2: 3D弾道の2D投影**
+
+```typescript
+calculateVerticalTrajectory(): TrajectoryPoint[] {
+  // 3D弾道計算結果を垂直断面に投影
+  // 重力による放物線軌道の正確な表現
+  // 高度情報の正しい表示
+}
+```
+
+**Step 3: 既存レーダー座標系との統合**
+
+```typescript
+// 既存のworldToRadarScreen()系の座標変換を活用
+// 垂直レーダーの座標系に適合
+```
+
+**成果物**: 垂直レーダーでの弾道予測表示  
+**推定時間**: 2時間
+
+### 7.5 段階的実装スケジュール
+
+**Phase 1 (優先度: 最高)**
+
+- T045: Artillery制御パネル改善（+/-ボタン、Cancel tracking削除）
+- T046: レーダー表示情報拡張（El表示追加）
+
+**Phase 2 (優先度: 高)**
+
+- T047: 爆発エフェクト位置修正
+- T048: 軌跡予測線実装 (UI-13対応)
+
+**Phase 3 (優先度: 中)**
+
+- T049: 垂直レーダー弾道予測 (UI-16対応)
+
+### 7.6 既存システムとの統合点
+
+**入力処理統合**:
+
+- 既存の`handleMouseDown/Move/Up()`システムを拡張
+- +/-ボタンの長押し判定を追加
+- 既存のスライダーとボタン操作の同期
+
+**描画系統合**:
+
+- 既存の`renderControlElements()`, `renderHorizontalRadar()`, `renderVerticalRadar()`を拡張
+- EffectRendererとTrajectoryRendererの既存インスタンスを活用
+- 一貫したCanvas 2D API使用
+
+**物理計算統合**:
+
+- T035で統合済みのPhysicsEngineを軌跡予測に活用
+- 既存のcollision detection結果を爆発エフェクトに活用
+
+### 7.7 品質保証
+
+**既存機能保持**:
+
+- 現在のUI操作が正常に動作継続
+- 既存のマウス操作、スライダー操作が影響を受けない
+- Canvas 2D API完全準拠の維持
+
+**新機能テスト**:
+
+- +/-ボタンの連続調整動作
+- 爆発エフェクトの正確な位置表示
+- 軌跡予測線の物理法則準拠
+
+### 7.8 推定工数
+
+**総推定時間**: 9時間
+
+- T045: 2.5時間
+- T046: 1時間
+- T047: 1.5時間
+- T048: 2時間
+- T049: 2時間
+
+**実装優先度**: 高（UI操作性の大幅向上が期待される）
