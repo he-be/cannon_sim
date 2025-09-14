@@ -1022,7 +1022,13 @@ export class GameScene {
     );
 
     // Draw trajectory prediction lines (UI-16 requirement)
-    this.trajectoryRenderer.renderOnVerticalRadar(this.canvasManager);
+    this.renderVerticalTrajectoryPrediction(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight
+    );
 
     // Draw target information panel below
     const infoTop = radarTop + radarHeight + 10;
@@ -2182,6 +2188,125 @@ export class GameScene {
         position.subtract(this.artilleryPosition).magnitude() >
           this.maxRadarRange * 2
       ) {
+        break;
+      }
+    }
+
+    return trajectory;
+  }
+
+  /**
+   * Render vertical trajectory prediction on vertical radar (T049)
+   */
+  private renderVerticalTrajectoryPrediction(
+    ctx: CanvasRenderingContext2D,
+    radarLeft: number,
+    radarTop: number,
+    radarWidth: number,
+    radarHeight: number
+  ): void {
+    // Only show prediction when locked onto a target
+    if (
+      this.targetingState !== TargetingState.LOCKED_ON ||
+      !this.lockedTarget
+    ) {
+      return;
+    }
+
+    ctx.save();
+
+    // Calculate predicted trajectory
+    const trajectory = this.calculateVerticalTrajectory();
+
+    if (trajectory.length === 0) {
+      ctx.restore();
+      return;
+    }
+
+    // Draw trajectory line
+    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT; // Yellow for prediction
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]); // Dashed line for prediction
+    ctx.beginPath();
+
+    let firstPoint = true;
+    trajectory.forEach(point => {
+      const screenPos = this.worldToRadarScreen(
+        point,
+        radarLeft,
+        radarTop,
+        radarWidth,
+        radarHeight,
+        false // vertical radar
+      );
+
+      if (screenPos && firstPoint) {
+        ctx.moveTo(screenPos.x, screenPos.y);
+        firstPoint = false;
+      } else if (screenPos) {
+        ctx.lineTo(screenPos.x, screenPos.y);
+      }
+    });
+
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Calculate vertical trajectory projection (T049)
+   */
+  private calculateVerticalTrajectory(): Vector3[] {
+    const trajectory: Vector3[] = [];
+
+    // Use current artillery angle settings
+    const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
+    const elevationRad = (this.elevationAngle * Math.PI) / 180;
+
+    // Initial velocity calculation
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
+    const initialVelocity = new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
+
+    // Simulate trajectory for vertical projection
+    let position = new Vector3(
+      this.artilleryPosition.x,
+      this.artilleryPosition.y,
+      this.artilleryPosition.z
+    );
+    const velocity = new Vector3(
+      initialVelocity.x,
+      initialVelocity.y,
+      initialVelocity.z
+    );
+    const dt = 0.1; // 0.1 second time steps
+    const maxTime = 30; // Maximum 30 seconds prediction
+
+    for (let t = 0; t < maxTime; t += dt) {
+      // Project 3D trajectory onto vertical plane aligned with current radar bearing
+      // This creates a side-view showing altitude vs. distance
+      const horizontalDistance = Math.sqrt(
+        Math.pow(position.x - this.artilleryPosition.x, 2) +
+          Math.pow(position.y - this.artilleryPosition.y, 2)
+      );
+
+      // Create a pseudo-position for vertical radar display
+      const verticalPoint = new Vector3(
+        horizontalDistance, // X = horizontal distance from artillery
+        0, // Y = 0 (not used in vertical radar)
+        position.z // Z = altitude
+      );
+
+      trajectory.push(verticalPoint);
+
+      // Simple ballistic physics (gravity only for prediction)
+      velocity.z += PHYSICS_CONSTANTS.GRAVITY_ACCELERATION * dt;
+      position = position.add(velocity.multiply(dt));
+
+      // Stop if trajectory goes too far below ground or too far away
+      if (position.z < -100 || horizontalDistance > this.maxRadarRange * 2) {
         break;
       }
     }
