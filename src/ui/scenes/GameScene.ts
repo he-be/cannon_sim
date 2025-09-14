@@ -25,6 +25,7 @@ import {
   CRT_COLORS,
   FONTS,
 } from '../../data/Constants';
+import { TargetType } from '../../game/entities/Target';
 
 export enum GameState {
   PLAYING = 'playing',
@@ -1179,29 +1180,34 @@ export class GameScene {
 
       if (!screenPos) return;
 
-      // Draw target with state-based styling
+      // Draw target with vessel-specific styling
       let color: string = CRT_COLORS.TARGET_NORMAL;
-      let size = 3;
+      let baseSize = this.getVesselSymbolSize(target.type as TargetType);
 
       if (target === this.lockedTarget) {
         color = CRT_COLORS.TARGET_LOCKED;
-        size = 5;
+        baseSize *= 1.4; // Enlarge locked targets
 
         // Draw lock indicator
         ctx.strokeStyle = color;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(screenPos.x, screenPos.y, 8, 0, Math.PI * 2);
+        ctx.arc(screenPos.x, screenPos.y, baseSize + 4, 0, Math.PI * 2);
         ctx.stroke();
       } else if (target === this.trackedTarget) {
         color = CRT_COLORS.TARGET_TRACKED;
-        size = 4;
+        baseSize *= 1.2; // Slightly enlarge tracked targets
       }
 
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
-      ctx.fill();
+      // Draw vessel-specific symbol
+      this.drawVesselSymbol(
+        ctx,
+        screenPos.x,
+        screenPos.y,
+        baseSize,
+        target.type as TargetType,
+        color
+      );
     });
   }
 
@@ -1720,6 +1726,87 @@ export class GameScene {
         break;
       case 'menu-button':
         this.onSceneTransition({ type: SceneType.TITLE });
+        break;
+    }
+  }
+
+  /**
+   * Get vessel symbol size based on target type
+   */
+  private getVesselSymbolSize(targetType: TargetType): number {
+    switch (targetType) {
+      case TargetType.BALLOON:
+        return 8; // Large balloon
+      case TargetType.FRIGATE:
+        return 5; // Medium frigate
+      case TargetType.CRUISER:
+        return 7; // Large cruiser
+      case TargetType.STATIC:
+      case TargetType.MOVING_SLOW:
+      case TargetType.MOVING_FAST:
+      default:
+        return 3; // Default size for compatibility
+    }
+  }
+
+  /**
+   * Draw vessel-specific symbol
+   */
+  private drawVesselSymbol(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number,
+    targetType: TargetType,
+    color: string
+  ): void {
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+
+    switch (targetType) {
+      case TargetType.BALLOON:
+        // Draw balloon as circle with cross
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+        // Cross inside
+        ctx.beginPath();
+        ctx.moveTo(x - size * 0.5, y);
+        ctx.lineTo(x + size * 0.5, y);
+        ctx.moveTo(x, y - size * 0.5);
+        ctx.lineTo(x, y + size * 0.5);
+        ctx.stroke();
+        break;
+
+      case TargetType.FRIGATE:
+        // Draw frigate as diamond shape
+        ctx.beginPath();
+        ctx.moveTo(x, y - size);
+        ctx.lineTo(x + size * 0.6, y);
+        ctx.lineTo(x, y + size);
+        ctx.lineTo(x - size * 0.6, y);
+        ctx.closePath();
+        ctx.fill();
+        break;
+
+      case TargetType.CRUISER:
+        // Draw cruiser as larger rectangle with center dot
+        ctx.fillRect(x - size * 0.8, y - size * 0.4, size * 1.6, size * 0.8);
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.2, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+
+      case TargetType.STATIC:
+      case TargetType.MOVING_SLOW:
+      case TargetType.MOVING_FAST:
+      default:
+        // Default circle for compatibility
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
         break;
     }
   }
