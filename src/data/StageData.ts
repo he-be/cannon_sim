@@ -11,6 +11,9 @@ export interface TargetConfig {
   type: TargetType;
   velocity?: Vector3;
   spawnDelay: number;
+  // 新規追加（オプショナル）
+  customAltitude?: number; // 個別高度設定
+  patrolRoute?: Vector3[]; // 巡航ルート（将来拡張用）
 }
 
 export interface StageConfig {
@@ -48,32 +51,32 @@ const STAGE_CONSTANTS = {
 } as const;
 
 /**
- * Stage 1: Static targets - Basic training
+ * Stage 1: 気球ステージ - 固定目標訓練
  */
 const STAGE_1_CONFIG: StageConfig = {
   id: 1,
-  name: 'Training Range',
-  description: 'Static targets for basic artillery training',
+  name: '気球迎撃戦',
+  description: '高高度に浮遊する気球を迎撃せよ',
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
   targets: [
     {
-      position: new Vector3(0, -5000, 0), // 3km north of artillery
-      type: TargetType.STATIC,
+      position: new Vector3(0, -5000, 1000), // 5km北、高度1000mの気球
+      type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
     },
     {
-      position: new Vector3(-2000, -2000, 0), // Northwest
-      type: TargetType.STATIC,
+      position: new Vector3(-3000, -4000, 900), // 北西、高度900m
+      type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
     },
     {
-      position: new Vector3(2000, -2000, 0), // Northeast
-      type: TargetType.STATIC,
+      position: new Vector3(3000, -4000, 1100), // 北東、高度1100m
+      type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
     },
     {
-      position: new Vector3(0, 2000, 0), // 10km north of artillery
-      type: TargetType.STATIC,
+      position: new Vector3(0, -8000, 1200), // 8km北、高度1200m
+      type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
     },
   ],
@@ -82,40 +85,36 @@ const STAGE_1_CONFIG: StageConfig = {
 };
 
 /**
- * Stage 2: Slow moving targets - Intermediate training
+ * Stage 2: フリゲートステージ - 低速移動目標
  */
 const STAGE_2_CONFIG: StageConfig = {
   id: 2,
-  name: 'Moving Targets',
-  description: 'Slow moving targets for lead calculation practice',
+  name: 'フリゲート迎撃戦',
+  description: '低速で移動するフリゲート艦を迎撃せよ',
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
   targets: [
     {
-      position: new Vector3(-3000, -2000, 0),
-      type: TargetType.MOVING_SLOW,
-      velocity: new Vector3(STAGE_CONSTANTS.TARGET_SPEEDS.SLOW, 0, 0), // Moving east
+      position: new Vector3(-4000, -6000, 800), // 西から接近
+      type: TargetType.FRIGATE,
+      velocity: new Vector3(60, 0, 0), // 60m/s東進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
     },
     {
-      position: new Vector3(3000, -2000, 0),
-      type: TargetType.MOVING_SLOW,
-      velocity: new Vector3(-STAGE_CONSTANTS.TARGET_SPEEDS.SLOW, 0, 0), // Moving west
+      position: new Vector3(4000, -6000, 700), // 東から接近
+      type: TargetType.FRIGATE,
+      velocity: new Vector3(-55, 0, 0), // 55m/s西進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
     },
     {
-      position: new Vector3(0, 2000, 0),
-      type: TargetType.MOVING_SLOW,
-      velocity: new Vector3(0, -STAGE_CONSTANTS.TARGET_SPEEDS.SLOW, 0), // Moving south
+      position: new Vector3(0, -10000, 900), // 北方から南進
+      type: TargetType.FRIGATE,
+      velocity: new Vector3(0, 65, 0), // 65m/s南進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
     },
     {
-      position: new Vector3(-1500, 0, 0),
-      type: TargetType.MOVING_SLOW,
-      velocity: new Vector3(
-        STAGE_CONSTANTS.TARGET_SPEEDS.SLOW,
-        STAGE_CONSTANTS.TARGET_SPEEDS.SLOW,
-        0
-      ), // Moving northeast
+      position: new Vector3(-2000, -8000, 750), // 北西から斜め移動
+      type: TargetType.FRIGATE,
+      velocity: new Vector3(40, 40, 0), // 斜め移動
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
     },
   ],
@@ -124,62 +123,36 @@ const STAGE_2_CONFIG: StageConfig = {
 };
 
 /**
- * Stage 3: Fast moving targets - Advanced combat
+ * Stage 3: 巡洋艦ステージ - 高速移動目標
  */
 const STAGE_3_CONFIG: StageConfig = {
   id: 3,
-  name: 'Combat Scenario',
-  description: 'Fast moving targets simulating combat conditions',
+  name: '巡洋艦迎撃戦',
+  description: '高速で機動する巡洋艦を迎撃せよ',
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
   targets: [
     {
-      position: new Vector3(-4000, 2000, 0),
-      type: TargetType.MOVING_FAST,
-      velocity: new Vector3(
-        STAGE_CONSTANTS.TARGET_SPEEDS.FAST,
-        -STAGE_CONSTANTS.TARGET_SPEEDS.FAST * 0.5,
-        0
-      ),
+      position: new Vector3(-5000, -8000, 1200), // 遠距離から高速接近
+      type: TargetType.CRUISER,
+      velocity: new Vector3(110, 30, 0), // 110m/s東北東進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
     },
     {
-      position: new Vector3(4000, 2000, 0),
-      type: TargetType.MOVING_FAST,
-      velocity: new Vector3(
-        -STAGE_CONSTANTS.TARGET_SPEEDS.FAST,
-        -STAGE_CONSTANTS.TARGET_SPEEDS.FAST * 0.5,
-        0
-      ),
+      position: new Vector3(5000, -8000, 1100), // 東から高速接近
+      type: TargetType.CRUISER,
+      velocity: new Vector3(-120, 25, 0), // 120m/s西北西進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
     },
     {
-      position: new Vector3(-2000, -1000, 0),
-      type: TargetType.MOVING_FAST,
-      velocity: new Vector3(
-        STAGE_CONSTANTS.TARGET_SPEEDS.FAST * 0.7,
-        STAGE_CONSTANTS.TARGET_SPEEDS.FAST * 0.3,
-        0
-      ),
+      position: new Vector3(-3000, -12000, 1300), // 複雑な機動
+      type: TargetType.CRUISER,
+      velocity: new Vector3(85, 85, 0), // 斜め高速移動
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
     },
     {
-      position: new Vector3(2000, -1000, 0),
-      type: TargetType.MOVING_FAST,
-      velocity: new Vector3(
-        -STAGE_CONSTANTS.TARGET_SPEEDS.FAST * 0.7,
-        STAGE_CONSTANTS.TARGET_SPEEDS.FAST * 0.3,
-        0
-      ),
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
-    },
-    {
-      position: new Vector3(0, 6000, 0),
-      type: TargetType.MOVING_FAST,
-      velocity: new Vector3(
-        STAGE_CONSTANTS.TARGET_SPEEDS.FAST * 0.5,
-        -STAGE_CONSTANTS.TARGET_SPEEDS.FAST,
-        0
-      ),
+      position: new Vector3(0, -15000, 1000), // 超遠距離から直進
+      type: TargetType.CRUISER,
+      velocity: new Vector3(0, 130, 0), // 130m/s南進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
     },
   ],
