@@ -15,6 +15,7 @@ export interface RadarEvents {
   onRangeChange: (range: number) => void;
   onTargetDetected: (target: RadarTarget) => void;
   onTargetLost: (targetId: string) => void;
+  onSweepComplete?: () => void;
 }
 
 export interface RadarTarget {
@@ -667,7 +668,7 @@ export class RadarRenderer {
    */
   handleMouseEvent(
     mousePos: Vector2,
-    eventType: 'mousedown' | 'mousemove' | 'mouseup' | 'drag',
+    eventType: 'mousedown' | 'mousemove' | 'mouseup' | 'click',
     _button: number = 0
   ): boolean {
     // Check if mouse is within horizontal radar bounds

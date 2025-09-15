@@ -32,12 +32,12 @@ export class UIManager {
   private events: UIEvents;
 
   // UI Components
-  private controlPanel: ControlPanelRenderer;
-  private radarRenderer: RadarRenderer;
+  private controlPanel!: ControlPanelRenderer;
+  private radarRenderer!: RadarRenderer;
 
   // Layout configuration
   private layout: UILayoutConfig;
-  private bounds: {
+  private bounds!: {
     controlPanel: { x: number; y: number; width: number; height: number };
     horizontalRadar: { x: number; y: number; width: number; height: number };
     verticalRadar: { x: number; y: number; width: number; height: number };
@@ -242,9 +242,20 @@ export class UIManager {
    */
   handleMouseEvent(
     mousePos: Vector2,
-    eventType: 'mousedown' | 'mousemove' | 'mouseup' | 'click',
+    eventType:
+      | 'mousedown'
+      | 'mousemove'
+      | 'mouseup'
+      | 'click'
+      | 'dragstart'
+      | 'dragend',
     button: number = 0
   ): boolean {
+    // Only handle basic mouse events, ignore drag events for now
+    if (eventType === 'dragstart' || eventType === 'dragend') {
+      return false;
+    }
+
     // Check control panel first
     if (this.isPointInControlPanel(mousePos)) {
       const localPos = new Vector2(
