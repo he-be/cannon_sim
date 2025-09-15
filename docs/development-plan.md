@@ -1940,3 +1940,538 @@ while (relativeBearing < -180) relativeBearing += 360;
 **T050: レーダー座標系軌跡表示修正**: 3時間
 
 **実装優先度**: 最高（T048の完成度向上に直結）
+
+---
+
+## 9. GS-07 リード角計算システム完全実装計画 (2025-09-15)
+
+### 9.1 要求分析
+
+**requirements.md GS-07**:
+
+> プレイヤーとして、移動目標を撃つ際の照準の参考にするために、システムに砲弾が目標に命中するための推奨照準角（リード角）を自動で計算し、コントロールパネルに表示してほしい。
+
+**ShootingMethod.txt 数学的基盤**:
+
+- 射撃法（Shooting Method）による数値解析的アプローチ
+- 目標の未来位置予測: `PT(tf) = PT(0) + vT * tf`
+- 砲弾運動方程式: 重力・空気抵抗・コリオリ力を考慮した連立非線形常微分方程式
+- 反復的収束: 誤差ベクトル `E = PP(tf) - PT(tf)` がゼロになるまでニュートン法で修正
+
+### 9.2 既存実装状況分析
+
+#### **利用可能な既存コンポーネント**
+
+**Phase 1: 高精度計算エンジン**
+
+- `TargetTracker.calculateLeadAngles()`: Shooting Method完全実装済み
+  - 最大15回反復による収束計算
+  - 10m精度での高精度照準計算
+  - PhysicsEngine統合による物理法則準拠
+  - 複数の数値解析手法（Newton-Raphson）
+
+**Phase 2: 物理演算基盤**
+
+- `PhysicsEngine`: RK4数値積分による弾道計算
+- `Trajectory`: 弾道予測システム
+- `Forces`: 重力・空気抵抗・コリオリ力計算
+
+**Phase 3: UI統合システム**
+
+- `ControlPanelManager.setLeadAngle()`: リード角表示機能
+- `Artillery.getRecommendedLeadAngle()`: リード角取得インターフェース
+- Canvas 2D API準拠のUI表示システム
+
+#### **実装ギャップ分析**
+
+**Gap 1: GameSceneへの統合不完全**
+
+- TargetTrackerのリード角計算結果がGameSceneのUI表示に完全統合されていない
+- リアルタイム更新サイクルでの性能最適化が不完全
+
+**Gap 2: ユーザビリティ強化**
+
+- リード角計算の信頼性・収束状況のUI表示
+- 移動目標の予測軌跡と推奨照準の視覚的関係表示
+
+**Gap 3: エラーハンドリング**
+
+- 収束失敗時のフォールバック処理
+- 極端な移動パターンでの計算安定性
+
+### 9.3 実装タスク設計
+
+#### T051. GS-07 リード角計算システム完全統合
+
+**手法**: 既存高精度コンポーネントの完全活用  
+**内容**:
+
+**Step 1: GameScene-TargetTracker統合強化**
+
+```typescript
+// GameScene.ts への統合
+private updateLeadAngleCalculation(): void {
+  if (this.targetingState === TargetingState.LOCKED_ON && this.lockedTarget) {
+    // TargetTrackerの高精度計算を活用
+    const leadSolution = this.targetTracker.getLeadSolution();
+
+    if (leadSolution && leadSolution.converged) {
+      // 収束成功: 高精度リード角を表示
+      this.controlPanelManager.setLeadAngle({
+        azimuth: leadSolution.azimuth,
+        elevation: leadSolution.elevation
+      });
+
+      // 信頼性表示
+      this.updateLeadAngleConfidence(leadSolution.convergenceError);
+    } else if (leadSolution && !leadSolution.converged) {
+      // 収束失敗: 近似値を警告付きで表示
+      this.controlPanelManager.setLeadAngle({
+        azimuth: leadSolution.azimuth,
+        elevation: leadSolution.elevation
+      });
+
+      this.showLeadAngleWarning("近似値");
+    } else {
+      // 計算不可: フォールバック表示
+      this.controlPanelManager.setLeadAngle(null);
+    }
+  } else {
+    // ターゲット未ロック: 表示クリア
+    this.controlPanelManager.setLeadAngle(null);
+  }
+}
+```
+
+**Step 2: リアルタイム更新最適化**
+
+```typescript
+// 最適化されたリード角更新サイクル
+private leadAngleUpdateTimer: number = 0;
+private readonly LEAD_ANGLE_UPDATE_INTERVAL = 0.5; // 500ms間隔
+
+updateGame(deltaTime: number): void {
+  // 既存ゲームループ処理...
+
+  // リード角計算は負荷軽減のため低頻度更新
+  this.leadAngleUpdateTimer += deltaTime;
+  if (this.leadAngleUpdateTimer >= this.LEAD_ANGLE_UPDATE_INTERVAL) {
+    this.updateLeadAngleCalculation();
+    this.leadAngleUpdateTimer = 0;
+  }
+}
+```
+
+**Step 3: UI表示拡張**
+
+```typescript
+// ControlPanelManager拡張
+export interface ExtendedLeadAngle {
+  azimuth: number;
+  elevation: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  convergenceError?: number;
+  flightTime?: number;
+}
+
+setExtendedLeadAngle(leadAngle: ExtendedLeadAngle | null): void {
+  this._state.leadAngle = leadAngle;
+  this.updateExtendedLeadAngleDisplay();
+}
+
+private updateExtendedLeadAngleDisplay(): void {
+  if (this._state.leadAngle) {
+    // 基本角度表示
+    this._leadAzimuth.textContent = Math.round(this._state.leadAngle.azimuth).toString();
+    this._leadElevation.textContent = Math.round(this._state.leadAngle.elevation).toString();
+
+    // 信頼性表示（色分け）
+    const confidenceColor = {
+      'HIGH': '#00ff00',    // 緑: 高精度
+      'MEDIUM': '#ffff00',  // 黄: 中精度
+      'LOW': '#ff6600'      // オレンジ: 低精度
+    }[this._state.leadAngle.confidence];
+
+    this._leadAzimuth.style.color = confidenceColor;
+    this._leadElevation.style.color = confidenceColor;
+
+    // 詳細情報表示（オプショナル）
+    if (this._leadDetails) {
+      this._leadDetails.textContent =
+        `飛行時間: ${this._state.leadAngle.flightTime?.toFixed(1)}s`;
+    }
+  } else {
+    this._leadAzimuth.textContent = '---';
+    this._leadElevation.textContent = '---';
+    this._leadAzimuth.style.color = '#888';
+    this._leadElevation.style.color = '#888';
+  }
+}
+```
+
+**Step 4: エラーハンドリング強化**
+
+```typescript
+// TargetTracker拡張
+calculateLeadAngles(
+  target: DetectedTarget,
+  artilleryPosition: Vector3,
+  artilleryConfig?: ArtilleryConfiguration
+): LeadSolution | null {
+  try {
+    // 既存の高精度計算...
+
+    // 極端な条件での安定性チェック
+    if (this.isExtremeTargetCondition(target)) {
+      return this.calculateFallbackLeadAngle(target, artilleryPosition);
+    }
+
+    // 通常の射撃法計算...
+
+  } catch (error) {
+    console.warn('Lead angle calculation failed:', error);
+    return this.calculateFallbackLeadAngle(target, artilleryPosition);
+  }
+}
+
+private isExtremeTargetCondition(target: DetectedTarget): boolean {
+  const speed = target.velocity.magnitude();
+  const distance = target.target.position.magnitude();
+
+  // 極端な高速移動またはと極端な遠距離
+  return speed > 300 || distance > 50000; // 300m/s or 50km
+}
+
+private calculateFallbackLeadAngle(
+  target: DetectedTarget,
+  artilleryPosition: Vector3
+): LeadSolution {
+  // シンプルな線形予測によるフォールバック
+  const simpleCalculator = new LeadAngleCalculator();
+  const basicLead = simpleCalculator.calculateLeadAngle(
+    artilleryPosition,
+    target.target.position,
+    target.velocity
+  );
+
+  return {
+    azimuth: basicLead.azimuth,
+    elevation: basicLead.elevation,
+    flightTime: simpleCalculator.estimateFlightTime(
+      target.target.position.subtract(artilleryPosition).magnitude()
+    ),
+    targetFuturePos: target.target.position,
+    impactPos: target.target.position,
+    convergenceError: 999, // フォールバック識別用
+    converged: false
+  };
+}
+```
+
+**Step 5: 視覚的フィードバック強化**
+
+```typescript
+// GameScene に予測軌跡表示追加
+private renderLeadAngleVisualization(ctx: CanvasRenderingContext2D): void {
+  if (this.targetingState !== TargetingState.LOCKED_ON || !this.lockedTarget) return;
+
+  const leadSolution = this.targetTracker.getLeadSolution();
+  if (!leadSolution) return;
+
+  // 推奨照準での予測着弾点表示
+  const recommendedImpact = leadSolution.impactPos;
+  const screenPos = this.worldToRadarScreen(recommendedImpact);
+
+  if (screenPos) {
+    ctx.save();
+    ctx.fillStyle = leadSolution.converged ? '#00ff00' : '#ffff00';
+    ctx.beginPath();
+    ctx.arc(screenPos.x, screenPos.y, 8, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // 十字線で強調
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(screenPos.x - 12, screenPos.y);
+    ctx.lineTo(screenPos.x + 12, screenPos.y);
+    ctx.moveTo(screenPos.x, screenPos.y - 12);
+    ctx.lineTo(screenPos.x, screenPos.y + 12);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 目標未来位置表示
+  const futurePos = leadSolution.targetFuturePos;
+  const futureScreenPos = this.worldToRadarScreen(futurePos);
+
+  if (futureScreenPos) {
+    ctx.save();
+    ctx.strokeStyle = '#ff6600';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(futureScreenPos.x, futureScreenPos.y, 10, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+```
+
+**成果物**: 完全統合されたGS-07リード角計算システム  
+**推定時間**: 4時間
+
+#### T052. リード角計算性能最適化
+
+**手法**: 計算負荷軽減と応答性向上  
+**内容**:
+
+**Step 1: 計算結果キャッシング**
+
+```typescript
+class LeadAngleCache {
+  private cache = new Map<string, CachedLeadSolution>();
+  private readonly CACHE_DURATION = 1000; // 1秒間キャッシュ
+
+  getCachedSolution(
+    targetId: string,
+    position: Vector3,
+    velocity: Vector3
+  ): LeadSolution | null {
+    const key = this.generateKey(targetId, position, velocity);
+    const cached = this.cache.get(key);
+
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      return cached.solution;
+    }
+
+    return null;
+  }
+
+  storeSolution(
+    targetId: string,
+    position: Vector3,
+    velocity: Vector3,
+    solution: LeadSolution
+  ): void {
+    const key = this.generateKey(targetId, position, velocity);
+    this.cache.set(key, {
+      solution,
+      timestamp: Date.now(),
+    });
+  }
+}
+```
+
+**Step 2: 段階的精度調整**
+
+```typescript
+// 距離・速度に応じた計算精度調整
+calculateAdaptivePrecisionLeadAngles(
+  target: DetectedTarget,
+  artilleryPosition: Vector3
+): LeadSolution | null {
+  const distance = target.target.position.subtract(artilleryPosition).magnitude();
+  const speed = target.velocity.magnitude();
+
+  // 条件に応じた反復回数調整
+  let maxIterations: number;
+  let convergenceThreshold: number;
+
+  if (distance < 2000 && speed < 50) {
+    // 近距離・低速: 高精度
+    maxIterations = 15;
+    convergenceThreshold = 5.0;
+  } else if (distance < 5000 && speed < 100) {
+    // 中距離・中速: 標準精度
+    maxIterations = 10;
+    convergenceThreshold = 10.0;
+  } else {
+    // 長距離・高速: 低精度
+    maxIterations = 5;
+    convergenceThreshold = 20.0;
+  }
+
+  return this.calculateLeadAnglesWithPrecision(
+    target,
+    artilleryPosition,
+    maxIterations,
+    convergenceThreshold
+  );
+}
+```
+
+**成果物**: 最適化されたリード角計算システム  
+**推定時間**: 2時間
+
+#### T053. リード角計算テスト強化
+
+**手法**: 包括的テストスイート拡張  
+**内容**:
+
+**Step 1: 実戦的シナリオテスト**
+
+```typescript
+describe('GS-07 lead angle calculation - realistic scenarios', () => {
+  it('should handle fast moving aircraft target', () => {
+    const aircraft = createMovingTarget({
+      position: new Vector3(3000, 0, 1000), // 3km, 1km altitude
+      velocity: new Vector3(100, 50, 0), // 111 m/s (~400 km/h)
+      type: TargetType.MOVING_FAST,
+    });
+
+    const leadSolution = targetTracker.calculateLeadAngles(
+      { target: aircraft, velocity: aircraft.velocity },
+      Vector3.zero()
+    );
+
+    expect(leadSolution).toBeTruthy();
+    expect(leadSolution!.converged).toBe(true);
+    expect(leadSolution!.convergenceError).toBeLessThan(10.0);
+    expect(leadSolution!.flightTime).toBeGreaterThan(0);
+
+    // リード角の妥当性チェック
+    expect(Math.abs(leadSolution!.azimuth)).toBeLessThan(180);
+    expect(leadSolution!.elevation).toBeGreaterThan(0);
+    expect(leadSolution!.elevation).toBeLessThan(90);
+  });
+
+  it('should provide confidence levels for different scenarios', () => {
+    const scenarios = [
+      {
+        name: 'close_slow',
+        target: {
+          position: new Vector3(500, 0, 10),
+          velocity: new Vector3(10, 0, 0),
+        },
+        expectedConfidence: 'HIGH',
+      },
+      {
+        name: 'medium_fast',
+        target: {
+          position: new Vector3(2000, 0, 100),
+          velocity: new Vector3(80, 40, 0),
+        },
+        expectedConfidence: 'MEDIUM',
+      },
+      {
+        name: 'far_very_fast',
+        target: {
+          position: new Vector3(8000, 0, 500),
+          velocity: new Vector3(150, 100, 0),
+        },
+        expectedConfidence: 'LOW',
+      },
+    ];
+
+    scenarios.forEach(scenario => {
+      const leadSolution = targetTracker.calculateLeadAngles(
+        {
+          target: createTarget(scenario.target.position),
+          velocity: scenario.target.velocity,
+        },
+        Vector3.zero()
+      );
+
+      expect(leadSolution).toBeTruthy();
+      expect(leadSolution!.confidence).toBe(scenario.expectedConfidence);
+    });
+  });
+});
+```
+
+**Step 2: パフォーマンステスト**
+
+```typescript
+describe('lead angle calculation performance', () => {
+  it('should complete calculation within reasonable time', () => {
+    const target = createMovingTarget({
+      position: new Vector3(3000, 2000, 200),
+      velocity: new Vector3(60, 80, 0),
+    });
+
+    const startTime = performance.now();
+
+    const leadSolution = targetTracker.calculateLeadAngles(
+      { target, velocity: target.velocity },
+      Vector3.zero()
+    );
+
+    const duration = performance.now() - startTime;
+
+    expect(leadSolution).toBeTruthy();
+    expect(duration).toBeLessThan(50); // 50ms以内
+  });
+
+  it('should handle multiple concurrent calculations', () => {
+    const targets = Array.from({ length: 5 }, (_, i) =>
+      createMovingTarget({
+        position: new Vector3(1000 + i * 500, 0, 100),
+        velocity: new Vector3(30 + i * 10, 20, 0),
+      })
+    );
+
+    const startTime = performance.now();
+
+    const solutions = targets.map(target =>
+      targetTracker.calculateLeadAngles(
+        { target, velocity: target.velocity },
+        Vector3.zero()
+      )
+    );
+
+    const duration = performance.now() - startTime;
+
+    expect(solutions).toHaveLength(5);
+    solutions.forEach(solution => expect(solution).toBeTruthy());
+    expect(duration).toBeLessThan(200); // 200ms以内で5つ処理
+  });
+});
+```
+
+**成果物**: 包括的テストスイート  
+**推定時間**: 2時間
+
+### 9.4 統合スケジュール
+
+**Phase 1 (最優先 - 即時実装)**
+
+- T051: GS-07 リード角計算システム完全統合
+
+**Phase 2 (高優先 - 性能改善)**
+
+- T052: リード角計算性能最適化
+
+**Phase 3 (中優先 - 品質保証)**
+
+- T053: リード角計算テスト強化
+
+### 9.5 期待効果
+
+**ユーザー体験向上**:
+
+- 移動目標への正確な照準支援
+- 視覚的フィードバックによる直感的操作
+- 信頼性表示による計算状況の透明性
+
+**システム品質向上**:
+
+- 高精度Shooting Method実装の完全活用
+- 既存PhysicsEngineとの完全統合
+- 計算負荷最適化による応答性向上
+
+**要件準拠**:
+
+- GS-07要求の完全実装
+- UI-06推奨照準角表示の完全実装
+- ShootingMethod.txt数学的基盤の完全活用
+
+### 9.6 総合推定工数
+
+**総推定時間**: 8時間
+
+- T051: 4時間（コア機能統合）
+- T052: 2時間（性能最適化）
+- T053: 2時間（テスト強化）
+
+**実装優先度**: 最高（GS-07要求の完全実現）

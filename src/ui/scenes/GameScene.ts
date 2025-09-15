@@ -19,6 +19,7 @@ import {
 } from '../../physics/PhysicsEngine';
 import { Forces } from '../../physics/Forces';
 import { TrajectoryRenderer } from '../../rendering/TrajectoryRenderer';
+import { LeadAngleCalculator } from '../../game/LeadAngleCalculator';
 import {
   PHYSICS_CONSTANTS,
   GAME_CONSTANTS,
@@ -27,6 +28,14 @@ import {
 } from '../../data/Constants';
 import { TargetType } from '../../game/entities/Target';
 
+// Extended lead angle interface with display information
+interface ExtendedLeadAngle {
+  azimuth: number;
+  elevation: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  convergenceError?: number;
+  flightTime?: number;
+}
 export enum GameState {
   PLAYING = 'playing',
   PAUSED = 'paused',
@@ -72,6 +81,7 @@ export class GameScene {
   private effectRenderer: EffectRenderer;
   private physicsEngine: PhysicsEngine;
   private trajectoryRenderer: TrajectoryRenderer;
+  private leadAngleCalculator: LeadAngleCalculator;
 
   // Game state
   private gameState: GameState = GameState.PLAYING;
@@ -118,6 +128,11 @@ export class GameScene {
   private buttonHoldTimer: number | null = null;
   private buttonHoldInterval: number | null = null;
   private isButtonHeld = false;
+
+  // Lead angle calculation (GS-07)
+  private leadAngleUpdateTimer: number = 0;
+  private currentLeadAngle: ExtendedLeadAngle | null = null;
+  private readonly LEAD_ANGLE_UPDATE_INTERVAL = 0.5; // 500ms間隔
 
   // Animation
   private animationTime: number = 0;
@@ -198,6 +213,9 @@ export class GameScene {
       this.config.selectedStage.artilleryPosition.y,
       this.config.selectedStage.artilleryPosition.z
     );
+
+    // Initialize lead angle calculator for GS-07 requirement
+    this.leadAngleCalculator = new LeadAngleCalculator();
 
     this.initializeGame();
     this.setupEventListeners();
@@ -286,6 +304,13 @@ export class GameScene {
 
     // Update trajectory prediction (UI-13/UI-16)
     this.updateTrajectoryPrediction();
+
+    // Update lead angle calculation (GS-07)
+    this.leadAngleUpdateTimer += deltaTime;
+    if (this.leadAngleUpdateTimer >= this.LEAD_ANGLE_UPDATE_INTERVAL) {
+      this.updateLeadAngleCalculation();
+      this.leadAngleUpdateTimer = 0;
+    }
 
     // Check win/lose conditions
     this.checkGameConditions();
@@ -647,6 +672,68 @@ export class GameScene {
       y += lineHeight;
     }
 
+    // Lead angle display (GS-07, UI-06)
+    y += lineHeight * 0.5;
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
+    ctx.fillText('Recommended Lead', x, y);
+    y += lineHeight;
+
+    const leadAngle = this.currentLeadAngle;
+    if (leadAngle) {
+      // Confidence color coding
+      let confidenceColor: string;
+      switch (leadAngle.confidence) {
+        case 'HIGH':
+          confidenceColor = CRT_COLORS.TARGET_LOCKED; // Green: High precision
+          break;
+        case 'MEDIUM':
+          confidenceColor = CRT_COLORS.WARNING_TEXT; // Yellow: Medium precision
+          break;
+        case 'LOW':
+          confidenceColor = CRT_COLORS.CRITICAL_TEXT; // Red: Low precision
+          break;
+        default:
+          confidenceColor = CRT_COLORS.SECONDARY_TEXT;
+      }
+
+      ctx.font = FONTS.DATA;
+      ctx.fillStyle = confidenceColor;
+      ctx.fillText(`Az: ${Math.round(leadAngle.azimuth)}°`, x + 10, y);
+      y += lineHeight;
+      ctx.fillText(`El: ${Math.round(leadAngle.elevation)}°`, x + 10, y);
+      y += lineHeight;
+
+      // Additional info (flight time, confidence)
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+      ctx.font = FONTS.SMALL;
+      if (leadAngle.flightTime) {
+        ctx.fillText(`Time: ${leadAngle.flightTime.toFixed(1)}s`, x + 10, y);
+        y += lineHeight * 0.8;
+      }
+      ctx.fillText(`Confidence: ${leadAngle.confidence}`, x + 10, y);
+      y += lineHeight * 0.8;
+      if (leadAngle.convergenceError !== undefined) {
+        ctx.fillText(
+          `Error: ${leadAngle.convergenceError.toFixed(1)}m`,
+          x + 10,
+          y
+        );
+        y += lineHeight * 0.8;
+      }
+    } else {
+      ctx.fillStyle = '#666666';
+      ctx.font = FONTS.DATA;
+      ctx.fillText('Az: ---°', x + 10, y);
+      y += lineHeight;
+      ctx.fillText('El: ---°', x + 10, y);
+      y += lineHeight;
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+      ctx.font = FONTS.SMALL;
+      ctx.fillText('No target locked', x + 10, y);
+      y += lineHeight;
+    }
+
     y += lineHeight;
 
     // Game time
@@ -968,6 +1055,15 @@ export class GameScene {
 
     // Draw radar elevation display (T046)
     this.renderRadarElevationDisplay(
+      ctx,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight
+    );
+
+    // Draw lead angle visualization (GS-07)
+    this.renderLeadAngleVisualization(
       ctx,
       radarLeft,
       radarTop,
@@ -2208,88 +2304,6 @@ export class GameScene {
   }
 
   /**
-   * Calculate trajectory to current locked target (T048)
-   */
-  private calculateTrajectoryToTarget(_target: TargetState): Vector3[] {
-    const trajectory: Vector3[] = [];
-
-    // Use current artillery angle settings
-    const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
-    const elevationRad = (this.elevationAngle * Math.PI) / 180;
-
-    // Initial velocity calculation using projectile physics
-    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
-    const initialVelocity = new Vector3(
-      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.sin(elevationRad)
-    );
-
-    // Set up physics engine with same forces as real projectiles
-    const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
-    const accelerationFunction = (state: State3D, _time: number): Vector3 => {
-      const Fg = Forces.gravity(
-        mass,
-        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
-        new Vector3(
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
-        )
-      );
-
-      const Fd = Forces.drag(
-        state.velocity,
-        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
-        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
-        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
-      );
-
-      const totalForce = Forces.sum(Fg, Fd);
-      return totalForce.multiply(1 / mass); // F = ma -> a = F/m
-    };
-
-    const physicsEngine = new PhysicsEngine(accelerationFunction);
-
-    // Initial state
-    let state: State3D = {
-      position: new Vector3(
-        this.artilleryPosition.x,
-        this.artilleryPosition.y,
-        this.artilleryPosition.z
-      ),
-      velocity: initialVelocity,
-    };
-
-    // Use same timestep as physics simulation
-    const dt = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP;
-    const maxTime = PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME;
-    let time = 0;
-
-    // Simulate trajectory using RK4 integration
-    while (time < maxTime) {
-      trajectory.push(
-        new Vector3(state.position.x, state.position.y, state.position.z)
-      );
-
-      // Integrate physics state
-      state = physicsEngine.integrate(state, time, dt);
-      time += dt;
-
-      // Stop if projectile hits ground or goes too far
-      if (
-        state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL ||
-        state.position.subtract(this.artilleryPosition).magnitude() >
-          this.maxRadarRange * 2
-      ) {
-        break;
-      }
-    }
-
-    return trajectory;
-  }
-
-  /**
    * Render vertical trajectory prediction on vertical radar (T049)
    */
   private renderVerticalTrajectoryPrediction(
@@ -2502,5 +2516,159 @@ export class GameScene {
     }
 
     return trajectory;
+  }
+
+  /**
+   * Update lead angle calculation using TargetTracker (GS-07)
+   */
+  private updateLeadAngleCalculation(): void {
+    if (this.targetingState === TargetingState.LOCKED_ON && this.lockedTarget) {
+      // Use LeadAngleCalculator for basic lead angle calculation
+      const targetVelocity = this.lockedTarget.velocity || new Vector3(0, 0, 0);
+
+      const leadAngle = this.leadAngleCalculator.calculateLeadAngle(
+        this.artilleryPosition,
+        this.lockedTarget.position,
+        targetVelocity
+      );
+
+      // Determine confidence based on target speed and distance
+      const speed = targetVelocity.magnitude();
+      const distance = this.lockedTarget.position
+        .subtract(this.artilleryPosition)
+        .magnitude();
+
+      let confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+      if (speed < 30 && distance < 3000) {
+        confidence = 'HIGH';
+      } else if (speed < 80 && distance < 8000) {
+        confidence = 'MEDIUM';
+      } else {
+        confidence = 'LOW';
+      }
+
+      // Estimate flight time for display
+      const flightTime = this.leadAngleCalculator.estimateFlightTime(distance);
+
+      this.renderLeadAngleDisplay(
+        leadAngle.azimuth,
+        leadAngle.elevation,
+        confidence,
+        undefined, // No convergence error for basic calculation
+        flightTime
+      );
+    } else {
+      // Target not locked: Clear display
+      this.clearLeadAngleDisplay();
+    }
+  }
+
+  /**
+   * Render lead angle display with confidence indication (GS-07, UI-06)
+   */
+  private renderLeadAngleDisplay(
+    azimuth: number,
+    elevation: number,
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW',
+    convergenceError?: number,
+    flightTime?: number
+  ): void {
+    // This will be rendered in renderTargetingInfo method
+    // Store current lead angle values for display
+    this.currentLeadAngle = {
+      azimuth,
+      elevation,
+      confidence,
+      convergenceError,
+      flightTime,
+    };
+  }
+
+  /**
+   * Clear lead angle display
+   */
+  private clearLeadAngleDisplay(): void {
+    this.currentLeadAngle = null;
+  }
+
+  /**
+   * Render lead angle visualization on horizontal radar (GS-07)
+   */
+  private renderLeadAngleVisualization(
+    ctx: CanvasRenderingContext2D,
+    radarLeft: number,
+    radarTop: number,
+    radarWidth: number,
+    radarHeight: number
+  ): void {
+    if (this.targetingState !== TargetingState.LOCKED_ON || !this.lockedTarget)
+      return;
+
+    const leadAngle = this.currentLeadAngle;
+    if (!leadAngle) return;
+
+    // Calculate predicted impact position using lead angles
+    const targetVelocity = this.lockedTarget.velocity || new Vector3(0, 0, 0);
+    const flightTime =
+      leadAngle.flightTime ||
+      this.leadAngleCalculator.estimateFlightTime(
+        this.lockedTarget.position.subtract(this.artilleryPosition).magnitude()
+      );
+
+    // Simple future position prediction: current position + velocity * time
+    const futurePos = this.lockedTarget.position.add(
+      targetVelocity.multiply(flightTime)
+    );
+    const futureScreenPos = this.worldToRadarScreen(
+      futurePos,
+      radarLeft,
+      radarTop,
+      radarWidth,
+      radarHeight,
+      true
+    );
+
+    if (futureScreenPos) {
+      ctx.save();
+
+      // Draw predicted target position
+      ctx.strokeStyle = CRT_COLORS.CRITICAL_TEXT;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(futureScreenPos.x, futureScreenPos.y, 10, 0, 2 * Math.PI);
+      ctx.stroke();
+
+      // Draw predicted impact point (at same location for basic visualization)
+      const confidenceColor =
+        leadAngle.confidence === 'HIGH'
+          ? CRT_COLORS.TARGET_LOCKED
+          : leadAngle.confidence === 'MEDIUM'
+            ? CRT_COLORS.WARNING_TEXT
+            : CRT_COLORS.CRITICAL_TEXT;
+
+      ctx.fillStyle = confidenceColor;
+      ctx.beginPath();
+      ctx.arc(futureScreenPos.x, futureScreenPos.y, 6, 0, 2 * Math.PI);
+      ctx.fill();
+
+      // Draw crosshair
+      ctx.strokeStyle = confidenceColor;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(futureScreenPos.x - 10, futureScreenPos.y);
+      ctx.lineTo(futureScreenPos.x + 10, futureScreenPos.y);
+      ctx.moveTo(futureScreenPos.x, futureScreenPos.y - 10);
+      ctx.lineTo(futureScreenPos.x, futureScreenPos.y + 10);
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = confidenceColor;
+      ctx.font = FONTS.SMALL;
+      ctx.fillText('LEAD', futureScreenPos.x + 15, futureScreenPos.y - 5);
+
+      ctx.restore();
+    }
   }
 }
