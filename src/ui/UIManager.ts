@@ -342,6 +342,17 @@ export class UIManager {
   }
 
   /**
+   * Set radar information for display in left panel
+   */
+  setRadarInfo(azimuth: number, elevation: number, range: number): void {
+    this.controlPanel.setRadarInfo({
+      azimuth,
+      elevation,
+      range,
+    });
+  }
+
+  /**
    * Update lead angle display
    */
   setLeadAngle(leadAngle: ControlPanelState['leadAngle']): void {

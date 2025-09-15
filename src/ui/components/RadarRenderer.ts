@@ -150,8 +150,7 @@ export class RadarRenderer {
     // Draw trajectory prediction
     this.drawTrajectoryPrediction(ctx, bounds);
 
-    // Draw radar info
-    this.drawRadarInfo(ctx, bounds);
+    // Radar info removed - now displayed in left panel
 
     ctx.restore();
   }
@@ -193,18 +192,15 @@ export class RadarRenderer {
     ctx: CanvasRenderingContext2D,
     bounds: { x: number; y: number; width: number; height: number }
   ): void {
-    const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height - 10; // Gun at bottom
-    const radius = Math.min(bounds.width, bounds.height - 20) / 2;
-
     ctx.strokeStyle = CRT_COLORS.GRID_LINE;
     ctx.lineWidth = 1;
 
-    // Range rings
+    // Horizontal range lines (距離)
     for (let i = 1; i <= 4; i++) {
-      const ringRadius = (radius * i) / 4;
+      const y = bounds.y + bounds.height - 10 - ((bounds.height - 20) / 4) * i;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, ringRadius, 0, 2 * Math.PI);
+      ctx.moveTo(bounds.x + 10, y);
+      ctx.lineTo(bounds.x + bounds.width - 10, y);
       ctx.stroke();
 
       // Range labels
@@ -212,36 +208,34 @@ export class RadarRenderer {
       ctx.font = FONTS.SMALL;
       ctx.textAlign = 'left';
       const rangeKm = (this.state.maxRange * i) / 4000;
-      ctx.fillText(
-        `${rangeKm.toFixed(1)}km`,
-        centerX + 5,
-        centerY - ringRadius - 2
-      );
+      ctx.fillText(`${rangeKm.toFixed(1)}km`, bounds.x + 5, y - 2);
     }
 
-    // Bearing lines
+    // Vertical bearing lines (方位角)
+    const centerX = bounds.x + bounds.width / 2;
     for (let bearing = -60; bearing <= 60; bearing += 30) {
-      const angle = ((bearing + this.state.azimuth - 90) * Math.PI) / 180;
-      const x1 = centerX + Math.cos(angle) * radius;
-      const y1 = centerY + Math.sin(angle) * radius;
+      const x = centerX + (bearing / 120) * (bounds.width - 20);
+      if (x >= bounds.x + 10 && x <= bounds.x + bounds.width - 10) {
+        ctx.beginPath();
+        ctx.moveTo(x, bounds.y + 10);
+        ctx.lineTo(x, bounds.y + bounds.height - 10);
+        ctx.stroke();
 
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-
-      // Bearing labels
-      if (bearing === 0) {
-        ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+        // Bearing labels
+        ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
         ctx.textAlign = 'center';
-        ctx.fillText('0°', x1, y1 - 10);
+        const label =
+          bearing === 0 ? '0°' : `${bearing > 0 ? '+' : ''}${bearing}°`;
+        ctx.fillText(label, x, bounds.y + bounds.height - 5);
       }
     }
 
-    // Gun position
+    // Gun position at bottom center
+    const gunX = centerX;
+    const gunY = bounds.y + bounds.height - 10;
     ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 3, 0, 2 * Math.PI);
+    ctx.arc(gunX, gunY, 3, 0, 2 * Math.PI);
     ctx.fill();
   }
 
@@ -293,32 +287,22 @@ export class RadarRenderer {
     bounds: { x: number; y: number; width: number; height: number }
   ): void {
     const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height - 10;
-    const radius = Math.min(bounds.width, bounds.height - 20) / 2;
 
-    // Draw sweep area
-    const sweepStart =
-      ((this.state.azimuth - this.state.sweepAngle / 2 - 90) * Math.PI) / 180;
-    const sweepEnd =
-      ((this.state.azimuth + this.state.sweepAngle / 2 - 90) * Math.PI) / 180;
+    // Draw sweep area as rectangular beam
+    const sweepHalfWidth =
+      (this.state.sweepAngle / 2 / 120) * (bounds.width - 20);
+    const leftX = centerX - sweepHalfWidth;
+    const rightX = centerX + sweepHalfWidth;
 
     ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.arc(centerX, centerY, radius, sweepStart, sweepEnd);
-    ctx.closePath();
-    ctx.fill();
+    ctx.fillRect(leftX, bounds.y + 10, rightX - leftX, bounds.height - 20);
 
-    // Draw center line
-    const centerAngle = ((this.state.azimuth - 90) * Math.PI) / 180;
-    const centerEndX = centerX + Math.cos(centerAngle) * radius;
-    const centerEndY = centerY + Math.sin(centerAngle) * radius;
-
+    // Draw center line (current radar direction)
     ctx.strokeStyle = CRT_COLORS.PRIMARY_TEXT;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.lineTo(centerEndX, centerEndY);
+    ctx.moveTo(centerX, bounds.y + 10);
+    ctx.lineTo(centerX, bounds.y + bounds.height - 10);
     ctx.stroke();
   }
 
@@ -326,17 +310,18 @@ export class RadarRenderer {
     ctx: CanvasRenderingContext2D,
     bounds: { x: number; y: number; width: number; height: number }
   ): void {
-    const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height - 10;
-    const radius = Math.min(bounds.width, bounds.height - 20) / 2;
+    const normalizedRange = this.state.rangeCursor;
 
-    const cursorRadius = radius * this.state.rangeCursor;
+    // Draw horizontal range line
+    const cursorY =
+      bounds.y + bounds.height - 10 - normalizedRange * (bounds.height - 20);
 
     ctx.strokeStyle = CRT_COLORS.WARNING_TEXT;
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
-    ctx.arc(centerX, centerY, cursorRadius, 0, 2 * Math.PI);
+    ctx.moveTo(bounds.x + 10, cursorY);
+    ctx.lineTo(bounds.x + bounds.width - 10, cursorY);
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -345,7 +330,7 @@ export class RadarRenderer {
     ctx.font = FONTS.SMALL;
     ctx.textAlign = 'left';
     const rangeText = `${(this.state.currentRange / 1000).toFixed(1)}km`;
-    ctx.fillText(rangeText, centerX + cursorRadius + 5, centerY - 5);
+    ctx.fillText(rangeText, bounds.x + bounds.width - 60, cursorY - 5);
   }
 
   private drawTargetsOnHorizontalRadar(
@@ -495,26 +480,6 @@ export class RadarRenderer {
     ctx.setLineDash([]);
   }
 
-  private drawRadarInfo(
-    ctx: CanvasRenderingContext2D,
-    bounds: { x: number; y: number; width: number; height: number }
-  ): void {
-    const x = bounds.x + bounds.width - 120;
-    const y = bounds.y + 30;
-
-    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
-    ctx.font = FONTS.DATA;
-    ctx.textAlign = 'left';
-
-    ctx.fillText(`Az: ${this.state.azimuth.toFixed(1)}°`, x, y);
-    ctx.fillText(`El: ${this.state.elevation.toFixed(1)}°`, x, y + 15);
-    ctx.fillText(
-      `Range: ${(this.state.currentRange / 1000).toFixed(1)}km`,
-      x,
-      y + 30
-    );
-  }
-
   private worldToHorizontalRadarScreen(
     worldPos: Vector3,
     bounds: { x: number; y: number; width: number; height: number }
@@ -535,16 +500,16 @@ export class RadarRenderer {
     // Check if within sweep angle
     if (Math.abs(relativeBearing) > this.state.sweepAngle / 2) return null;
 
+    // Rectangular coordinate system: bearing on X-axis, distance on Y-axis
     const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height - 10;
-    const radius = Math.min(bounds.width, bounds.height - 20) / 2;
 
+    // Map bearing (-60 to +60 degrees) to screen X coordinate
+    const screenX = centerX + (relativeBearing / 120) * (bounds.width - 20);
+
+    // Map distance (0 to maxRange) to screen Y coordinate (bottom to top)
     const normalizedDistance = distance / this.state.maxRange;
-    const screenDistance = normalizedDistance * radius;
-
-    const angle = ((relativeBearing - 90) * Math.PI) / 180;
-    const screenX = centerX + Math.cos(angle) * screenDistance;
-    const screenY = centerY + Math.sin(angle) * screenDistance;
+    const screenY =
+      bounds.y + bounds.height - 10 - normalizedDistance * (bounds.height - 20);
 
     return new Vector2(screenX, screenY);
   }
@@ -702,17 +667,17 @@ export class RadarRenderer {
 
   private handleRadarMouseDown(mousePos: Vector2): boolean {
     const bounds = this.horizontalRadarBounds;
-    const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height - 10;
-    const radius = Math.min(bounds.width, bounds.height - 20) / 2;
 
-    const distanceFromCenter = Math.sqrt(
-      Math.pow(mousePos.x - centerX, 2) + Math.pow(mousePos.y - centerY, 2)
-    );
+    // Check if mouse is in the outer edge area for range adjustment
+    const mouseX = mousePos.x - bounds.x;
 
-    if (distanceFromCenter > radius * 0.8) {
+    // More permissive range adjustment detection:
+    // - Near left/right edges (within 30 pixels)
+    // - Default to direction adjustment in the center area
+    if (mouseX < 30 || mouseX > bounds.width - 30) {
       this.dragType = 'range';
     } else {
+      // Default to direction adjustment, but will switch to range if vertical movement detected
       this.dragType = 'direction';
     }
 
@@ -725,24 +690,36 @@ export class RadarRenderer {
     if (!this.isDragging) return;
 
     const bounds = this.horizontalRadarBounds;
-    const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height - 10;
+    const delta = mousePos.subtract(this.lastMousePosition);
+
+    // Auto-detect drag type based on movement direction
+    if (
+      this.dragType === 'direction' &&
+      Math.abs(delta.y) > Math.abs(delta.x) * 1.5
+    ) {
+      // Switch to range adjustment if vertical movement is dominant
+      this.dragType = 'range';
+    }
 
     if (this.dragType === 'direction') {
-      // Update radar direction
-      const delta = mousePos.subtract(this.lastMousePosition);
+      // Update radar direction based on horizontal mouse movement
       this.state.azimuth += delta.x * 0.5; // Sensitivity adjustment
       this.state.azimuth = ((this.state.azimuth % 360) + 360) % 360;
 
       this.events.onDirectionChange(this.state.azimuth, this.state.elevation);
     } else if (this.dragType === 'range') {
-      // Update range cursor
-      const distance = Math.sqrt(
-        Math.pow(mousePos.x - centerX, 2) + Math.pow(mousePos.y - centerY, 2)
-      );
-      const radius = Math.min(bounds.width, bounds.height - 20) / 2;
+      // Update range cursor based on vertical mouse position
+      // In rectangular coordinate system: top = max range, bottom = 0 range
+      const relativeY = mousePos.y - bounds.y - 10; // Account for margin
+      const availableHeight = bounds.height - 20; // Account for top/bottom margins
 
-      this.state.rangeCursor = Math.min(distance / radius, 1.0);
+      // Normalize Y position: 0 at bottom (min range), 1 at top (max range)
+      const normalizedY = Math.max(
+        0,
+        Math.min(1, 1 - relativeY / availableHeight)
+      );
+
+      this.state.rangeCursor = normalizedY;
       this.state.currentRange = this.state.rangeCursor * this.state.maxRange;
 
       this.events.onRangeChange(this.state.currentRange);

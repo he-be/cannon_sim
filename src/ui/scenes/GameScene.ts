@@ -343,6 +343,13 @@ export class GameScene {
     this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
     this.uiManager.setRadarRange(this.radarRange);
 
+    // Update radar info display in left panel (moved from center pane)
+    this.uiManager.setRadarInfo(
+      this.radarAzimuth,
+      this.radarElevation,
+      this.radarRange
+    );
+
     // Update game time
     this.uiManager.setGameTime(this.gameTime);
 
@@ -469,16 +476,27 @@ export class GameScene {
     const dt = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP;
     const maxTime = PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME;
     let time = 0;
+    let stepCounter = 0;
 
-    while (time < maxTime && trajectory.length < 200) {
-      trajectory.push(
-        new Vector3(state.position.x, state.position.y, state.position.z)
-      );
+    // Sample every 10th step to reduce trajectory points while maintaining accuracy
+    const SAMPLING_INTERVAL = 10;
+
+    while (time < maxTime && trajectory.length < 1000) {
+      if (stepCounter % SAMPLING_INTERVAL === 0) {
+        trajectory.push(
+          new Vector3(state.position.x, state.position.y, state.position.z)
+        );
+      }
 
       state = physicsEngine.integrate(state, time, dt);
       time += dt;
+      stepCounter++;
 
       if (state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL) {
+        // Add the final ground impact point
+        trajectory.push(
+          new Vector3(state.position.x, state.position.y, state.position.z)
+        );
         break;
       }
     }

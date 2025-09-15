@@ -33,6 +33,11 @@ export interface ControlPanelState {
     range?: number;
     speed?: number;
   } | null;
+  radarInfo: {
+    azimuth: number;
+    elevation: number;
+    range: number;
+  } | null;
 }
 
 interface UIElement {
@@ -80,6 +85,7 @@ export class ControlPanelRenderer {
       leadAngle: null,
       gameTime: 0,
       targetInfo: null,
+      radarInfo: null,
     };
   }
 
@@ -116,35 +122,33 @@ export class ControlPanelRenderer {
       height: sliderHeight,
       type: 'slider',
     });
-    currentY += 60;
+    currentY += 80; // Increased spacing to avoid overlap with targeting info
 
-    // Fire Button
+    // Fire Button - moved down to avoid overlap
     this.uiElements.set('fire-button', {
       id: 'fire-button',
       x: margin + 10,
-      y: currentY,
+      y: currentY + 120, // Additional spacing for targeting section
       width: buttonWidth,
       height: buttonHeight,
       type: 'button',
     });
-    currentY += 35;
 
     // Lock Button
     this.uiElements.set('lock-button', {
       id: 'lock-button',
       x: margin + 10,
-      y: currentY,
+      y: currentY + 155, // Spaced below fire button
       width: buttonWidth,
       height: buttonHeight,
       type: 'button',
     });
-    currentY += 35;
 
     // Menu Button
     this.uiElements.set('menu-button', {
       id: 'menu-button',
       x: margin + 10,
-      y: currentY,
+      y: currentY + 190, // Spaced below lock button
       width: buttonWidth,
       height: buttonHeight,
       type: 'button',
@@ -198,8 +202,11 @@ export class ControlPanelRenderer {
     // Render sliders
     this.renderSliders(ctx);
 
+    // Radar information (moved from center pane)
+    y = this.renderRadarInfo(ctx, margin, y + 60, lineHeight);
+
     // Targeting information
-    y = this.renderTargetingInfo(ctx, margin, y + 80, lineHeight);
+    y = this.renderTargetingInfo(ctx, margin, y + 20, lineHeight);
 
     // Lead angle display
     y = this.renderLeadAngleInfo(ctx, margin, y + 20, lineHeight);
@@ -446,6 +453,45 @@ export class ControlPanelRenderer {
     return y;
   }
 
+  private renderRadarInfo(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    lineHeight: number
+  ): number {
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.SUBTITLE;
+    ctx.fillText('Radar', x, y);
+    y += lineHeight;
+
+    const radarInfo = this.state.radarInfo;
+    if (radarInfo) {
+      ctx.font = FONTS.DATA;
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+      ctx.fillText(`Az: ${radarInfo.azimuth.toFixed(1)}°`, x + 10, y);
+      y += lineHeight;
+      ctx.fillText(`El: ${radarInfo.elevation.toFixed(1)}°`, x + 10, y);
+      y += lineHeight;
+      ctx.fillText(
+        `Range: ${(radarInfo.range / 1000).toFixed(1)}km`,
+        x + 10,
+        y
+      );
+      y += lineHeight;
+    } else {
+      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+      ctx.font = FONTS.DATA;
+      ctx.fillText('Az: ---°', x + 10, y);
+      y += lineHeight;
+      ctx.fillText('El: ---°', x + 10, y);
+      y += lineHeight;
+      ctx.fillText('Range: ---km', x + 10, y);
+      y += lineHeight;
+    }
+
+    return y;
+  }
+
   private renderGameTime(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -628,5 +674,12 @@ export class ControlPanelRenderer {
    */
   setLockState(isLocked: boolean): void {
     this.state.isLocked = isLocked;
+  }
+
+  /**
+   * Set radar information
+   */
+  setRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
+    this.state.radarInfo = radarInfo;
   }
 }
