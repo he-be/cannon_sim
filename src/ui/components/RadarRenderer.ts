@@ -132,25 +132,34 @@ export class RadarRenderer {
     ctx.fillStyle = 'rgba(0, 20, 0, 0.8)';
     ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
 
-    // Draw radar grid
-    this.drawHorizontalGrid(ctx, bounds);
+    // Draw radar grid (adjust for range slider area)
+    const RANGE_SLIDER_WIDTH = 60;
+    const mainRadarBounds = {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width - RANGE_SLIDER_WIDTH,
+      height: bounds.height,
+    };
+
+    this.drawHorizontalGrid(ctx, mainRadarBounds);
 
     // Draw radar beam
-    this.drawRadarBeam(ctx, bounds);
+    this.drawRadarBeam(ctx, mainRadarBounds);
 
-    // Draw range cursor
-    this.drawRangeCursor(ctx, bounds);
+    // Draw range cursor (in main area)
+    this.drawRangeCursor(ctx, mainRadarBounds);
 
     // Draw targets
-    this.drawTargetsOnHorizontalRadar(ctx, bounds);
+    this.drawTargetsOnHorizontalRadar(ctx, mainRadarBounds);
 
     // Draw projectiles
-    this.drawProjectilesOnHorizontalRadar(ctx, bounds);
+    this.drawProjectilesOnHorizontalRadar(ctx, mainRadarBounds);
 
     // Draw trajectory prediction
-    this.drawTrajectoryPrediction(ctx, bounds);
+    this.drawTrajectoryPrediction(ctx, mainRadarBounds);
 
-    // Radar info removed - now displayed in left panel
+    // Draw range slider area
+    this.drawRangeSliderArea(ctx, bounds);
 
     ctx.restore();
   }
@@ -331,6 +340,74 @@ export class RadarRenderer {
     ctx.textAlign = 'left';
     const rangeText = `${(this.state.currentRange / 1000).toFixed(1)}km`;
     ctx.fillText(rangeText, bounds.x + bounds.width - 60, cursorY - 5);
+  }
+
+  private drawRangeSliderArea(
+    ctx: CanvasRenderingContext2D,
+    bounds: { x: number; y: number; width: number; height: number }
+  ): void {
+    const RANGE_SLIDER_WIDTH = 60;
+    const sliderX = bounds.x + bounds.width - RANGE_SLIDER_WIDTH;
+
+    // Draw range slider background
+    ctx.fillStyle = 'rgba(0, 40, 0, 0.6)';
+    ctx.fillRect(sliderX, bounds.y, RANGE_SLIDER_WIDTH, bounds.height);
+
+    // Draw separator line
+    ctx.strokeStyle = CRT_COLORS.GRID_LINE;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sliderX, bounds.y);
+    ctx.lineTo(sliderX, bounds.y + bounds.height);
+    ctx.stroke();
+
+    // Draw range slider track
+    const trackX = sliderX + 20;
+    const trackWidth = 20;
+    const trackY = bounds.y + 20;
+    const trackHeight = bounds.height - 40;
+
+    ctx.strokeStyle = CRT_COLORS.SECONDARY_TEXT;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(trackX, trackY, trackWidth, trackHeight);
+
+    // Draw range slider handle
+    const handleY = trackY + (1 - this.state.rangeCursor) * trackHeight - 3;
+    const handleHeight = 6;
+
+    ctx.fillStyle = CRT_COLORS.WARNING_TEXT;
+    ctx.fillRect(trackX - 2, handleY, trackWidth + 4, handleHeight);
+
+    // Draw range labels
+    ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+
+    // Max range at top
+    ctx.fillText(
+      `${(this.state.maxRange / 1000).toFixed(0)}km`,
+      sliderX + RANGE_SLIDER_WIDTH / 2,
+      bounds.y + 15
+    );
+
+    // Current range in middle
+    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    ctx.fillText(
+      `${(this.state.currentRange / 1000).toFixed(1)}km`,
+      sliderX + RANGE_SLIDER_WIDTH / 2,
+      bounds.y + bounds.height / 2
+    );
+
+    // Min range at bottom
+    ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
+    ctx.fillText(
+      '0km',
+      sliderX + RANGE_SLIDER_WIDTH / 2,
+      bounds.y + bounds.height - 5
+    );
+
+    // Reset text alignment
+    ctx.textAlign = 'left';
   }
 
   private drawTargetsOnHorizontalRadar(
@@ -668,16 +745,15 @@ export class RadarRenderer {
   private handleRadarMouseDown(mousePos: Vector2): boolean {
     const bounds = this.horizontalRadarBounds;
 
-    // Check if mouse is in the outer edge area for range adjustment
-    const mouseX = mousePos.x - bounds.x;
+    // Define clear interaction zones
+    const RANGE_SLIDER_WIDTH = 60; // Right 60 pixels for range slider
+    const rangeSliderX = bounds.x + bounds.width - RANGE_SLIDER_WIDTH;
 
-    // More permissive range adjustment detection:
-    // - Near left/right edges (within 30 pixels)
-    // - Default to direction adjustment in the center area
-    if (mouseX < 30 || mouseX > bounds.width - 30) {
+    // Check if mouse is in the range slider area (right edge)
+    if (mousePos.x >= rangeSliderX) {
       this.dragType = 'range';
     } else {
-      // Default to direction adjustment, but will switch to range if vertical movement detected
+      // Main radar area is for direction control
       this.dragType = 'direction';
     }
 
@@ -692,37 +768,33 @@ export class RadarRenderer {
     const bounds = this.horizontalRadarBounds;
     const delta = mousePos.subtract(this.lastMousePosition);
 
-    // Auto-detect drag type based on movement direction
-    if (
-      this.dragType === 'direction' &&
-      Math.abs(delta.y) > Math.abs(delta.x) * 1.5
-    ) {
-      // Switch to range adjustment if vertical movement is dominant
-      this.dragType = 'range';
-    }
-
     if (this.dragType === 'direction') {
-      // Update radar direction based on horizontal mouse movement
-      this.state.azimuth += delta.x * 0.5; // Sensitivity adjustment
-      this.state.azimuth = ((this.state.azimuth % 360) + 360) % 360;
-
-      this.events.onDirectionChange(this.state.azimuth, this.state.elevation);
+      // Direction control: only process horizontal movement
+      // Ignore vertical movement to prevent accidental switching
+      if (Math.abs(delta.x) > 0.5) {
+        // Minimum threshold for intentional movement
+        this.state.azimuth += delta.x * 0.3; // Adjust sensitivity as needed
+        this.state.azimuth = ((this.state.azimuth % 360) + 360) % 360;
+        this.events.onDirectionChange(this.state.azimuth, this.state.elevation);
+      }
     } else if (this.dragType === 'range') {
-      // Update range cursor based on vertical mouse position
-      // In rectangular coordinate system: top = max range, bottom = 0 range
-      const relativeY = mousePos.y - bounds.y - 10; // Account for margin
-      const availableHeight = bounds.height - 20; // Account for top/bottom margins
+      // Range control: only process vertical movement
+      // Ignore horizontal movement
+      if (Math.abs(delta.y) > 0.5) {
+        // Minimum threshold for intentional movement
+        const relativeY = mousePos.y - bounds.y - 10;
+        const availableHeight = bounds.height - 20;
 
-      // Normalize Y position: 0 at bottom (min range), 1 at top (max range)
-      const normalizedY = Math.max(
-        0,
-        Math.min(1, 1 - relativeY / availableHeight)
-      );
+        // Normalize Y position: 0 at bottom (min range), 1 at top (max range)
+        const normalizedY = Math.max(
+          0,
+          Math.min(1, 1 - relativeY / availableHeight)
+        );
 
-      this.state.rangeCursor = normalizedY;
-      this.state.currentRange = this.state.rangeCursor * this.state.maxRange;
-
-      this.events.onRangeChange(this.state.currentRange);
+        this.state.rangeCursor = normalizedY;
+        this.state.currentRange = this.state.rangeCursor * this.state.maxRange;
+        this.events.onRangeChange(this.state.currentRange);
+      }
     }
 
     this.lastMousePosition = mousePos;

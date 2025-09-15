@@ -62,6 +62,10 @@ export class ControlPanelRenderer {
   // Interaction state
   private hoveredElement: string | null = null;
   private isDraggingSlider: string | null = null;
+  private pressedButton: string | null = null;
+  private _buttonPressStartTime: number = 0;
+  private continuousAdjustment: number | null = null;
+  private lastUpdateTime: number = 0;
 
   constructor(
     canvasManager: CanvasManager,
@@ -91,10 +95,11 @@ export class ControlPanelRenderer {
 
   private setupUIElements(): void {
     const margin = 15;
-    const sliderWidth = 200;
+    const sliderWidth = 160;
     const sliderHeight = 15;
     const buttonWidth = 120;
     const buttonHeight = 25;
+    const smallButtonSize = 20;
 
     // Clear existing elements
     this.uiElements.clear();
@@ -102,33 +107,69 @@ export class ControlPanelRenderer {
     // Calculate positions
     let currentY = 120; // Start after title and artillery info
 
-    // Azimuth Slider
-    this.uiElements.set('azimuth-slider', {
-      id: 'azimuth-slider',
+    // Azimuth Slider with +/- buttons
+    this.uiElements.set('azimuth-minus', {
+      id: 'azimuth-minus',
       x: margin + 10,
       y: currentY,
+      width: smallButtonSize,
+      height: smallButtonSize,
+      type: 'button',
+    });
+
+    this.uiElements.set('azimuth-slider', {
+      id: 'azimuth-slider',
+      x: margin + 10 + smallButtonSize + 5,
+      y: currentY + 3,
       width: sliderWidth,
       height: sliderHeight,
       type: 'slider',
+    });
+
+    this.uiElements.set('azimuth-plus', {
+      id: 'azimuth-plus',
+      x: margin + 10 + smallButtonSize + 5 + sliderWidth + 5,
+      y: currentY,
+      width: smallButtonSize,
+      height: smallButtonSize,
+      type: 'button',
     });
     currentY += 35;
 
-    // Elevation Slider
-    this.uiElements.set('elevation-slider', {
-      id: 'elevation-slider',
+    // Elevation Slider with +/- buttons
+    this.uiElements.set('elevation-minus', {
+      id: 'elevation-minus',
       x: margin + 10,
       y: currentY,
+      width: smallButtonSize,
+      height: smallButtonSize,
+      type: 'button',
+    });
+
+    this.uiElements.set('elevation-slider', {
+      id: 'elevation-slider',
+      x: margin + 10 + smallButtonSize + 5,
+      y: currentY + 3,
       width: sliderWidth,
       height: sliderHeight,
       type: 'slider',
     });
-    currentY += 80; // Increased spacing to avoid overlap with targeting info
 
-    // Fire Button - moved down to avoid overlap
+    this.uiElements.set('elevation-plus', {
+      id: 'elevation-plus',
+      x: margin + 10 + smallButtonSize + 5 + sliderWidth + 5,
+      y: currentY,
+      width: smallButtonSize,
+      height: smallButtonSize,
+      type: 'button',
+    });
+    currentY += 80; // Spacing after elevation controls
+
+    // Fire Button - positioned after targeting info to avoid overlap
     this.uiElements.set('fire-button', {
       id: 'fire-button',
       x: margin + 10,
-      y: currentY + 120, // Additional spacing for targeting section
+      y: currentY + 200, // Increased spacing to clear targeting section
       width: buttonWidth,
       height: buttonHeight,
       type: 'button',
@@ -138,7 +179,7 @@ export class ControlPanelRenderer {
     this.uiElements.set('lock-button', {
       id: 'lock-button',
       x: margin + 10,
-      y: currentY + 155, // Spaced below fire button
+      y: currentY + 235, // Spaced below fire button
       width: buttonWidth,
       height: buttonHeight,
       type: 'button',
@@ -148,7 +189,7 @@ export class ControlPanelRenderer {
     this.uiElements.set('menu-button', {
       id: 'menu-button',
       x: margin + 10,
-      y: currentY + 190, // Spaced below lock button
+      y: currentY + 270, // Spaced below lock button
       width: buttonWidth,
       height: buttonHeight,
       type: 'button',
@@ -221,7 +262,10 @@ export class ControlPanelRenderer {
   }
 
   private renderSliders(ctx: CanvasRenderingContext2D): void {
-    // Azimuth slider
+    // Azimuth controls
+    const azimuthMinusBtn = this.uiElements.get('azimuth-minus')!;
+    this.renderAdjustmentButton(ctx, azimuthMinusBtn, '-', 'azimuth-minus');
+
     const azimuthSlider = this.uiElements.get('azimuth-slider')!;
     this.renderSlider(
       ctx,
@@ -232,7 +276,13 @@ export class ControlPanelRenderer {
       'azimuth-slider'
     );
 
-    // Elevation slider
+    const azimuthPlusBtn = this.uiElements.get('azimuth-plus')!;
+    this.renderAdjustmentButton(ctx, azimuthPlusBtn, '+', 'azimuth-plus');
+
+    // Elevation controls
+    const elevationMinusBtn = this.uiElements.get('elevation-minus')!;
+    this.renderAdjustmentButton(ctx, elevationMinusBtn, '-', 'elevation-minus');
+
     const elevationSlider = this.uiElements.get('elevation-slider')!;
     this.renderSlider(
       ctx,
@@ -241,6 +291,44 @@ export class ControlPanelRenderer {
       0,
       90,
       'elevation-slider'
+    );
+
+    const elevationPlusBtn = this.uiElements.get('elevation-plus')!;
+    this.renderAdjustmentButton(ctx, elevationPlusBtn, '+', 'elevation-plus');
+  }
+
+  private renderAdjustmentButton(
+    ctx: CanvasRenderingContext2D,
+    element: UIElement,
+    symbol: string,
+    elementId: string
+  ): void {
+    const isHovered = this.hoveredElement === elementId;
+    const isPressed = this.pressedButton === elementId;
+
+    // Button background
+    ctx.fillStyle = isPressed
+      ? CRT_COLORS.WARNING_TEXT
+      : isHovered
+        ? 'rgba(0, 255, 0, 0.2)'
+        : 'rgba(0, 50, 0, 0.3)';
+    ctx.fillRect(element.x, element.y, element.width, element.height);
+
+    // Button border
+    ctx.strokeStyle =
+      isHovered || isPressed ? CRT_COLORS.WARNING_TEXT : CRT_COLORS.GRID_LINE;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(element.x, element.y, element.width, element.height);
+
+    // Button text
+    ctx.fillStyle = isPressed ? CRT_COLORS.BACKGROUND : CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = FONTS.DATA;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      symbol,
+      element.x + element.width / 2,
+      element.y + element.height / 2
     );
   }
 
@@ -553,10 +641,22 @@ export class ControlPanelRenderer {
   private handleMouseDown(mousePos: Vector2): boolean {
     const element = this.getElementAt(mousePos);
 
-    if (element && this.uiElements.get(element)?.type === 'slider') {
-      this.isDraggingSlider = element;
-      this.updateSliderValue(element, mousePos);
-      return true;
+    if (element) {
+      const uiElement = this.uiElements.get(element);
+      if (uiElement?.type === 'slider') {
+        this.isDraggingSlider = element;
+        this.updateSliderValue(element, mousePos);
+        return true;
+      } else if (
+        uiElement?.type === 'button' &&
+        this.isAdjustmentButton(element)
+      ) {
+        this.pressedButton = element;
+        this._buttonPressStartTime = Date.now();
+        this.lastUpdateTime = Date.now();
+        this.startContinuousAdjustment(element);
+        return true;
+      }
     }
 
     return false;
@@ -564,6 +664,77 @@ export class ControlPanelRenderer {
 
   private handleMouseUp(_mousePos: Vector2): void {
     this.isDraggingSlider = null;
+    if (this.pressedButton) {
+      this.stopContinuousAdjustment();
+      this.pressedButton = null;
+    }
+  }
+
+  private isAdjustmentButton(elementId: string): boolean {
+    return [
+      'azimuth-minus',
+      'azimuth-plus',
+      'elevation-minus',
+      'elevation-plus',
+    ].includes(elementId);
+  }
+
+  private startContinuousAdjustment(buttonId: string): void {
+    if (this.continuousAdjustment) {
+      window.clearInterval(this.continuousAdjustment);
+    }
+
+    // Immediate first adjustment
+    this.performAdjustment(buttonId);
+
+    // Start continuous adjustment at 0.1 degrees per 100ms (= 1 degree per second)
+    this.continuousAdjustment = window.setInterval(() => {
+      this.performAdjustment(buttonId);
+    }, 100);
+  }
+
+  private stopContinuousAdjustment(): void {
+    if (this.continuousAdjustment) {
+      window.clearInterval(this.continuousAdjustment);
+      this.continuousAdjustment = null;
+    }
+  }
+
+  private performAdjustment(buttonId: string): void {
+    const now = Date.now();
+    const deltaTime = now - this.lastUpdateTime;
+    const adjustment = 0.1 * (deltaTime / 100); // 0.1 degrees per 100ms
+
+    let newValue: number;
+
+    switch (buttonId) {
+      case 'azimuth-minus':
+        newValue = Math.max(-180, this.state.azimuth - adjustment);
+        this.state.azimuth = newValue;
+        this.events.onAzimuthChange(newValue);
+        break;
+      case 'azimuth-plus':
+        newValue = Math.min(180, this.state.azimuth + adjustment);
+        this.state.azimuth = newValue;
+        this.events.onAzimuthChange(newValue);
+        break;
+      case 'elevation-minus':
+        newValue = Math.max(0, this.state.elevation - adjustment);
+        this.state.elevation = newValue;
+        this.events.onElevationChange(newValue);
+        break;
+      case 'elevation-plus':
+        newValue = Math.min(90, this.state.elevation + adjustment);
+        this.state.elevation = newValue;
+        this.events.onElevationChange(newValue);
+        break;
+    }
+
+    this.lastUpdateTime = now;
+  }
+
+  public cleanup(): void {
+    this.stopContinuousAdjustment();
   }
 
   private handleClick(mousePos: Vector2): boolean {
@@ -578,7 +749,7 @@ export class ControlPanelRenderer {
   }
 
   private getElementAt(mousePos: Vector2): string | null {
-    for (const [id, element] of this.uiElements) {
+    for (const [id, element] of this.uiElements.entries()) {
       if (
         mousePos.x >= element.x &&
         mousePos.x <= element.x + element.width &&
@@ -613,6 +784,11 @@ export class ControlPanelRenderer {
   }
 
   private handleButtonClick(buttonId: string): void {
+    if (this.isAdjustmentButton(buttonId)) {
+      // Adjustment buttons are handled by mouse down/up events
+      return;
+    }
+
     switch (buttonId) {
       case 'fire-button':
         this.events.onFireClick();
