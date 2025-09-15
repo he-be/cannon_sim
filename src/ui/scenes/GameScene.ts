@@ -2096,32 +2096,94 @@ export class GameScene {
     radarWidth: number,
     radarHeight: number
   ): void {
-    // Only show prediction when locked onto a target
-    if (
-      this.targetingState !== TargetingState.LOCKED_ON ||
-      !this.lockedTarget
-    ) {
-      return;
-    }
-
     ctx.save();
 
-    // Calculate predicted trajectory
-    const trajectory = this.calculateTrajectoryToTarget(this.lockedTarget);
+    // 現在の砲の方位・仰角から発射した砲弾の3D軌跡を計算
+    const trajectory: Vector3[] = [];
+
+    // 現在の砲設定を使用
+    const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
+    const elevationRad = (this.elevationAngle * Math.PI) / 180;
+
+    // 初期速度計算
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
+    const initialVelocity = new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
+
+    // 物理エンジンセットアップ（実際の砲弾と同じ）
+    const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
+    const accelerationFunction = (state: State3D, _time: number): Vector3 => {
+      const Fg = Forces.gravity(
+        mass,
+        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
+        new Vector3(
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
+        )
+      );
+
+      const Fd = Forces.drag(
+        state.velocity,
+        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
+        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
+        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
+      );
+
+      const totalForce = Forces.sum(Fg, Fd);
+      return totalForce.multiply(1 / mass);
+    };
+
+    const physicsEngine = new PhysicsEngine(accelerationFunction);
+
+    // 初期状態
+    let state: State3D = {
+      position: new Vector3(
+        this.artilleryPosition.x,
+        this.artilleryPosition.y,
+        this.artilleryPosition.z
+      ),
+      velocity: initialVelocity,
+    };
+
+    // 軌跡計算
+    const dt = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP;
+    const maxTime = PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME;
+    let time = 0;
+
+    while (time < maxTime) {
+      // 3Dワールド座標をそのまま記録
+      trajectory.push(
+        new Vector3(state.position.x, state.position.y, state.position.z)
+      );
+
+      // 物理積分
+      state = physicsEngine.integrate(state, time, dt);
+      time += dt;
+
+      // 終了条件
+      if (state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL) {
+        break;
+      }
+    }
 
     if (trajectory.length === 0) {
       ctx.restore();
       return;
     }
 
-    // Draw trajectory line
-    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT; // Yellow for prediction
+    // 軌跡線描画（ターゲット表示と同じ方法）
+    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT;
     ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]); // Dashed line for prediction
+    ctx.setLineDash([5, 5]);
     ctx.beginPath();
 
     let firstPoint = true;
     trajectory.forEach(point => {
+      // 既存のworldToRadarScreen()を使用（ターゲットと同じ変換）
       const screenPos = this.worldToRadarScreen(
         point,
         radarLeft,
@@ -2131,11 +2193,13 @@ export class GameScene {
         true // horizontal radar
       );
 
-      if (screenPos && firstPoint) {
-        ctx.moveTo(screenPos.x, screenPos.y);
-        firstPoint = false;
-      } else if (screenPos) {
-        ctx.lineTo(screenPos.x, screenPos.y);
+      if (screenPos) {
+        if (firstPoint) {
+          ctx.moveTo(screenPos.x, screenPos.y);
+          firstPoint = false;
+        } else {
+          ctx.lineTo(screenPos.x, screenPos.y);
+        }
       }
     });
 
@@ -2235,32 +2299,95 @@ export class GameScene {
     radarWidth: number,
     radarHeight: number
   ): void {
-    // Only show prediction when locked onto a target
-    if (
-      this.targetingState !== TargetingState.LOCKED_ON ||
-      !this.lockedTarget
-    ) {
-      return;
-    }
-
     ctx.save();
 
-    // Calculate predicted trajectory
-    const trajectory = this.calculateVerticalTrajectory();
+    // 現在の砲の方位・仰角から発射した砲弾の3D軌跡を計算
+    // calculateTrajectoryToTarget()と同じ計算だが、ターゲット不要
+    const trajectory: Vector3[] = [];
+
+    // 現在の砲設定を使用
+    const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
+    const elevationRad = (this.elevationAngle * Math.PI) / 180;
+
+    // 初期速度計算
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
+    const initialVelocity = new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
+
+    // 物理エンジンセットアップ（実際の砲弾と同じ）
+    const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
+    const accelerationFunction = (state: State3D, _time: number): Vector3 => {
+      const Fg = Forces.gravity(
+        mass,
+        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
+        new Vector3(
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
+          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
+        )
+      );
+
+      const Fd = Forces.drag(
+        state.velocity,
+        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
+        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
+        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
+      );
+
+      const totalForce = Forces.sum(Fg, Fd);
+      return totalForce.multiply(1 / mass);
+    };
+
+    const physicsEngine = new PhysicsEngine(accelerationFunction);
+
+    // 初期状態
+    let state: State3D = {
+      position: new Vector3(
+        this.artilleryPosition.x,
+        this.artilleryPosition.y,
+        this.artilleryPosition.z
+      ),
+      velocity: initialVelocity,
+    };
+
+    // 軌跡計算
+    const dt = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP;
+    const maxTime = PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME;
+    let time = 0;
+
+    while (time < maxTime) {
+      // 3Dワールド座標をそのまま記録
+      trajectory.push(
+        new Vector3(state.position.x, state.position.y, state.position.z)
+      );
+
+      // 物理積分
+      state = physicsEngine.integrate(state, time, dt);
+      time += dt;
+
+      // 終了条件
+      if (state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL) {
+        break;
+      }
+    }
 
     if (trajectory.length === 0) {
       ctx.restore();
       return;
     }
 
-    // Draw trajectory line
-    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT; // Yellow for prediction
+    // 軌跡線描画（ターゲット表示と同じ方法）
+    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT;
     ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]); // Dashed line for prediction
+    ctx.setLineDash([5, 5]);
     ctx.beginPath();
 
     let firstPoint = true;
     trajectory.forEach(point => {
+      // 既存のworldToRadarScreen()を使用（ターゲットと同じ変換）
       const screenPos = this.worldToRadarScreen(
         point,
         radarLeft,
@@ -2270,11 +2397,13 @@ export class GameScene {
         false // vertical radar
       );
 
-      if (screenPos && firstPoint) {
-        ctx.moveTo(screenPos.x, screenPos.y);
-        firstPoint = false;
-      } else if (screenPos) {
-        ctx.lineTo(screenPos.x, screenPos.y);
+      if (screenPos) {
+        if (firstPoint) {
+          ctx.moveTo(screenPos.x, screenPos.y);
+          firstPoint = false;
+        } else {
+          ctx.lineTo(screenPos.x, screenPos.y);
+        }
       }
     });
 

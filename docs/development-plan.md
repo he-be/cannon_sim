@@ -1597,3 +1597,346 @@ calculateVerticalTrajectory(): TrajectoryPoint[] {
 - T049: 2時間
 
 **実装優先度**: 高（UI操作性の大幅向上が期待される）
+
+---
+
+## 8. レーダー座標系軌跡表示修正計画 (2025-09-14 追加修正)
+
+### 8.1 問題分析
+
+T048で実装された軌跡予測計算は物理的に正確な弾道シミュレーションを実現しましたが、以下の問題が残存しています：
+
+**現状の問題点**:
+
+- 3D軌跡計算は正確（PhysicsEngine + RK4積分）
+- しかし、レーダー座標系での軌跡表示投影が不正確
+- 砲座標系からレーダー座標系への適切な変換が不完全
+
+**技術的課題**:
+
+- レーダーAz（方位角）は追尾により自動変化するため、表示座標系が動的
+- 3D弾道軌跡を水平レーダー（俯瞰図）と垂直レーダー（側面図）に正しく投影する必要
+- 軌跡サンプリング点の座標変換精度向上が必要
+
+### 8.2 実現方法の技術設計
+
+#### **Phase 1: 軌跡サンプリング系の改良**
+
+**既存の問題**:
+
+```typescript
+// 現在の実装（不完全）
+while (time < maxTime) {
+  trajectory.push(
+    new Vector3(state.position.x, state.position.y, state.position.z)
+  );
+  state = physicsEngine.integrate(state, time, dt);
+  time += dt;
+}
+```
+
+**改良版実装**:
+
+```typescript
+// 軌跡予測専用の高精度サンプリング
+private calculateHighPrecisionTrajectory(): TrajectoryPoint[] {
+  const trajectory: TrajectoryPoint[] = [];
+  const sampleInterval = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP * 5; // 5フレームごとにサンプリング
+
+  let state: State3D = this.getInitialTrajectoryState();
+  let time = 0;
+
+  while (time < PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME) {
+    // 砲座標系での3D位置を記録
+    const worldPosition = new Vector3(state.position.x, state.position.y, state.position.z);
+
+    trajectory.push({
+      time: time,
+      worldPosition: worldPosition,
+      velocity: new Vector3(state.velocity.x, state.velocity.y, state.velocity.z)
+    });
+
+    // 物理状態を高精度で積分
+    state = this.physicsEngine.integrate(state, time, sampleInterval);
+    time += sampleInterval;
+
+    // 終了条件チェック
+    if (state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL) {
+      break;
+    }
+  }
+
+  return trajectory;
+}
+```
+
+#### **Phase 2: レーダー座標変換系の実装**
+
+**新規追加するクラス**:
+
+```typescript
+class RadarCoordinateConverter {
+  constructor(
+    private artilleryPosition: Vector3,
+    private currentRadarAzimuth: number, // 動的に変化するレーダー方位角
+    private maxRadarRange: number
+  ) {}
+
+  // 3D世界座標 → 水平レーダー座標変換
+  worldToHorizontalRadar(worldPos: Vector3): Vector2 | null {
+    const dx = worldPos.x - this.artilleryPosition.x;
+    const dy = worldPos.y - this.artilleryPosition.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > this.maxRadarRange) return null;
+
+    // 絶対方位角を計算
+    const absoluteBearing = Math.atan2(dx, dy) * (180 / Math.PI);
+
+    // レーダー基準の相対方位角を計算（重要：レーダーAzを基準とする）
+    let relativeBearing = absoluteBearing - this.currentRadarAzimuth;
+
+    // -180° ～ +180°に正規化
+    while (relativeBearing > 180) relativeBearing -= 360;
+    while (relativeBearing < -180) relativeBearing += 360;
+
+    // レーダー表示範囲チェック（±60°）
+    if (Math.abs(relativeBearing) > 60) return null;
+
+    return new Vector2(relativeBearing, distance);
+  }
+
+  // 3D世界座標 → 垂直レーダー座標変換
+  worldToVerticalRadar(worldPos: Vector3): Vector2 | null {
+    const dx = worldPos.x - this.artilleryPosition.x;
+    const dy = worldPos.y - this.artilleryPosition.y;
+    const dz = worldPos.z - this.artilleryPosition.z;
+    const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
+
+    if (horizontalDistance > this.maxRadarRange) return null;
+
+    // レーダー基準での相対方位角チェック（垂直レーダーはビーム幅±2.5°）
+    const absoluteBearing = Math.atan2(dx, dy) * (180 / Math.PI);
+    let relativeBearing = absoluteBearing - this.currentRadarAzimuth;
+
+    while (relativeBearing > 180) relativeBearing -= 360;
+    while (relativeBearing < -180) relativeBearing += 360;
+
+    // 垂直レーダーのビーム幅内チェック
+    if (Math.abs(relativeBearing) > 2.5) return null;
+
+    return new Vector2(horizontalDistance, dz); // X=水平距離、Y=高度
+  }
+}
+```
+
+#### **Phase 3: 軌跡描画系の統合**
+
+**水平レーダーでの軌跡表示**:
+
+```typescript
+private renderTrajectoryPrediction(
+  ctx: CanvasRenderingContext2D,
+  radarLeft: number,
+  radarTop: number,
+  radarWidth: number,
+  radarHeight: number
+): void {
+  if (this.targetingState !== TargetingState.LOCKED_ON) return;
+
+  // 高精度軌跡計算
+  const worldTrajectory = this.calculateHighPrecisionTrajectory();
+
+  // レーダー座標変換器の初期化
+  const converter = new RadarCoordinateConverter(
+    this.artilleryPosition,
+    this.radarAzimuth, // 現在のレーダー方位角
+    this.maxRadarRange
+  );
+
+  // レーダー座標に変換
+  const radarTrajectory = worldTrajectory
+    .map(point => converter.worldToHorizontalRadar(point.worldPosition))
+    .filter(point => point !== null) as Vector2[];
+
+  // 軌跡線描画
+  if (radarTrajectory.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT; // 黄色の予測線
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+
+    radarTrajectory.forEach((radarPoint, index) => {
+      // レーダー座標をスクリーン座標に変換
+      const screenX = radarLeft + radarWidth / 2 +
+        (radarPoint.x / 120) * (radarWidth - 20); // relativeBearing (-60° ～ +60°)
+      const screenY = radarTop + radarHeight - 10 -
+        (radarPoint.y / this.maxRadarRange) * (radarHeight - 20); // distance
+
+      if (index === 0) {
+        ctx.moveTo(screenX, screenY);
+      } else {
+        ctx.lineTo(screenX, screenY);
+      }
+    });
+
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+```
+
+**垂直レーダーでの軌跡表示**:
+
+```typescript
+private renderVerticalTrajectoryPrediction(
+  ctx: CanvasRenderingContext2D,
+  radarLeft: number,
+  radarTop: number,
+  radarWidth: number,
+  radarHeight: number
+): void {
+  if (this.targetingState !== TargetingState.LOCKED_ON) return;
+
+  // 同じ高精度軌跡データを使用
+  const worldTrajectory = this.calculateHighPrecisionTrajectory();
+
+  const converter = new RadarCoordinateConverter(
+    this.artilleryPosition,
+    this.radarAzimuth,
+    this.maxRadarRange
+  );
+
+  // 垂直レーダー座標に変換
+  const verticalTrajectory = worldTrajectory
+    .map(point => converter.worldToVerticalRadar(point.worldPosition))
+    .filter(point => point !== null) as Vector2[];
+
+  // 放物線軌跡描画
+  if (verticalTrajectory.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = CRT_COLORS.WARNING_TEXT;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+
+    verticalTrajectory.forEach((verticalPoint, index) => {
+      // 垂直レーダー座標をスクリーン座標に変換
+      const screenX = radarLeft + 10 +
+        (verticalPoint.x / this.maxRadarRange) * (radarWidth - 20); // 水平距離
+      const screenY = radarTop + radarHeight - 10 -
+        (verticalPoint.y / 10000) * (radarHeight - 20); // 高度（10km max）
+
+      if (index === 0) {
+        ctx.moveTo(screenX, screenY);
+      } else {
+        ctx.lineTo(screenX, screenY);
+      }
+    });
+
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+```
+
+### 8.3 実装タスク
+
+#### T050. レーダー座標系軌跡表示修正
+
+**手法**: 既存システム改良  
+**内容**:
+
+**Step 1: 高精度軌跡サンプリング実装**
+
+- `calculateHighPrecisionTrajectory()` メソッドの実装
+- サンプリング間隔の最適化（精度と性能のバランス）
+- TrajectoryPointインターface の定義
+
+**Step 2: RadarCoordinateConverter クラス実装**
+
+- 砲座標系からレーダー座標系への変換ロジック
+- 動的レーダー方位角への対応
+- 水平/垂直レーダーそれぞれの座標変換
+
+**Step 3: 軌跡描画システム統合**
+
+- `renderTrajectoryPrediction()` メソッドの改良
+- `renderVerticalTrajectoryPrediction()` メソッドの改良
+- 既存のworldToRadarScreen()メソッドとの統合
+
+**Step 4: パフォーマンス最適化**
+
+- 軌跡計算結果のキャッシング
+- レーダー表示範囲外ポイントの早期除外
+- 描画負荷の軽減
+
+**成果物**: 正確なレーダー座標系軌跡表示システム  
+**推定時間**: 3時間
+
+### 8.4 技術的な重要ポイント
+
+#### **座標変換の精度確保**:
+
+```typescript
+// 重要: レーダー基準での相対座標変換
+const relativeBearing = absoluteBearing - this.currentRadarAzimuth;
+
+// 360度境界の適切な処理
+while (relativeBearing > 180) relativeBearing -= 360;
+while (relativeBearing < -180) relativeBearing += 360;
+```
+
+#### **追尾レーダーとの同期**:
+
+- レーダーAzが自動追尾により変化する場合の座標変換
+- ロックオン時のレーダー向きの動的反映
+- 軌跡予測線の実時間更新
+
+#### **表示範囲フィルタリング**:
+
+- 水平レーダー: ±60度の表示範囲
+- 垂直レーダー: ±2.5度のビーム幅
+- レーダー最大範囲外ポイントの除外
+
+### 8.5 期待効果
+
+**精度向上**:
+
+- レーダー座標系での軌跡表示が物理的に正確
+- 追尾レーダーの動きに軌跡予測が正しく追従
+- 3D弾道の2D投影が数学的に正確
+
+**操作性向上**:
+
+- ターゲットロック時の軌跡予測が直感的
+- レーダー画面上での弾道把握が容易
+- 照準調整時の視覚フィードバックが正確
+
+**システム統合**:
+
+- 既存のPhysicsEngineとの完全統合
+- レーダー制御システムとの連携
+- UI描画システムとの効率的統合
+
+### 8.6 品質保証
+
+**検証項目**:
+
+- 静止目標への軌跡予測精度
+- 移動目標への軌跡予測精度
+- レーダー追尾時の表示同期
+- 360度境界での座標変換正確性
+
+**パフォーマンス要件**:
+
+- 60FPS維持（軌跡計算負荷を考慮）
+- メモリ使用量最適化
+- リアルタイム更新の応答性
+
+### 8.7 総合推定工数
+
+**T050: レーダー座標系軌跡表示修正**: 3時間
+
+**実装優先度**: 最高（T048の完成度向上に直結）

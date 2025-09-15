@@ -31,11 +31,11 @@ export interface StageConfig {
  * Stage configuration constants
  */
 const STAGE_CONSTANTS = {
-  ARTILLERY_POSITION: new Vector3(0, -8000, 0), // 8km south of origin
+  ARTILLERY_POSITION: new Vector3(0, 0, 0), // Origin position - simplified coordinate system, // 8km south of origin
   TARGET_DISTANCES: {
-    CLOSE: 3000, // 3km
-    MEDIUM: 6000, // 6km
-    FAR: 10000, // 10km
+    CLOSE: 10000, // 10km
+    MEDIUM: 16000, // 16km
+    FAR: 20000, // 20km
   },
   TARGET_SPEEDS: {
     SLOW: 50, // 50 m/s
@@ -60,22 +60,22 @@ const STAGE_1_CONFIG: StageConfig = {
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
   targets: [
     {
-      position: new Vector3(0, -5000, 1000), // 5km北、高度1000mの気球
+      position: new Vector3(0, -15000, 1000), // 15km北、高度1000mの気球
       type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
     },
     {
-      position: new Vector3(-3000, -4000, 900), // 北西、高度900m
+      position: new Vector3(-8000, -9000, 900), // 北西、高度900m
       type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
     },
     {
-      position: new Vector3(3000, -4000, 1100), // 北東、高度1100m
+      position: new Vector3(5000, -7000, 1100), // 北東、高度1100m
       type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
     },
     {
-      position: new Vector3(0, -8000, 1200), // 8km北、高度1200m
+      position: new Vector3(0, -20000, 1200), // 8km北、高度1200m
       type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
     },
@@ -94,27 +94,27 @@ const STAGE_2_CONFIG: StageConfig = {
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
   targets: [
     {
-      position: new Vector3(-4000, -6000, 800), // 西から接近
+      position: new Vector3(-14000, -6000, 800), // 西から接近
       type: TargetType.FRIGATE,
-      velocity: new Vector3(60, 0, 0), // 60m/s東進
+      velocity: new Vector3(20, 0, 0), // 60m/s東進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
     },
     {
-      position: new Vector3(4000, -6000, 700), // 東から接近
+      position: new Vector3(4000, -16000, 700), // 東から接近
       type: TargetType.FRIGATE,
-      velocity: new Vector3(-55, 0, 0), // 55m/s西進
+      velocity: new Vector3(-25, 0, 0), // 55m/s西進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
     },
     {
-      position: new Vector3(0, -10000, 900), // 北方から南進
+      position: new Vector3(0, -20000, 900), // 北方から南進
       type: TargetType.FRIGATE,
-      velocity: new Vector3(0, 65, 0), // 65m/s南進
+      velocity: new Vector3(0, 25, 0), // 65m/s南進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
     },
     {
-      position: new Vector3(-2000, -8000, 750), // 北西から斜め移動
+      position: new Vector3(6000, 8000, 750), // 北西から斜め移動
       type: TargetType.FRIGATE,
-      velocity: new Vector3(40, 40, 0), // 斜め移動
+      velocity: new Vector3(10, 20, 0), // 斜め移動
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
     },
   ],

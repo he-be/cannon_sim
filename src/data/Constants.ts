@@ -93,21 +93,21 @@ export const VESSEL_CHARACTERISTICS = {
 
   // 空中戦艦タイプ
   balloon: {
-    size: 80, // 大きな当たり判定（容易）
+    size: 160, // 大きな当たり判定（容易）
     durability: 1,
     maxSpeed: 0, // 静止
     altitude: 1000, // 1000m高度
     displayName: '気球',
   },
   frigate: {
-    size: 60, // 中程度の当たり判定
+    size: 160, // 中程度の当たり判定
     durability: 2,
     maxSpeed: 70, // 70m/s
     altitude: 800, // 800m高度
     displayName: 'フリゲート',
   },
   cruiser: {
-    size: 90, // 大きいが高速
+    size: 200, // 大きいが高速
     durability: 3,
     maxSpeed: 120, // 120m/s
     altitude: 1200, // 1200m高度
