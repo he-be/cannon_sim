@@ -431,7 +431,7 @@ export class ControlPanelRenderer {
   ): number {
     ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
     ctx.font = FONTS.SUBTITLE;
-    ctx.fillText('Targeting', x, y);
+    ctx.fillText('Targeting', x + 35, y); // Moved 15px right
     y += lineHeight;
 
     const targetInfo = this.state.targetInfo;
@@ -451,29 +451,29 @@ export class ControlPanelRenderer {
 
       ctx.font = FONTS.DATA;
       ctx.fillStyle = statusColor;
-      ctx.fillText(`Status: ${targetInfo.status.replace('_', ' ')}`, x + 10, y);
+      ctx.fillText(`Status: ${targetInfo.status.replace('_', ' ')}`, x + 45, y); // Moved 25px right
       y += lineHeight;
 
-      // Target details
+      // Target details with improved precision
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
-      ctx.fillText(`Type: ${targetInfo.type || '---'}`, x + 10, y);
+      ctx.fillText(`Type: ${targetInfo.type || '---'}`, x + 45, y);
       y += lineHeight;
       ctx.fillText(
-        `Range: ${targetInfo.range ? (targetInfo.range / 1000).toFixed(1) + 'km' : '---'}`,
-        x + 10,
+        `Range: ${targetInfo.range ? (targetInfo.range / 1000).toFixed(2) + 'km' : '---'}`,
+        x + 45,
         y
       );
       y += lineHeight;
       ctx.fillText(
-        `Speed: ${targetInfo.speed ? targetInfo.speed.toFixed(1) + 'm/s' : '---'}`,
-        x + 10,
+        `Speed: ${targetInfo.speed ? targetInfo.speed.toFixed(2) + 'm/s' : '---'}`,
+        x + 45,
         y
       );
       y += lineHeight;
     } else {
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.font = FONTS.DATA;
-      ctx.fillText('Status: MANUAL', x + 10, y);
+      ctx.fillText('Status: MANUAL', x + 45, y);
       y += lineHeight * 4;
     }
 
@@ -488,7 +488,7 @@ export class ControlPanelRenderer {
   ): number {
     ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
     ctx.font = FONTS.SUBTITLE;
-    ctx.fillText('Recommended Lead', x, y);
+    ctx.fillText('Recommended Lead', x + 45, y); // Moved 15px right
     y += lineHeight;
 
     const leadAngle = this.state.leadAngle;
@@ -509,32 +509,38 @@ export class ControlPanelRenderer {
           confidenceColor = CRT_COLORS.SECONDARY_TEXT;
       }
 
+      // Convert azimuth from 0-360 to -180-180 to match Artillery display
+      let normalizedAzimuth = leadAngle.azimuth;
+      if (normalizedAzimuth > 180) {
+        normalizedAzimuth = normalizedAzimuth - 360;
+      }
+
       ctx.font = FONTS.DATA;
       ctx.fillStyle = confidenceColor;
-      ctx.fillText(`Az: ${Math.round(leadAngle.azimuth)}°`, x + 10, y);
+      ctx.fillText(`Az: ${normalizedAzimuth.toFixed(2)}°`, x + 25, y); // Improved precision and moved 25px right
       y += lineHeight;
-      ctx.fillText(`El: ${Math.round(leadAngle.elevation)}°`, x + 10, y);
+      ctx.fillText(`El: ${leadAngle.elevation.toFixed(2)}°`, x + 25, y);
       y += lineHeight;
 
       // Additional info
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.font = FONTS.SMALL;
       if (leadAngle.flightTime) {
-        ctx.fillText(`Time: ${leadAngle.flightTime.toFixed(1)}s`, x + 10, y);
+        ctx.fillText(`Time: ${leadAngle.flightTime.toFixed(2)}s`, x + 25, y); // Improved precision
         y += lineHeight * 0.8;
       }
-      ctx.fillText(`Confidence: ${leadAngle.confidence}`, x + 10, y);
+      ctx.fillText(`Confidence: ${leadAngle.confidence}`, x + 25, y);
       y += lineHeight * 0.8;
     } else {
       ctx.fillStyle = '#666666';
       ctx.font = FONTS.DATA;
-      ctx.fillText('Az: ---°', x + 10, y);
+      ctx.fillText('Az: ---°', x + 25, y);
       y += lineHeight;
-      ctx.fillText('El: ---°', x + 10, y);
+      ctx.fillText('El: ---°', x + 25, y);
       y += lineHeight;
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.font = FONTS.SMALL;
-      ctx.fillText('No target locked', x + 10, y);
+      ctx.fillText('No target locked', x + 25, y);
       y += lineHeight;
     }
 
@@ -549,31 +555,31 @@ export class ControlPanelRenderer {
   ): number {
     ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
     ctx.font = FONTS.SUBTITLE;
-    ctx.fillText('Radar', x, y);
+    ctx.fillText('Radar', x + 15, y); // Moved 15px right
     y += lineHeight;
 
     const radarInfo = this.state.radarInfo;
     if (radarInfo) {
       ctx.font = FONTS.DATA;
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
-      ctx.fillText(`Az: ${radarInfo.azimuth.toFixed(1)}°`, x + 10, y);
+      ctx.fillText(`Az: ${radarInfo.azimuth.toFixed(2)}°`, x + 25, y); // Improved precision and moved 25px right
       y += lineHeight;
-      ctx.fillText(`El: ${radarInfo.elevation.toFixed(1)}°`, x + 10, y);
+      ctx.fillText(`El: ${radarInfo.elevation.toFixed(2)}°`, x + 25, y);
       y += lineHeight;
       ctx.fillText(
-        `Range: ${(radarInfo.range / 1000).toFixed(1)}km`,
-        x + 10,
+        `Range: ${(radarInfo.range / 1000).toFixed(2)}km`,
+        x + 25,
         y
       );
       y += lineHeight;
     } else {
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
       ctx.font = FONTS.DATA;
-      ctx.fillText('Az: ---°', x + 10, y);
+      ctx.fillText('Az: ---°', x + 25, y);
       y += lineHeight;
-      ctx.fillText('El: ---°', x + 10, y);
+      ctx.fillText('El: ---°', x + 25, y);
       y += lineHeight;
-      ctx.fillText('Range: ---km', x + 10, y);
+      ctx.fillText('Range: ---km', x + 25, y);
       y += lineHeight;
     }
 

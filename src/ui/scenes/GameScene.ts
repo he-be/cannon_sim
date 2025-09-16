@@ -396,7 +396,14 @@ export class GameScene {
   }
 
   private updateRadarTargets(): void {
-    // Convert game targets to radar targets
+    // First, remove destroyed targets from radar
+    this.targets.forEach(target => {
+      if (target.isDestroyed) {
+        this.uiManager.removeRadarTarget(target.id);
+      }
+    });
+
+    // Convert game targets to radar targets (only active ones)
     this.targets.forEach(target => {
       if (target.isDestroyed || this.gameTime < target.spawnTime) return;
 
