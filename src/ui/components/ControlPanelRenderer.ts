@@ -114,8 +114,8 @@ export class ControlPanelRenderer {
 
     // Artillery section
     this.artilleryGroup = new InfoGroupComponent('artillery', 'Artillery', [
-      { label: 'Azimuth', value: `${this.state.azimuth.toFixed(1)}°` },
-      { label: 'Elevation', value: `${this.state.elevation.toFixed(1)}°` },
+      { label: 'Az', value: `${this.state.azimuth.toFixed(1)}°` },
+      { label: 'El', value: `${this.state.elevation.toFixed(1)}°` },
     ]);
 
     // Sliders
