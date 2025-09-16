@@ -294,7 +294,13 @@ export class ControlPanelRenderer {
 
   private updateRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
     if (radarInfo) {
-      this.radarGroup.updateAzimuth(radarInfo.azimuth);
+      // Convert azimuth from 0-360 to -180-180 to match Artillery display
+      let normalizedAzimuth = radarInfo.azimuth;
+      if (normalizedAzimuth > 180) {
+        normalizedAzimuth = normalizedAzimuth - 360;
+      }
+
+      this.radarGroup.updateAzimuth(normalizedAzimuth);
       this.radarGroup.updateElevation(radarInfo.elevation);
       this.radarGroup.updateRange(radarInfo.range);
     } else {
