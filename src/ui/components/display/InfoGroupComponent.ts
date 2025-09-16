@@ -31,6 +31,12 @@ export class InfoGroupComponent extends VBoxContainer {
   }
 
   addInfoItem(item: InfoItem): void {
+    // Remove existing item if it exists
+    const existingComponent = this.infoItems.get(item.label);
+    if (existingComponent) {
+      this.removeChild(existingComponent);
+    }
+
     const textComponent = new TextComponent(
       `${this.id}-${item.label}`,
       `${item.label}: ${item.value}`,

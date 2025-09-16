@@ -17,6 +17,19 @@ export class HBoxContainer extends ContainerComponent {
     for (const child of this.children) {
       if (!child.visible) continue;
 
+      // Ensure child has minimum size if not set
+      if (child.bounds.width === 0) {
+        child.bounds.width = 80; // Default width
+      }
+      if (child.bounds.height === 0) {
+        child.bounds.height = innerBounds.height;
+      }
+
+      // Calculate child layout if it's a container
+      if (child instanceof ContainerComponent) {
+        child.calculateLayout();
+      }
+
       let childY = innerBounds.y;
 
       // Apply vertical alignment
@@ -38,7 +51,7 @@ export class HBoxContainer extends ContainerComponent {
         currentX,
         childY,
         child.bounds.width,
-        Math.min(child.bounds.height || innerBounds.height, innerBounds.height)
+        Math.min(child.bounds.height, innerBounds.height)
       );
 
       currentX += child.bounds.width + this.gap;

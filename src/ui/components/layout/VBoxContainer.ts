@@ -17,6 +17,19 @@ export class VBoxContainer extends ContainerComponent {
     for (const child of this.children) {
       if (!child.visible) continue;
 
+      // Ensure child has minimum size if not set
+      if (child.bounds.width === 0) {
+        child.bounds.width = innerBounds.width;
+      }
+      if (child.bounds.height === 0) {
+        child.bounds.height = 20; // Default height
+      }
+
+      // Calculate child layout if it's a container
+      if (child instanceof ContainerComponent) {
+        child.calculateLayout();
+      }
+
       let childX = innerBounds.x;
 
       // Apply horizontal alignment
@@ -36,7 +49,7 @@ export class VBoxContainer extends ContainerComponent {
       child.setBounds(
         childX,
         currentY,
-        Math.min(child.bounds.width || innerBounds.width, innerBounds.width),
+        Math.min(child.bounds.width, innerBounds.width),
         child.bounds.height
       );
 

@@ -201,8 +201,8 @@ export class ControlPanelRenderer {
     this.rootContainer.addChild(this.buttonsContainer);
     this.rootContainer.addChild(this.timeDisplay);
 
-    // Calculate initial layout
-    this.rootContainer.calculateLayout();
+    // Calculate initial layout after all children are added
+    this.calculateAllLayouts();
   }
 
   render(): void {
@@ -218,6 +218,9 @@ export class ControlPanelRenderer {
     ctx.strokeStyle = CRT_COLORS.GRID_LINE;
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, this.panelWidth, this.panelHeight);
+
+    // Ensure layout is calculated
+    this.rootContainer.calculateLayout();
 
     // Render component tree
     this.rootContainer.render(ctx);
@@ -401,6 +404,31 @@ export class ControlPanelRenderer {
 
   setRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
     this.updateState({ radarInfo });
+  }
+
+  private calculateAllLayouts(): void {
+    // First, ensure all leaf components have proper sizes
+    this.titleComponent.updateSize();
+
+    // Calculate slider sizes
+    this.azimuthSlider.bounds.height = 25;
+    this.elevationSlider.bounds.height = 25;
+
+    // Calculate button sizes
+    this.fireButton.bounds = { x: 0, y: 0, width: 120, height: 25 };
+    this.lockButton.bounds = { x: 0, y: 0, width: 120, height: 25 };
+    this.menuButton.bounds = { x: 0, y: 0, width: 120, height: 25 };
+
+    // Set info group heights
+    this.artilleryGroup.bounds.height = 60;
+    this.radarGroup.bounds.height = 80;
+    this.targetingGroup.bounds.height = 40;
+    this.leadAngleGroup.bounds.height = 80;
+    this.buttonsContainer.bounds.height = 85;
+    this.timeDisplay.bounds.height = 20;
+
+    // Now calculate the main layout
+    this.rootContainer.calculateLayout();
   }
 
   cleanup(): void {

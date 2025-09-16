@@ -75,7 +75,7 @@ export class TextComponent extends UIComponent {
     this.baseline = baseline;
   }
 
-  private updateSize(): void {
+  updateSize(): void {
     // Create temporary canvas to measure text
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
@@ -84,8 +84,8 @@ export class TextComponent extends UIComponent {
     const metrics = ctx.measureText(this.text);
     const fontSize = parseInt(this.font.match(/(\d+)px/)?.[1] || '12');
 
-    this.bounds.width = Math.ceil(metrics.width);
-    this.bounds.height = Math.ceil(fontSize * 1.2); // Add some padding
+    this.bounds.width = Math.max(Math.ceil(metrics.width), 50); // Minimum width
+    this.bounds.height = Math.max(Math.ceil(fontSize * 1.2), 16); // Minimum height
   }
 
   // Get the measured width of the text
