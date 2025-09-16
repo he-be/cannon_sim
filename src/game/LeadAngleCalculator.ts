@@ -146,6 +146,18 @@ export class LeadAngleCalculator {
   /**
    * Calculate confidence based on Shooting Method performance
    */
+  /**
+   * Estimate flight time based on distance (simple ballistic approximation)
+   */
+  estimateFlightTime(distance: number): number {
+    // Simple approximation: use typical artillery shell velocity (~850 m/s)
+    // and account for ballistic trajectory overhead (factor of ~1.1)
+    const typicalMuzzleVelocity = 850; // m/s
+    const trajectoryFactor = 1.1; // Account for arc trajectory
+
+    return (distance * trajectoryFactor) / typicalMuzzleVelocity;
+  }
+
   private calculateConfidence(
     result: ShootingResult
   ): 'HIGH' | 'MEDIUM' | 'LOW' {

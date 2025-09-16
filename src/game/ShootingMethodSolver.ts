@@ -65,20 +65,18 @@ export class ShootingMethodSolver {
   constructor(ballisticParams: BallisticParameters) {
     this.ballisticParams = ballisticParams;
 
-    // Initialize physics engine with ballistic force calculation
+    // Initialize physics engine with proper ballistic forces
     this.physicsEngine = new PhysicsEngine((state: State3D) => {
-      const velocity = new Vector3(
-        state.velocity.x,
-        state.velocity.y,
-        state.velocity.z
-      );
+      const velocity = state.velocity;
 
-      // Calculate all forces: gravity + air resistance + Coriolis
+      // Calculate gravity
       const gravity = Forces.gravity(
         this.ballisticParams.projectileMass,
         PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
-        new Vector3(0, 0, -1) // Z-down gravity
+        new Vector3(0, 0, -1)
       );
+
+      // Calculate air drag (essential for realistic ballistics)
       const drag = Forces.drag(
         velocity,
         PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
@@ -86,21 +84,7 @@ export class ShootingMethodSolver {
         this.ballisticParams.crossSectionalArea
       );
 
-      // Coriolis force: need angular velocity vector for Earth
-      const earthAngularVelocity = new Vector3(
-        0,
-        PHYSICS_CONSTANTS.EARTH_ROTATION_RATE *
-          Math.cos((this.ballisticParams.latitude * Math.PI) / 180),
-        PHYSICS_CONSTANTS.EARTH_ROTATION_RATE *
-          Math.sin((this.ballisticParams.latitude * Math.PI) / 180)
-      );
-      const coriolis = Forces.coriolis(
-        this.ballisticParams.projectileMass,
-        earthAngularVelocity,
-        velocity
-      );
-
-      const totalForce = Forces.sum(gravity, drag, coriolis);
+      const totalForce = Forces.sum(gravity, drag);
 
       // Return acceleration: F = ma → a = F/m
       return new Vector3(
@@ -149,12 +133,13 @@ export class ShootingMethodSolver {
     this.angleHistory = [];
 
     for (let iteration = 0; iteration < this.MAX_ITERATIONS; iteration++) {
-      // Calculate projectile trajectory with current angles to target position
+      // STEP 1 FIX: Use time-based error vector calculation
+      // Calculate projectile trajectory with current angles
       const trajectoryResult = this.simulateTrajectory(
         artilleryPosition,
         azimuth,
         elevation,
-        targetPosition // Pass full target position for distance-based termination
+        targetPosition // This ensures trajectory stops at target horizontal distance
       );
 
       if (!trajectoryResult) {
@@ -162,17 +147,20 @@ export class ShootingMethodSolver {
       }
 
       flightTime = trajectoryResult.flightTime;
-      const projectileEndPosition = trajectoryResult.endPosition;
+      const projectilePositionAtTargetDistance = trajectoryResult.endPosition;
 
-      // Calculate target position at impact time
+      // Calculate where target will be at the same flight time
       const targetFuturePosition = this.predictTargetPosition(
         targetPosition,
         targetVelocity,
         flightTime
       );
 
-      // Calculate error vector: E = PP(tf) - PT(tf)
-      const errorVector = projectileEndPosition.subtract(targetFuturePosition);
+      // STEP 1 FIX: Error vector F = P_sim(t_impact) - P_target(t_impact)
+      // This is physically meaningful: "At the time when projectile reaches target distance,
+      // how far apart are the projectile and target positions?"
+      const errorVector =
+        projectilePositionAtTargetDistance.subtract(targetFuturePosition);
       finalError = errorVector.magnitude();
 
       console.log(
@@ -222,46 +210,13 @@ export class ShootingMethodSolver {
         `ShootingMethod: Angle correction - ΔAz: ${angleCorrection.azimuth.toFixed(4)}°, ΔEl: ${angleCorrection.elevation.toFixed(4)}°`
       );
 
-      // Step 3 verification: Newton-Raphson update step computation
-      console.log('\n=== NEWTON-RAPHSON UPDATE VERIFICATION ===');
-      console.log(
-        `Before update: Az=${azimuth.toFixed(4)}°, El=${elevation.toFixed(4)}°`
-      );
-
-      const azimuthBeforeNormalization = azimuth - angleCorrection.azimuth;
-      const elevationAfterUpdate = elevation - angleCorrection.elevation;
-
-      console.log(
-        `After subtraction: Az=${azimuthBeforeNormalization.toFixed(4)}° (before normalization), El=${elevationAfterUpdate.toFixed(4)}°`
-      );
-
+      // Apply angle updates
       azimuth -= angleCorrection.azimuth;
       elevation -= angleCorrection.elevation;
 
       // Clamp angles to reasonable ranges
-      const azimuthBeforeNormalizationFinal = azimuth;
       azimuth = this.normalizeAzimuth(azimuth);
       elevation = Math.max(1.0, Math.min(89.0, elevation));
-
-      console.log(
-        `After normalization: Az=${azimuth.toFixed(4)}° (changed by ${(azimuth - azimuthBeforeNormalizationFinal).toFixed(1)}°), El=${elevation.toFixed(4)}°`
-      );
-
-      // Check for problematic azimuth wraparound
-      if (Math.abs(azimuth - azimuthBeforeNormalizationFinal) > 180) {
-        console.log(
-          '⚠️  WARNING: Azimuth normalization caused large jump - this explains direction reversal!'
-        );
-        console.log(
-          `   Original azimuth direction: ${azimuthBeforeNormalizationFinal.toFixed(1)}°`
-        );
-        console.log(`   Normalized to opposite side: ${azimuth.toFixed(1)}°`);
-        console.log(
-          `   Target is at azimuth: ${this.calculateInitialAzimuthGuess(artilleryPosition, targetPosition).toFixed(1)}°`
-        );
-      }
-
-      console.log('=== END UPDATE VERIFICATION ===\n');
     }
 
     const result = {
@@ -298,11 +253,32 @@ export class ShootingMethodSolver {
 
     // Calculate initial velocity vector
     const v0 = this.ballisticParams.initialVelocity;
+
+    // Debug: Check if initial values are valid
+    if (!isFinite(azimuthRad) || !isFinite(elevationRad) || !isFinite(v0)) {
+      console.error('Invalid initial values:', {
+        azimuthDeg,
+        elevationDeg,
+        v0,
+      });
+      return null;
+    }
+
     const initialVelocity = new Vector3(
       v0 * Math.cos(elevationRad) * Math.sin(azimuthRad), // East
       v0 * Math.cos(elevationRad) * Math.cos(azimuthRad), // North
       v0 * Math.sin(elevationRad) // Up
     );
+
+    // Debug: Check if initial velocity is valid
+    if (
+      !isFinite(initialVelocity.x) ||
+      !isFinite(initialVelocity.y) ||
+      !isFinite(initialVelocity.z)
+    ) {
+      console.error('Invalid initial velocity:', initialVelocity);
+      return null;
+    }
 
     // Initialize state
     let state: State3D = {
@@ -316,43 +292,48 @@ export class ShootingMethodSolver {
 
     let time = 0;
     let previousState = state;
-    let maxAltitude = startPosition.z;
-    let maxAltitudeTime = 0;
 
-    // Calculate target horizontal distance from artillery position
+    // Calculate target horizontal distance
     const targetHorizontalDistance = targetPosition
       ? Math.sqrt(
           (targetPosition.x - startPosition.x) ** 2 +
             (targetPosition.y - startPosition.y) ** 2
         )
-      : Infinity; // Fallback to ground impact if no target specified
+      : Infinity;
 
-    // Fact-finding: Log trajectory start
-    if (targetPosition) {
-      console.log(
-        `TRAJECTORY START: Az=${azimuthDeg.toFixed(2)}°, El=${elevationDeg.toFixed(2)}°, TargetDistance=${targetHorizontalDistance.toFixed(0)}m`
-      );
-    } else {
-      console.log(
-        `TRAJECTORY START: Az=${azimuthDeg.toFixed(2)}°, El=${elevationDeg.toFixed(2)}°, Ground impact mode`
-      );
-    }
+    // Debug initial state
+    console.log(
+      `Trajectory: Az=${azimuthDeg.toFixed(2)}°, El=${elevationDeg.toFixed(2)}°, V0=${initialVelocity.magnitude().toFixed(1)}m/s, TargetDist=${targetHorizontalDistance.toFixed(0)}m`
+    );
 
-    // Integrate trajectory until impact
+    // Integrate trajectory with safety checks
     while (time < this.MAX_FLIGHT_TIME) {
-      // Advance physics simulation first
+      // Advance physics simulation
       const newState = this.physicsEngine.integrate(
         state,
         time,
         this.PHYSICS_TIMESTEP
       );
-      time += this.PHYSICS_TIMESTEP;
 
-      // Track maximum altitude
-      if (newState.position.z > maxAltitude) {
-        maxAltitude = newState.position.z;
-        maxAltitudeTime = time;
+      // Safety check for invalid state
+      if (
+        !isFinite(newState.position.x) ||
+        !isFinite(newState.position.y) ||
+        !isFinite(newState.position.z) ||
+        !isFinite(newState.velocity.x) ||
+        !isFinite(newState.velocity.y) ||
+        !isFinite(newState.velocity.z)
+      ) {
+        console.error(
+          'Invalid state detected at time',
+          time,
+          'state:',
+          newState
+        );
+        return null;
       }
+
+      time += this.PHYSICS_TIMESTEP;
 
       // Check if projectile reached target horizontal distance
       if (targetPosition && targetHorizontalDistance < Infinity) {
@@ -372,7 +353,7 @@ export class ShootingMethodSolver {
           (previousHorizontalDistance >= targetHorizontalDistance &&
             currentHorizontalDistance <= targetHorizontalDistance)
         ) {
-          // Linear interpolation to find exact position at target distance
+          // Linear interpolation
           const deltaDistance =
             currentHorizontalDistance - previousHorizontalDistance;
           if (Math.abs(deltaDistance) > 1e-12) {
@@ -390,14 +371,8 @@ export class ShootingMethodSolver {
             const interpolatedTime =
               time - this.PHYSICS_TIMESTEP + t * this.PHYSICS_TIMESTEP;
 
-            // Verify interpolated distance
-            const verifyDistance = Math.sqrt(
-              (interpolatedPosition.x - startPosition.x) ** 2 +
-                (interpolatedPosition.y - startPosition.y) ** 2
-            );
-
             console.log(
-              `TRAJECTORY END: Reached target distance ${targetHorizontalDistance.toFixed(0)}m (verify=${verifyDistance.toFixed(0)}m) at altitude=${interpolatedPosition.z.toFixed(0)}m, time=${interpolatedTime.toFixed(2)}s, maxAlt=${maxAltitude.toFixed(0)}m@${maxAltitudeTime.toFixed(2)}s`
+              `Trajectory complete: t=${interpolatedTime.toFixed(2)}s, pos=${interpolatedPosition.x.toFixed(0)},${interpolatedPosition.y.toFixed(0)},${interpolatedPosition.z.toFixed(0)}`
             );
 
             return {
@@ -408,21 +383,13 @@ export class ShootingMethodSolver {
         }
       }
 
-      // For ground impact when no target specified or projectile falls below ground
+      // Ground impact check
       if (!targetPosition && newState.position.z <= 0) {
-        const distance = Math.sqrt(
-          newState.position.x * newState.position.x +
-            newState.position.y * newState.position.y
-        );
         console.log(
-          `TRAJECTORY END: Ground impact at range=${distance.toFixed(0)}m, time=${time.toFixed(2)}s, maxAlt=${maxAltitude.toFixed(0)}m@${maxAltitudeTime.toFixed(2)}s`
+          `Ground impact: t=${time.toFixed(2)}s, range=${Math.sqrt(newState.position.x ** 2 + newState.position.y ** 2).toFixed(0)}m`
         );
         return {
-          endPosition: new Vector3(
-            newState.position.x,
-            newState.position.y,
-            newState.position.z
-          ),
+          endPosition: newState.position,
           flightTime: time,
         };
       }
@@ -431,20 +398,12 @@ export class ShootingMethodSolver {
       state = newState;
     }
 
-    // Return final position if no ground impact (timeout case)
-    const distance = Math.sqrt(
-      state.position.x * state.position.x + state.position.y * state.position.y
+    // Timeout
+    console.warn(
+      `Trajectory timeout: t=${time.toFixed(2)}s, final pos=${state.position.x.toFixed(0)},${state.position.y.toFixed(0)},${state.position.z.toFixed(0)}`
     );
-    console.log(
-      `TRAJECTORY TIMEOUT: At range=${distance.toFixed(0)}m, alt=${state.position.z.toFixed(0)}m, time=${time.toFixed(2)}s, maxAlt=${maxAltitude.toFixed(0)}m@${maxAltitudeTime.toFixed(2)}s`
-    );
-
     return {
-      endPosition: new Vector3(
-        state.position.x,
-        state.position.y,
-        state.position.z
-      ),
+      endPosition: state.position,
       flightTime: time,
     };
   }
@@ -463,9 +422,7 @@ export class ShootingMethodSolver {
     dE_dAzimuth: Vector3;
     dE_dElevation: Vector3;
   } {
-    // Step 2 from shootingmethod-fix-1.md: Manual Jacobian verification
-
-    // Calculate error at current position (F0)
+    // Calculate error at current position
     const currentResult = this.simulateTrajectory(
       artilleryPosition,
       azimuth,
@@ -486,89 +443,8 @@ export class ShootingMethodSolver {
     );
     const F0 = currentResult.endPosition.subtract(currentTargetPos);
 
-    // Manual verification perturbation (smaller for more accurate comparison)
-    const verificationPerturbation = 0.01; // degrees
-
-    // === ELEVATION VERIFICATION FIRST (Step 2.2 from spec) ===
-    console.log('\n=== JACOBIAN ELEVATION VERIFICATION ===');
-    console.log(
-      `Base angles: Az=${azimuth.toFixed(4)}°, El=${elevation.toFixed(4)}°`
-    );
-    console.log(
-      `F0 = (${F0.x.toFixed(2)}, ${F0.y.toFixed(2)}, ${F0.z.toFixed(2)}) m`
-    );
-
-    // Perturb elevation by small amount for manual verification
-    const elevationPerturbedResult = this.simulateTrajectory(
-      artilleryPosition,
-      azimuth,
-      elevation + verificationPerturbation,
-      targetPosition
-    );
-
-    let manualDerivative_dEl = new Vector3(0, 0, 0);
-    if (elevationPerturbedResult) {
-      const perturbedTargetPos = this.predictTargetPosition(
-        targetPosition,
-        targetVelocity,
-        elevationPerturbedResult.flightTime
-      );
-      const F1_El =
-        elevationPerturbedResult.endPosition.subtract(perturbedTargetPos);
-      const deltaF_El = F1_El.subtract(F0);
-      manualDerivative_dEl = deltaF_El.multiply(1.0 / verificationPerturbation);
-
-      console.log(
-        `F1_El = (${F1_El.x.toFixed(2)}, ${F1_El.y.toFixed(2)}, ${F1_El.z.toFixed(2)}) m (El+${verificationPerturbation}°)`
-      );
-      console.log(
-        `ΔF_El = (${deltaF_El.x.toFixed(2)}, ${deltaF_El.y.toFixed(2)}, ${deltaF_El.z.toFixed(2)}) m`
-      );
-      console.log(
-        `Manual ∂F/∂El = (${manualDerivative_dEl.x.toFixed(1)}, ${manualDerivative_dEl.y.toFixed(1)}, ${manualDerivative_dEl.z.toFixed(1)}) m/°`
-      );
-    }
-
-    // === AZIMUTH VERIFICATION (Step 2.3 from spec) ===
-    console.log('\n=== JACOBIAN AZIMUTH VERIFICATION ===');
-
-    // Perturb azimuth by small amount for manual verification
-    const azimuthPerturbedResult = this.simulateTrajectory(
-      artilleryPosition,
-      azimuth + verificationPerturbation,
-      elevation,
-      targetPosition
-    );
-
-    let manualDerivative_dAz = new Vector3(0, 0, 0);
-    if (azimuthPerturbedResult) {
-      const perturbedTargetPos = this.predictTargetPosition(
-        targetPosition,
-        targetVelocity,
-        azimuthPerturbedResult.flightTime
-      );
-      const F2_Az =
-        azimuthPerturbedResult.endPosition.subtract(perturbedTargetPos);
-      const deltaF_Az = F2_Az.subtract(F0);
-      manualDerivative_dAz = deltaF_Az.multiply(1.0 / verificationPerturbation);
-
-      console.log(
-        `F2_Az = (${F2_Az.x.toFixed(2)}, ${F2_Az.y.toFixed(2)}, ${F2_Az.z.toFixed(2)}) m (Az+${verificationPerturbation}°)`
-      );
-      console.log(
-        `ΔF_Az = (${deltaF_Az.x.toFixed(2)}, ${deltaF_Az.y.toFixed(2)}, ${deltaF_Az.z.toFixed(2)}) m`
-      );
-      console.log(
-        `Manual ∂F/∂Az = (${manualDerivative_dAz.x.toFixed(1)}, ${manualDerivative_dAz.y.toFixed(1)}, ${manualDerivative_dAz.z.toFixed(1)}) m/°`
-      );
-    }
-
-    // === CALCULATE JACOBIAN WITH ALGORITHM PERTURBATION ===
-    console.log('\n=== ALGORITHM JACOBIAN CALCULATION ===');
-    console.log(`Algorithm perturbation: ${this.ANGLE_PERTURBATION}°`);
-
-    // Perturb azimuth with algorithm perturbation
-    const algorithmAzResult = this.simulateTrajectory(
+    // Perturb azimuth
+    const azimuthResult = this.simulateTrajectory(
       artilleryPosition,
       azimuth + this.ANGLE_PERTURBATION,
       elevation,
@@ -576,21 +452,21 @@ export class ShootingMethodSolver {
     );
 
     let dE_dAzimuth = new Vector3(0, 0, 0);
-    if (algorithmAzResult) {
+    if (azimuthResult) {
       const perturbedTargetPos = this.predictTargetPosition(
         targetPosition,
         targetVelocity,
-        algorithmAzResult.flightTime
+        azimuthResult.flightTime
       );
       const perturbedError =
-        algorithmAzResult.endPosition.subtract(perturbedTargetPos);
+        azimuthResult.endPosition.subtract(perturbedTargetPos);
       dE_dAzimuth = perturbedError
         .subtract(F0)
         .multiply(1.0 / this.ANGLE_PERTURBATION);
     }
 
-    // Perturb elevation with algorithm perturbation
-    const algorithmElResult = this.simulateTrajectory(
+    // Perturb elevation
+    const elevationResult = this.simulateTrajectory(
       artilleryPosition,
       azimuth,
       elevation + this.ANGLE_PERTURBATION,
@@ -598,68 +474,18 @@ export class ShootingMethodSolver {
     );
 
     let dE_dElevation = new Vector3(0, 0, 0);
-    if (algorithmElResult) {
+    if (elevationResult) {
       const perturbedTargetPos = this.predictTargetPosition(
         targetPosition,
         targetVelocity,
-        algorithmElResult.flightTime
+        elevationResult.flightTime
       );
       const perturbedError =
-        algorithmElResult.endPosition.subtract(perturbedTargetPos);
+        elevationResult.endPosition.subtract(perturbedTargetPos);
       dE_dElevation = perturbedError
         .subtract(F0)
         .multiply(1.0 / this.ANGLE_PERTURBATION);
     }
-
-    console.log(
-      `Algorithm ∂F/∂Az = (${dE_dAzimuth.x.toFixed(1)}, ${dE_dAzimuth.y.toFixed(1)}, ${dE_dAzimuth.z.toFixed(1)}) m/°`
-    );
-    console.log(
-      `Algorithm ∂F/∂El = (${dE_dElevation.x.toFixed(1)}, ${dE_dElevation.y.toFixed(1)}, ${dE_dElevation.z.toFixed(1)}) m/°`
-    );
-
-    // === VERIFICATION COMPARISON ===
-    console.log('\n=== JACOBIAN VERIFICATION COMPARISON ===');
-
-    if (manualDerivative_dAz.magnitude() > 0) {
-      const azDiff = dE_dAzimuth.subtract(manualDerivative_dAz);
-      const azError =
-        (azDiff.magnitude() / manualDerivative_dAz.magnitude()) * 100;
-      console.log(
-        `Azimuth derivative error: ${azError.toFixed(1)}% (diff magnitude: ${azDiff.magnitude().toFixed(1)})`
-      );
-
-      // Check for sign reversal (major issue indicator)
-      const azDotProduct =
-        dE_dAzimuth.x * manualDerivative_dAz.x +
-        dE_dAzimuth.y * manualDerivative_dAz.y +
-        dE_dAzimuth.z * manualDerivative_dAz.z;
-      if (azDotProduct < 0) {
-        console.log(
-          '⚠️  WARNING: Azimuth derivative has OPPOSITE SIGN - this explains azimuth reversal problem!'
-        );
-      }
-    }
-
-    if (manualDerivative_dEl.magnitude() > 0) {
-      const elDiff = dE_dElevation.subtract(manualDerivative_dEl);
-      const elError =
-        (elDiff.magnitude() / manualDerivative_dEl.magnitude()) * 100;
-      console.log(
-        `Elevation derivative error: ${elError.toFixed(1)}% (diff magnitude: ${elDiff.magnitude().toFixed(1)})`
-      );
-
-      // Check for sign reversal
-      const elDotProduct =
-        dE_dElevation.x * manualDerivative_dEl.x +
-        dE_dElevation.y * manualDerivative_dEl.y +
-        dE_dElevation.z * manualDerivative_dEl.z;
-      if (elDotProduct < 0) {
-        console.log('⚠️  WARNING: Elevation derivative has OPPOSITE SIGN');
-      }
-    }
-
-    console.log('=== END JACOBIAN VERIFICATION ===\n');
 
     return { dE_dAzimuth, dE_dElevation };
   }
