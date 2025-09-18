@@ -28,7 +28,6 @@ export interface BallisticParameters {
   projectileMass: number; // kg
   dragCoefficient: number; // dimensionless
   crossSectionalArea: number; // m²
-  latitude: number; // degrees (for Coriolis force)
 }
 
 /**
@@ -40,7 +39,6 @@ export function createDefaultBallisticParameters(): BallisticParameters {
     projectileMass: PHYSICS_CONSTANTS.PROJECTILE_MASS,
     dragCoefficient: PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
     crossSectionalArea: PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA,
-    latitude: PHYSICS_CONSTANTS.LATITUDE,
   };
 }
 
@@ -133,38 +131,29 @@ export class ShootingMethodSolver {
     this.angleHistory = [];
 
     for (let iteration = 0; iteration < this.MAX_ITERATIONS; iteration++) {
-      // STEP 1 FIX: Use time-based error vector calculation
-      // Calculate projectile trajectory with current angles
-      const trajectoryResult = this.simulateTrajectory(
+      // CORRECTED: Use CPA-based error calculation for accurate moving target handling
+      const cpaResult = this.simulateTrajectoryWithCPA(
         artilleryPosition,
         azimuth,
         elevation,
-        targetPosition // This ensures trajectory stops at target horizontal distance
+        targetPosition,
+        targetVelocity
       );
 
-      if (!trajectoryResult) {
+      if (!cpaResult) {
         break; // Simulation failed
       }
 
-      flightTime = trajectoryResult.flightTime;
-      const projectilePositionAtTargetDistance = trajectoryResult.endPosition;
+      flightTime = cpaResult.cpaTime;
+      finalError = cpaResult.minDistance;
 
-      // Calculate where target will be at the same flight time
-      const targetFuturePosition = this.predictTargetPosition(
-        targetPosition,
-        targetVelocity,
-        flightTime
+      // For error vector, use the spatial difference at CPA
+      const errorVector = cpaResult.projectilePosition.subtract(
+        cpaResult.targetPosition
       );
 
-      // STEP 1 FIX: Error vector F = P_sim(t_impact) - P_target(t_impact)
-      // This is physically meaningful: "At the time when projectile reaches target distance,
-      // how far apart are the projectile and target positions?"
-      const errorVector =
-        projectilePositionAtTargetDistance.subtract(targetFuturePosition);
-      finalError = errorVector.magnitude();
-
       console.log(
-        `ShootingMethod: Iteration ${iteration} - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°, Error: ${finalError.toFixed(2)}m, FlightTime: ${flightTime.toFixed(2)}s`
+        `ShootingMethod: Iteration ${iteration} - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°, MinDist: ${finalError.toFixed(2)}m, CPATime: ${flightTime.toFixed(2)}s`
       );
 
       // Store history for oscillation detection
@@ -188,8 +177,8 @@ export class ShootingMethodSolver {
         }
       }
 
-      // Calculate Jacobian matrix for Newton-Raphson correction
-      const jacobian = this.calculateJacobian(
+      // Calculate Jacobian matrix for Newton-Raphson correction using CPA method
+      const jacobian = this.calculateJacobianCPA(
         artilleryPosition,
         azimuth,
         elevation,
@@ -231,7 +220,140 @@ export class ShootingMethodSolver {
     };
 
     console.log(
-      `ShootingMethod: Final result - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°, Converged: ${converged}, FinalError: ${finalError.toFixed(2)}m`
+      `ShootingMethod: Final result - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°, Converged: ${converged}, MinDistance: ${finalError.toFixed(2)}m`
+    );
+
+    return result;
+  }
+
+  /**
+   * Solve shooting problem starting from provided initial guess angles
+   * Used for incremental calculations with previous results as starting point
+   */
+  solveFromInitialGuess(
+    artilleryPosition: Vector3,
+    targetPosition: Vector3,
+    targetVelocity: Vector3,
+    initialAzimuth: number,
+    initialElevation: number,
+    maxIterations: number = this.MAX_ITERATIONS,
+    convergenceTolerance: number = this.CONVERGENCE_TOLERANCE
+  ): ShootingResult {
+    let azimuth = initialAzimuth;
+    let elevation = initialElevation;
+
+    console.log(
+      `ShootingMethod (Incremental): Starting from - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°`
+    );
+    console.log(
+      `ShootingMethod (Incremental): Max iterations: ${maxIterations}, Tolerance: ${convergenceTolerance.toFixed(1)}m`
+    );
+
+    let converged = false;
+    let finalError = Infinity;
+    let flightTime = 0;
+
+    // Reset oscillation detection for this calculation
+    const errorHistory: number[] = [];
+    const angleHistory: { azimuth: number; elevation: number }[] = [];
+
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      // CORRECTED: Use CPA-based error calculation for accurate moving target handling
+      const cpaResult = this.simulateTrajectoryWithCPA(
+        artilleryPosition,
+        azimuth,
+        elevation,
+        targetPosition,
+        targetVelocity
+      );
+
+      if (!cpaResult) {
+        break; // Simulation failed
+      }
+
+      flightTime = cpaResult.cpaTime;
+      finalError = cpaResult.minDistance;
+
+      // For error vector, use the spatial difference at CPA
+      const errorVector = cpaResult.projectilePosition.subtract(
+        cpaResult.targetPosition
+      );
+
+      console.log(
+        `ShootingMethod (Incremental): Iteration ${iteration} - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°, MinDist: ${finalError.toFixed(2)}m`
+      );
+
+      // Store history for oscillation detection
+      errorHistory.push(finalError);
+      angleHistory.push({ azimuth, elevation });
+
+      // Check convergence with custom tolerance
+      if (finalError < convergenceTolerance) {
+        converged = true;
+        console.log(
+          `ShootingMethod (Incremental): Converged at iteration ${iteration} with ${convergenceTolerance}m tolerance`
+        );
+        break;
+      }
+
+      // Detect oscillation after 3 iterations (but less aggressive damping for incremental mode)
+      let isOscillating = false;
+      if (iteration >= 3) {
+        isOscillating = this.detectOscillationInHistory(
+          errorHistory,
+          angleHistory,
+          iteration
+        );
+        if (isOscillating) {
+          console.log(
+            `ShootingMethod (Incremental): Oscillation detected at iteration ${iteration}`
+          );
+        }
+      }
+
+      // Calculate Jacobian matrix for Newton-Raphson correction using CPA method
+      const jacobian = this.calculateJacobianCPA(
+        artilleryPosition,
+        azimuth,
+        elevation,
+        targetPosition,
+        targetVelocity
+      );
+
+      // Apply Newton-Raphson correction with incremental-specific damping
+      const angleCorrection = this.solveLinearSystemIncremental(
+        jacobian,
+        errorVector,
+        isOscillating,
+        finalError
+      );
+
+      console.log(
+        `ShootingMethod (Incremental): Angle correction - ΔAz: ${angleCorrection.azimuth.toFixed(4)}°, ΔEl: ${angleCorrection.elevation.toFixed(4)}°`
+      );
+
+      // Apply angle updates
+      azimuth -= angleCorrection.azimuth;
+      elevation -= angleCorrection.elevation;
+
+      // Clamp angles to reasonable ranges
+      azimuth = this.normalizeAzimuth(azimuth);
+      elevation = Math.max(1.0, Math.min(89.0, elevation));
+    }
+
+    const result = {
+      azimuth,
+      elevation,
+      converged,
+      iterations: converged
+        ? this.findIterationCount(finalError)
+        : maxIterations,
+      finalError,
+      flightTime,
+    };
+
+    console.log(
+      `ShootingMethod (Incremental): Final result - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°, Converged: ${converged}, MinDistance: ${finalError.toFixed(2)}m`
     );
 
     return result;
@@ -409,10 +531,166 @@ export class ShootingMethodSolver {
   }
 
   /**
-   * Calculate Jacobian matrix for Newton-Raphson method
-   * J = [∂E/∂θ, ∂E/∂φ] where θ=azimuth, φ=elevation
+   * Simulate projectile trajectory and find CPA (Closest Point of Approach) to moving target
+   * This is the correct approach for moving targets - find the minimum distance between
+   * projectile trajectory and target's predicted path
    */
-  private calculateJacobian(
+  private simulateTrajectoryWithCPA(
+    startPosition: Vector3,
+    azimuthDeg: number,
+    elevationDeg: number,
+    targetPosition: Vector3,
+    targetVelocity: Vector3
+  ): {
+    minDistance: number;
+    cpaTime: number;
+    projectilePosition: Vector3;
+    targetPosition: Vector3;
+  } | null {
+    // Convert angles to radians
+    const azimuthRad = azimuthDeg * (Math.PI / 180);
+    const elevationRad = elevationDeg * (Math.PI / 180);
+
+    // Calculate initial velocity vector
+    const v0 = this.ballisticParams.initialVelocity;
+
+    if (!isFinite(azimuthRad) || !isFinite(elevationRad) || !isFinite(v0)) {
+      console.error('Invalid initial values for CPA simulation:', {
+        azimuthDeg,
+        elevationDeg,
+        v0,
+      });
+      return null;
+    }
+
+    const initialVelocity = new Vector3(
+      v0 * Math.cos(elevationRad) * Math.sin(azimuthRad), // East
+      v0 * Math.cos(elevationRad) * Math.cos(azimuthRad), // North
+      v0 * Math.sin(elevationRad) // Up
+    );
+
+    if (
+      !isFinite(initialVelocity.x) ||
+      !isFinite(initialVelocity.y) ||
+      !isFinite(initialVelocity.z)
+    ) {
+      console.error(
+        'Invalid initial velocity for CPA simulation:',
+        initialVelocity
+      );
+      return null;
+    }
+
+    // Initialize simulation state
+    let state: State3D = {
+      position: new Vector3(startPosition.x, startPosition.y, startPosition.z),
+      velocity: new Vector3(
+        initialVelocity.x,
+        initialVelocity.y,
+        initialVelocity.z
+      ),
+    };
+
+    let time = 0;
+    let minDistance = Infinity;
+    let cpaTime = 0;
+    let cpaProjectilePosition = state.position;
+    let cpaTargetPosition = targetPosition;
+
+    const isMovingTarget = targetVelocity.magnitude() > 0.1; // > 0.1 m/s
+
+    console.log(
+      `CPA Trajectory: Az=${azimuthDeg.toFixed(2)}°, El=${elevationDeg.toFixed(2)}°, V0=${initialVelocity.magnitude().toFixed(1)}m/s, MovingTarget=${isMovingTarget}`
+    );
+
+    // Simulate complete trajectory until ground impact (FIXED: allow simulation to start)
+    while (time < this.MAX_FLIGHT_TIME) {
+      // Advance physics simulation
+      const newState = this.physicsEngine.integrate(
+        state,
+        time,
+        this.PHYSICS_TIMESTEP
+      );
+
+      // Safety check for invalid state
+      if (
+        !isFinite(newState.position.x) ||
+        !isFinite(newState.position.y) ||
+        !isFinite(newState.position.z) ||
+        !isFinite(newState.velocity.x) ||
+        !isFinite(newState.velocity.y) ||
+        !isFinite(newState.velocity.z)
+      ) {
+        console.error(
+          'Invalid state detected in CPA simulation at time',
+          time,
+          'state:',
+          newState
+        );
+        return null;
+      }
+
+      time += this.PHYSICS_TIMESTEP;
+
+      // Calculate target position at this time
+      let currentTargetPosition: Vector3;
+      if (isMovingTarget) {
+        // For moving targets: P_target(t) = P_target(0) + v_target * t
+        currentTargetPosition = targetPosition.add(
+          targetVelocity.multiply(time)
+        );
+      } else {
+        // For static targets: position remains constant
+        currentTargetPosition = targetPosition;
+      }
+
+      // Calculate distance between projectile and target at this time
+      const distance = newState.position
+        .subtract(currentTargetPosition)
+        .magnitude();
+
+      // Update minimum distance and CPA information
+      if (distance < minDistance) {
+        minDistance = distance;
+        cpaTime = time;
+        cpaProjectilePosition = new Vector3(
+          newState.position.x,
+          newState.position.y,
+          newState.position.z
+        );
+        cpaTargetPosition = new Vector3(
+          currentTargetPosition.x,
+          currentTargetPosition.y,
+          currentTargetPosition.z
+        );
+      }
+
+      // Exit when projectile hits ground (but allow simulation to run first)
+      if (newState.position.z <= 0 && time > 0) {
+        break;
+      }
+
+      state = newState;
+    }
+
+    console.log(
+      `CPA Result: MinDist=${minDistance.toFixed(1)}m at t=${cpaTime.toFixed(2)}s, ProjectilePos=(${cpaProjectilePosition.x.toFixed(0)},${cpaProjectilePosition.y.toFixed(0)},${cpaProjectilePosition.z.toFixed(0)}), TargetPos=(${cpaTargetPosition.x.toFixed(0)},${cpaTargetPosition.y.toFixed(0)},${cpaTargetPosition.z.toFixed(0)})`
+    );
+
+    return {
+      minDistance,
+      cpaTime,
+      projectilePosition: cpaProjectilePosition,
+      targetPosition: cpaTargetPosition,
+    };
+  }
+
+  /**
+   * Calculate Jacobian matrix for Newton-Raphson method using CPA approach
+   * J = [∂E/∂θ, ∂E/∂φ] where θ=azimuth, φ=elevation
+   * Uses minimum distance error instead of time-synchronized position error
+   */
+  private calculateJacobianCPA(
     artilleryPosition: Vector3,
     azimuth: number,
     elevation: number,
@@ -422,13 +700,15 @@ export class ShootingMethodSolver {
     dE_dAzimuth: Vector3;
     dE_dElevation: Vector3;
   } {
-    // Calculate error at current position
-    const currentResult = this.simulateTrajectory(
+    // Calculate error at current position using CPA
+    const currentResult = this.simulateTrajectoryWithCPA(
       artilleryPosition,
       azimuth,
       elevation,
-      targetPosition
+      targetPosition,
+      targetVelocity
     );
+
     if (!currentResult) {
       return {
         dE_dAzimuth: new Vector3(0, 0, 0),
@@ -436,52 +716,43 @@ export class ShootingMethodSolver {
       };
     }
 
-    const currentTargetPos = this.predictTargetPosition(
-      targetPosition,
-      targetVelocity,
-      currentResult.flightTime
+    const F0 = currentResult.projectilePosition.subtract(
+      currentResult.targetPosition
     );
-    const F0 = currentResult.endPosition.subtract(currentTargetPos);
 
-    // Perturb azimuth
-    const azimuthResult = this.simulateTrajectory(
+    // Perturb azimuth and calculate CPA
+    const azimuthResult = this.simulateTrajectoryWithCPA(
       artilleryPosition,
       azimuth + this.ANGLE_PERTURBATION,
       elevation,
-      targetPosition
+      targetPosition,
+      targetVelocity
     );
 
     let dE_dAzimuth = new Vector3(0, 0, 0);
     if (azimuthResult) {
-      const perturbedTargetPos = this.predictTargetPosition(
-        targetPosition,
-        targetVelocity,
-        azimuthResult.flightTime
+      const perturbedError = azimuthResult.projectilePosition.subtract(
+        azimuthResult.targetPosition
       );
-      const perturbedError =
-        azimuthResult.endPosition.subtract(perturbedTargetPos);
       dE_dAzimuth = perturbedError
         .subtract(F0)
         .multiply(1.0 / this.ANGLE_PERTURBATION);
     }
 
-    // Perturb elevation
-    const elevationResult = this.simulateTrajectory(
+    // Perturb elevation and calculate CPA
+    const elevationResult = this.simulateTrajectoryWithCPA(
       artilleryPosition,
       azimuth,
       elevation + this.ANGLE_PERTURBATION,
-      targetPosition
+      targetPosition,
+      targetVelocity
     );
 
     let dE_dElevation = new Vector3(0, 0, 0);
     if (elevationResult) {
-      const perturbedTargetPos = this.predictTargetPosition(
-        targetPosition,
-        targetVelocity,
-        elevationResult.flightTime
+      const perturbedError = elevationResult.projectilePosition.subtract(
+        elevationResult.targetPosition
       );
-      const perturbedError =
-        elevationResult.endPosition.subtract(perturbedTargetPos);
       dE_dElevation = perturbedError
         .subtract(F0)
         .multiply(1.0 / this.ANGLE_PERTURBATION);
@@ -603,6 +874,117 @@ export class ShootingMethodSolver {
 
     console.log(
       `Linear system: Error=${errorMagnitude.toFixed(0)}m, Correction=(${deltaAzimuth.toFixed(4)}°,${deltaElevation.toFixed(4)}°), Damping=${dampingFactor.toFixed(2)}, Scaling=${scalingFactor.toFixed(2)}`
+    );
+
+    return {
+      azimuth: deltaAzimuth * dampingFactor * scalingFactor,
+      elevation: deltaElevation * dampingFactor * scalingFactor,
+    };
+  }
+
+  /**
+   * Solve linear system with incremental-specific damping for smoother convergence
+   */
+  private solveLinearSystemIncremental(
+    jacobian: { dE_dAzimuth: Vector3; dE_dElevation: Vector3 },
+    errorVector: Vector3,
+    isOscillating: boolean = false,
+    errorMagnitude: number
+  ): { azimuth: number; elevation: number } {
+    // Use same core logic as solveLinearSystem but with different damping strategy
+
+    // Extract Jacobian elements
+    const J11 = jacobian.dE_dAzimuth.x;
+    const J12 = jacobian.dE_dElevation.x;
+    const J21 = jacobian.dE_dAzimuth.y;
+    const J22 = jacobian.dE_dElevation.y;
+    const J31 = jacobian.dE_dAzimuth.z;
+    const J32 = jacobian.dE_dElevation.z;
+
+    // Error vector components
+    const Ex = errorVector.x;
+    const Ey = errorVector.y;
+    const Ez = errorVector.z;
+
+    // Solve normal equations: (J^T J) * Δ = J^T * E
+    const JTJ11 = J11 * J11 + J21 * J21 + J31 * J31;
+    const JTJ12 = J11 * J12 + J21 * J22 + J31 * J32;
+    const JTJ21 = JTJ12;
+    const JTJ22 = J12 * J12 + J22 * J22 + J32 * J32;
+
+    const JTE1 = J11 * Ex + J21 * Ey + J31 * Ez;
+    const JTE2 = J12 * Ex + J22 * Ey + J32 * Ez;
+
+    // Calculate determinant
+    const det = JTJ11 * JTJ22 - JTJ12 * JTJ21;
+
+    if (Math.abs(det) < 1e-12) {
+      // Use regularized gradient descent
+      const regularization = 1e-8;
+      const regJTJ11 = JTJ11 + regularization;
+      const regJTJ22 = JTJ22 + regularization;
+      const regDet = regJTJ11 * regJTJ22 - JTJ12 * JTJ21;
+
+      if (Math.abs(regDet) > 1e-12) {
+        const deltaAzimuth = (JTE1 * regJTJ22 - JTE2 * JTJ12) / regDet;
+        const deltaElevation = (regJTJ11 * JTE2 - JTJ21 * JTE1) / regDet;
+
+        const stepSize = Math.min(0.3, 5.0 / errorMagnitude); // More conservative
+        return {
+          azimuth: deltaAzimuth * stepSize,
+          elevation: deltaElevation * stepSize,
+        };
+      }
+
+      // Fallback to steepest descent
+      const stepSize = Math.min(0.1, 3.0 / errorMagnitude);
+      return {
+        azimuth: (stepSize * JTE1) / Math.sqrt(JTJ11 + 1e-12),
+        elevation: (stepSize * JTE2) / Math.sqrt(JTJ22 + 1e-12),
+      };
+    }
+
+    // Solve normal equations
+    const deltaAzimuth = (JTE1 * JTJ22 - JTE2 * JTJ12) / det;
+    const deltaElevation = (JTJ11 * JTE2 - JTJ21 * JTE1) / det;
+
+    const correctionMagnitude = Math.sqrt(
+      deltaAzimuth * deltaAzimuth + deltaElevation * deltaElevation
+    );
+
+    // Incremental-specific damping strategy (more aggressive damping for smoother updates)
+    let dampingFactor = 1.0;
+
+    if (isOscillating) {
+      // Very conservative damping when oscillating
+      dampingFactor = 0.05; // Even more conservative than standard mode
+      console.log(`Incremental anti-oscillation damping: ${dampingFactor}`);
+    } else if (errorMagnitude > 1000.0) {
+      dampingFactor = 0.4; // More damping for large errors
+    } else if (errorMagnitude > 200.0) {
+      dampingFactor = 0.6; // Moderate damping for medium errors
+    } else if (errorMagnitude > 50.0) {
+      dampingFactor = 0.7; // Light damping for small errors
+    } else {
+      dampingFactor = 0.8; // Minimal damping for very small errors
+    }
+
+    // More conservative maximum correction for incremental mode
+    let maxCorrection = 2.0; // Start with very conservative 2 degrees
+
+    if (correctionMagnitude > 15.0) {
+      maxCorrection = 1.0; // Extremely conservative for large corrections
+    } else if (correctionMagnitude > 5.0) {
+      maxCorrection = 1.5; // Very conservative for medium corrections
+    }
+
+    const scalingFactor = Math.min(
+      1.0,
+      maxCorrection / (correctionMagnitude + 1e-12)
+    );
+
+    console.log(
+      `Incremental linear system: Error=${errorMagnitude.toFixed(0)}m, Correction=(${deltaAzimuth.toFixed(4)}°,${deltaElevation.toFixed(4)}°), Damping=${dampingFactor.toFixed(2)}, Scaling=${scalingFactor.toFixed(2)}`
     );
 
     return {
@@ -745,6 +1127,43 @@ export class ShootingMethodSolver {
       Math.abs(a1.elevation - a3.elevation) < 2.0 && // Similar elevations
       Math.abs(a2.elevation - a4.elevation) < 2.0 &&
       Math.abs(a1.elevation - a2.elevation) > 10.0; // Large elevation swings
+
+    return errorOscillation || angleOscillation;
+  }
+
+  /**
+   * Detect oscillation patterns in provided history arrays (for incremental calculations)
+   */
+  private detectOscillationInHistory(
+    errorHistory: number[],
+    angleHistory: { azimuth: number; elevation: number }[],
+    _currentIteration: number
+  ): boolean {
+    if (errorHistory.length < 4) return false;
+
+    // Check for oscillating error pattern (A-B-A-B)
+    const len = errorHistory.length;
+    const e1 = errorHistory[len - 4];
+    const e2 = errorHistory[len - 3];
+    const e3 = errorHistory[len - 2];
+    const e4 = errorHistory[len - 1];
+
+    // Check if errors alternate between two ranges (more sensitive for incremental mode)
+    const errorOscillation =
+      Math.abs(e1 - e3) < e1 * 0.15 && // e1 ≈ e3 (slightly more tolerant)
+      Math.abs(e2 - e4) < e2 * 0.15 && // e2 ≈ e4 (slightly more tolerant)
+      Math.abs(e1 - e2) > e1 * 0.3; // e1 and e2 are significantly different (less strict)
+
+    // Check for oscillating angles (more sensitive for incremental mode)
+    const a1 = angleHistory[len - 4];
+    const a2 = angleHistory[len - 3];
+    const a3 = angleHistory[len - 2];
+    const a4 = angleHistory[len - 1];
+
+    const angleOscillation =
+      Math.abs(a1.elevation - a3.elevation) < 1.5 && // Similar elevations (tighter)
+      Math.abs(a2.elevation - a4.elevation) < 1.5 &&
+      Math.abs(a1.elevation - a2.elevation) > 5.0; // Large elevation swings (smaller threshold)
 
     return errorOscillation || angleOscillation;
   }

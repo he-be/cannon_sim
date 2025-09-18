@@ -60,12 +60,12 @@ const STAGE_1_CONFIG: StageConfig = {
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
   targets: [
     {
-      position: new Vector3(0, -15000, 1000), // 15km北、高度1000mの気球
+      position: new Vector3(1000, -10000, 1000), // 15km北、高度1000mの気球
       type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
     },
     {
-      position: new Vector3(-8000, -9000, 900), // 北西、高度900m
+      position: new Vector3(-3000, -4000, 900), // 北西、高度900m
       type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
     },
@@ -75,7 +75,7 @@ const STAGE_1_CONFIG: StageConfig = {
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
     },
     {
-      position: new Vector3(0, -20000, 1200), // 8km北、高度1200m
+      position: new Vector3(0, -12000, 1200), // 8km北、高度1200m
       type: TargetType.BALLOON,
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
     },
@@ -94,25 +94,25 @@ const STAGE_2_CONFIG: StageConfig = {
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
   targets: [
     {
-      position: new Vector3(-14000, -6000, 800), // 西から接近
+      position: new Vector3(-10000, -1000, 800), // 西から接近
       type: TargetType.FRIGATE,
       velocity: new Vector3(20, 0, 0), // 60m/s東進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
     },
     {
-      position: new Vector3(4000, -16000, 700), // 東から接近
+      position: new Vector3(2000, -9000, 700), // 東から接近
       type: TargetType.FRIGATE,
       velocity: new Vector3(-25, 0, 0), // 55m/s西進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
     },
     {
-      position: new Vector3(0, -20000, 900), // 北方から南進
+      position: new Vector3(0, -8000, 900), // 北方から南進
       type: TargetType.FRIGATE,
       velocity: new Vector3(0, 25, 0), // 65m/s南進
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
     },
     {
-      position: new Vector3(6000, 8000, 750), // 北西から斜め移動
+      position: new Vector3(5000, 8000, 750), // 北西から斜め移動
       type: TargetType.FRIGATE,
       velocity: new Vector3(10, 20, 0), // 斜め移動
       spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,

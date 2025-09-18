@@ -1,37 +1,37 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Browser Artillery - Canvas-Based Artillery Simulation</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Browser Artillery - Canvas-Based Artillery Simulation</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-    body {
-      background-color: #000;
-      overflow: hidden;
-      font-family: monospace;
-    }
+      body {
+        background-color: #000;
+        overflow: hidden;
+        font-family: monospace;
+      }
 
-    #game-canvas {
-      display: block;
-      cursor: crosshair;
-    }
+      #game-canvas {
+        display: block;
+        cursor: crosshair;
+      }
 
-    /* Hide any system elements */
-    canvas {
-      outline: none;
-    }
-  </style>
-</head>
-<body>
-  <!-- Single canvas for complete game rendering -->
-  <canvas id="game-canvas"></canvas>
-  
-  <script type="module" src="/src/main.ts"></script>
-</body>
+      /* Hide any system elements */
+      canvas {
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Single canvas for complete game rendering -->
+    <canvas id="game-canvas"></canvas>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

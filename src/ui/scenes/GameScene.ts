@@ -119,7 +119,9 @@ export class GameScene {
   // Lead angle calculation (GS-07)
   private leadAngleUpdateTimer: number = 0;
   private currentLeadAngle: ExtendedLeadAngle | null = null;
-  private readonly LEAD_ANGLE_UPDATE_INTERVAL = 0.5; // 500ms間隔
+  private readonly LEAD_ANGLE_UPDATE_INTERVAL_MOVING = 0.033; // ~30Hz (33ms間隔) for responsive moving target tracking // 200ms間隔 for moving targets
+  private readonly LEAD_ANGLE_UPDATE_INTERVAL_STATIC = 0.2; // 200ms間隔 for static targets (improved from 500ms) // 500ms間隔 for static targets
+  private lastTrackedTargetId: string | null = null;
 
   // Animation
   private animationTime: number = 0;
@@ -283,6 +285,10 @@ export class GameScene {
 
     // Reset auto mode
     this.isAutoMode = false;
+
+    // Reset target tracking
+    this.leadAngleCalculator.resetTargetTracking();
+    this.lastTrackedTargetId = null;
   }
 
   /**
@@ -329,9 +335,16 @@ export class GameScene {
     // Update trajectory prediction (UI-13/UI-16)
     this.updateTrajectoryPrediction();
 
-    // Update lead angle calculation (GS-07)
+    // Update lead angle calculation (GS-07) with adaptive interval
     this.leadAngleUpdateTimer += deltaTime;
-    if (this.leadAngleUpdateTimer >= this.LEAD_ANGLE_UPDATE_INTERVAL) {
+    const currentTarget = this.lockedTarget || this.trackedTarget;
+    const isMovingTarget =
+      currentTarget?.velocity && currentTarget.velocity.magnitude() > 1.0;
+    const updateInterval = isMovingTarget
+      ? this.LEAD_ANGLE_UPDATE_INTERVAL_MOVING
+      : this.LEAD_ANGLE_UPDATE_INTERVAL_STATIC;
+
+    if (this.leadAngleUpdateTimer >= updateInterval) {
       this.updateLeadAngleCalculation();
       this.leadAngleUpdateTimer = 0;
     }
@@ -668,6 +681,9 @@ export class GameScene {
             this.targetingState = TargetingState.NO_TARGET;
             // Disable auto mode when locked target is destroyed
             this.isAutoMode = false;
+            // Reset target tracking
+            this.leadAngleCalculator.resetTargetTracking();
+            this.lastTrackedTargetId = null;
           }
         }
       });
@@ -903,6 +919,9 @@ export class GameScene {
       this.trackedTarget = null;
       // Disable auto mode when unlocking
       this.isAutoMode = false;
+      // Reset target tracking
+      this.leadAngleCalculator.resetTargetTracking();
+      this.lastTrackedTargetId = null;
     } else {
       console.log(`No action: not in TRACKING state or no target available`);
     }
@@ -1086,52 +1105,70 @@ export class GameScene {
    */
   private updateLeadAngleCalculation(): void {
     if (this.targetingState === TargetingState.LOCKED_ON && this.lockedTarget) {
-      // Use LeadAngleCalculator for basic lead angle calculation
       const targetVelocity = this.lockedTarget.velocity || new Vector3(0, 0, 0);
+      const targetId = this.lockedTarget.id;
 
-      const leadAngle = this.leadAngleCalculator.calculateLeadAngle(
-        this.artilleryPosition,
-        this.lockedTarget.position,
-        targetVelocity
-      );
-
-      // Determine confidence based on target speed and distance
-      const speed = targetVelocity.magnitude();
-      const distance = this.lockedTarget.position
-        .subtract(this.artilleryPosition)
-        .magnitude();
-
-      let confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-      if (speed < 30 && distance < 3000) {
-        confidence = 'HIGH';
-      } else if (speed < 80 && distance < 8000) {
-        confidence = 'MEDIUM';
-      } else {
-        confidence = 'LOW';
+      // Check if this is a new target and reset tracking if needed
+      if (this.lastTrackedTargetId !== targetId) {
+        console.log(
+          `Target changed from ${this.lastTrackedTargetId} to ${targetId}, resetting tracking`
+        );
+        this.leadAngleCalculator.resetTargetTracking();
+        this.lastTrackedTargetId = targetId;
       }
+
+      // Use incremental lead angle calculation for better convergence
+      const leadResult =
+        this.leadAngleCalculator.calculateRecommendedLeadIncremental(
+          this.artilleryPosition,
+          this.lockedTarget.position,
+          targetVelocity,
+          targetId
+        );
+
+      console.log(
+        `Lead calculation result: Az=${leadResult.leadAngle.azimuth.toFixed(2)}°, El=${leadResult.leadAngle.elevation.toFixed(2)}°, Accuracy=${leadResult.accuracy?.toFixed(1) || 'N/A'}m, Converged=${leadResult.converged}, Confidence=${leadResult.confidence}`
+      );
 
       // If in auto mode, apply lead angles to artillery
       if (this.isAutoMode) {
-        this.azimuthAngle = leadAngle.azimuth;
-        this.elevationAngle = leadAngle.elevation;
+        this.azimuthAngle = leadResult.leadAngle.azimuth;
+        this.elevationAngle = leadResult.leadAngle.elevation;
         console.log(
-          `Auto mode: Applied Az=${leadAngle.azimuth.toFixed(1)}°, El=${leadAngle.elevation.toFixed(1)}°`
+          `Auto mode: Applied Az=${leadResult.leadAngle.azimuth.toFixed(1)}°, El=${leadResult.leadAngle.elevation.toFixed(1)}°`
         );
       }
 
-      // Estimate flight time for display
-      const flightTime = this.leadAngleCalculator.estimateFlightTime(distance);
+      // Update currentLeadAngle for UI display
+      this.currentLeadAngle = {
+        azimuth: leadResult.leadAngle.azimuth,
+        elevation: leadResult.leadAngle.elevation,
+        confidence: leadResult.confidence,
+        flightTime: leadResult.flightTime || 0,
+        converged: leadResult.converged || false,
+        iterations: leadResult.iterations || 0,
+        accuracy: leadResult.accuracy || 0,
+      };
 
+      // Render lead angle display with improved data
       this.renderLeadAngleDisplay(
-        leadAngle.azimuth,
-        leadAngle.elevation,
-        confidence,
-        undefined, // No convergence error for basic calculation
-        flightTime
+        leadResult.leadAngle.azimuth,
+        leadResult.leadAngle.elevation,
+        leadResult.confidence,
+        leadResult.accuracy, // Show actual calculation error
+        leadResult.flightTime || 0
       );
     } else {
-      // Target not locked: Clear display
+      // Target not locked: Clear display and reset tracking
       this.clearLeadAngleDisplay();
+      this.currentLeadAngle = null;
+
+      // Reset target tracking when no target is locked
+      if (this.lastTrackedTargetId !== null) {
+        console.log('No target locked, resetting tracking');
+        this.leadAngleCalculator.resetTargetTracking();
+        this.lastTrackedTargetId = null;
+      }
     }
   }
 
