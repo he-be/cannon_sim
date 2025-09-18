@@ -98,6 +98,7 @@ export class UIManager {
         onElevationChange: this.events.onElevationChange,
         onFireClick: this.events.onFireClick,
         onLockToggle: this.events.onLockToggle,
+        onAutoToggle: this.events.onAutoToggle,
         onMenuClick: this.events.onMenuClick,
       },
       this.layout.controlPanelWidth
@@ -378,6 +379,10 @@ export class UIManager {
    */
   setLockState(isLocked: boolean): void {
     this.controlPanel.setLockState(isLocked);
+  }
+
+  setAutoMode(isAutoMode: boolean): void {
+    this.controlPanel.setAutoMode(isAutoMode);
   }
 
   /**

@@ -99,6 +99,8 @@ export class GameScene {
   private targetingState: TargetingState = TargetingState.NO_TARGET;
   private trackedTarget: TargetState | null = null;
   private lockedTarget: TargetState | null = null;
+  // Auto mode for automatic artillery control
+  private isAutoMode: boolean = false;
 
   // Artillery controls
   private azimuthAngle: number = 0;
@@ -148,6 +150,9 @@ export class GameScene {
       },
       onLockToggle: () => {
         this.handleTargetLock();
+      },
+      onAutoToggle: () => {
+        this.handleAutoToggle();
       },
       onMenuClick: () => {
         this.onSceneTransition({ type: SceneType.TITLE });
@@ -275,6 +280,9 @@ export class GameScene {
     this.targetingState = TargetingState.NO_TARGET;
     this.trackedTarget = null;
     this.lockedTarget = null;
+
+    // Reset auto mode
+    this.isAutoMode = false;
   }
 
   /**
@@ -357,6 +365,9 @@ export class GameScene {
     this.uiManager.setLockState(
       this.targetingState === TargetingState.LOCKED_ON
     );
+
+    // Update auto mode state
+    this.uiManager.setAutoMode(this.isAutoMode);
 
     // Update target information
     const displayTarget = this.lockedTarget || this.trackedTarget;
@@ -655,6 +666,8 @@ export class GameScene {
           if (this.lockedTarget === target) {
             this.lockedTarget = null;
             this.targetingState = TargetingState.NO_TARGET;
+            // Disable auto mode when locked target is destroyed
+            this.isAutoMode = false;
           }
         }
       });
@@ -888,8 +901,28 @@ export class GameScene {
       this.lockedTarget = null;
       this.targetingState = TargetingState.NO_TARGET;
       this.trackedTarget = null;
+      // Disable auto mode when unlocking
+      this.isAutoMode = false;
     } else {
       console.log(`No action: not in TRACKING state or no target available`);
+    }
+  }
+
+  /**
+   * Handle auto/manual mode toggle
+   */
+  private handleAutoToggle(): void {
+    // Only allow auto mode when target is locked
+    if (this.targetingState === TargetingState.LOCKED_ON && this.lockedTarget) {
+      this.isAutoMode = !this.isAutoMode;
+      console.log(`Auto mode ${this.isAutoMode ? 'enabled' : 'disabled'}`);
+
+      // If switching to manual mode, clear any auto-set angles
+      if (!this.isAutoMode) {
+        console.log('Returned to manual control');
+      }
+    } else {
+      console.log('Auto mode only available when target is locked');
     }
   }
 
@@ -1075,6 +1108,15 @@ export class GameScene {
         confidence = 'MEDIUM';
       } else {
         confidence = 'LOW';
+      }
+
+      // If in auto mode, apply lead angles to artillery
+      if (this.isAutoMode) {
+        this.azimuthAngle = leadAngle.azimuth;
+        this.elevationAngle = leadAngle.elevation;
+        console.log(
+          `Auto mode: Applied Az=${leadAngle.azimuth.toFixed(1)}°, El=${leadAngle.elevation.toFixed(1)}°`
+        );
       }
 
       // Estimate flight time for display

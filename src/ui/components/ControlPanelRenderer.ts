@@ -23,6 +23,7 @@ export interface ControlPanelEvents {
   onElevationChange: (value: number) => void;
   onFireClick: () => void;
   onLockToggle: () => void;
+  onAutoToggle: () => void;
   onMenuClick: () => void;
 }
 
@@ -30,6 +31,7 @@ export interface ControlPanelState {
   azimuth: number; // -180 to 180
   elevation: number; // 0 to 90
   isLocked: boolean;
+  isAutoMode: boolean;
   leadAngle: {
     azimuth: number;
     elevation: number;
@@ -69,6 +71,7 @@ export class ControlPanelRenderer {
   private buttonsContainer!: VBoxContainer;
   private fireButton!: ButtonComponent;
   private lockButton!: ButtonComponent;
+  private autoButton!: ButtonComponent;
   private menuButton!: ButtonComponent;
   private timeDisplay!: TimeDisplayComponent;
 
@@ -91,6 +94,7 @@ export class ControlPanelRenderer {
       azimuth: 0,
       elevation: 45,
       isLocked: false,
+      isAutoMode: false,
       leadAngle: null,
       gameTime: 0,
       targetInfo: null,
@@ -177,13 +181,18 @@ export class ControlPanelRenderer {
       () => this.events.onLockToggle()
     );
 
+    this.autoButton = new ButtonComponent('auto', 'AUTO', () =>
+      this.events.onAutoToggle()
+    );
+    this.autoButton.setVisible(false); // Initially hidden until target is locked
+
     this.menuButton = new ButtonComponent('menu', 'BACK TO MENU', () =>
       this.events.onMenuClick()
     );
 
     this.buttonsContainer = new VBoxContainer(
       'buttons',
-      [this.fireButton, this.lockButton, this.menuButton],
+      [this.fireButton, this.lockButton, this.autoButton, this.menuButton],
       5
     );
 
@@ -270,6 +279,18 @@ export class ControlPanelRenderer {
       newState.isLocked !== oldState.isLocked
     ) {
       this.lockButton.setText(newState.isLocked ? 'UNLOCK' : 'LOCK ON');
+      // Enable AUTO button only when locked
+      this.autoButton.setVisible(newState.isLocked);
+    }
+
+    if (
+      newState.isAutoMode !== undefined &&
+      newState.isAutoMode !== oldState.isAutoMode
+    ) {
+      this.autoButton.setText(newState.isAutoMode ? 'MANUAL' : 'AUTO');
+      // Disable sliders when in auto mode
+      this.azimuthSlider.setVisible(!newState.isAutoMode);
+      this.elevationSlider.setVisible(!newState.isAutoMode);
     }
 
     if (
@@ -406,6 +427,10 @@ export class ControlPanelRenderer {
 
   setLockState(isLocked: boolean): void {
     this.updateState({ isLocked });
+  }
+
+  setAutoMode(isAutoMode: boolean): void {
+    this.updateState({ isAutoMode });
   }
 
   setRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
