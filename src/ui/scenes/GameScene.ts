@@ -424,6 +424,16 @@ export class GameScene {
         const relativePos = target.position.subtract(this.artilleryPosition);
         const distance = relativePos.magnitude();
 
+        // Calculate bearing (azimuth)
+        // Math.atan2(y, x) gives angle from East (0) CCW
+        // Navigation bearing is from North (0) CW
+        // Bearing = 90 - Math.atan2(y, x)
+        const mathAngle =
+          Math.atan2(relativePos.y, relativePos.x) * (180 / Math.PI);
+        let bearing = 90 - mathAngle;
+        if (bearing < 0) bearing += 360;
+        bearing = bearing % 360;
+
         // Calculate if approaching or receding
         // Dot product of velocity and relative position vector
         // If negative, they are opposing (approaching)
@@ -435,8 +445,8 @@ export class GameScene {
         }
 
         return {
-          id: target.id,
-          type: this.getTargetDisplayName(target.type as TargetType),
+          id: target.trackId, // Use formatted Txx ID
+          bearing: bearing,
           distance: distance,
           altitude: target.position.z,
           isApproaching: isApproaching,

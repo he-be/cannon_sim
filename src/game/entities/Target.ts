@@ -40,12 +40,17 @@ export interface VesselCharacteristics {
  * Implements target types as per UI-02 specification
  */
 export class Target {
+  private static nextTrackId = 1;
+  private _trackId: number;
   private _position: Vector3;
   private _velocity: Vector3;
   private _type: TargetType;
   private _state: TargetState = TargetState.ACTIVE;
 
   constructor(position: Vector3, type: TargetType, velocity?: Vector3) {
+    this._trackId = Target.nextTrackId++;
+    if (Target.nextTrackId > 99) Target.nextTrackId = 1;
+
     this._position = position.copy();
     this._type = type;
 
@@ -75,6 +80,13 @@ export class Target {
 
   get isDestroyed(): boolean {
     return this._state === TargetState.DESTROYED;
+  }
+
+  /**
+   * Get formatted track ID (e.g., "T01")
+   */
+  get trackId(): string {
+    return `T${this._trackId.toString().padStart(2, '0')}`;
   }
 
   /**

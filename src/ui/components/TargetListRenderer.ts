@@ -3,7 +3,7 @@ import { CRT_COLORS, FONTS } from '../../data/Constants';
 
 export interface TargetListData {
   id: string;
-  type: string;
+  bearing: number;
   distance: number;
   altitude: number;
   isApproaching: boolean;
@@ -65,12 +65,12 @@ export class TargetListRenderer {
 
     // Column positions
     const colId = x + padding;
-    const colType = x + padding + 40;
-    const colDist = x + padding + 120;
-    const colAlt = x + padding + 190;
+    const colBearing = x + padding + 60;
+    const colDist = x + padding + 130;
+    const colAlt = x + padding + 200;
 
-    ctx.fillText('ID', colId, startY);
-    ctx.fillText('TYPE', colType, startY);
+    ctx.fillText('TRACK', colId, startY);
+    ctx.fillText('BEARING', colBearing, startY);
     ctx.fillText('DIST', colDist, startY);
     ctx.fillText('ALT', colAlt, startY);
 
@@ -88,13 +88,13 @@ export class TargetListRenderer {
     this.targets.forEach(target => {
       if (currentY > y + height - padding) return; // Overflow check
 
-      // ID
+      // TRACK ID
       ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
-      ctx.fillText(target.id.substring(0, 4), colId, currentY);
+      ctx.fillText(target.id, colId, currentY);
 
-      // Type
+      // BEARING
       ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
-      ctx.fillText(target.type, colType, currentY);
+      ctx.fillText(`${target.bearing.toFixed(0)}°`, colBearing, currentY);
 
       // Distance (Color coded)
       ctx.fillStyle = target.isApproaching
