@@ -12,12 +12,7 @@ import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
 import { Vector2 } from '../../math/Vector2';
 import { Vector3 } from '../../math/Vector3';
 import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
-import {
-  PhysicsEngine,
-  State3D,
-  AccelerationFunction,
-} from '../../physics/PhysicsEngine';
-import { Forces } from '../../physics/Forces';
+import { PhysicsEngine, State3D } from '../../physics/PhysicsEngine';
 import { TrajectoryRenderer } from '../../rendering/TrajectoryRenderer';
 import { LeadAngleCalculator } from '../../game/LeadAngleCalculator';
 import {
@@ -29,6 +24,7 @@ import { TargetType } from '../../game/entities/Target';
 import { Artillery } from '../../game/entities/Artillery';
 import { UIManager, UIEvents } from '../UIManager';
 import { RadarTarget } from '../components/RadarRenderer';
+import { StandardPhysics } from '../../physics/StandardPhysics';
 
 // Extended lead angle interface with display information
 interface ExtendedLeadAngle {
@@ -206,40 +202,11 @@ export class GameScene {
     this.uiManager = new UIManager(this.canvasManager, uiEvents);
 
     // Initialize physics engine with RK4 integration
-    const accelerationFunction: AccelerationFunction = (
-      state: State3D,
-      _time: number
-    ) => {
-      const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
-      const gravity = Forces.gravity(
-        mass,
-        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
-        new Vector3(
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
-        )
-      );
-      const drag = Forces.drag(
-        state.velocity,
-        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
-        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
-        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
-      );
-
-      // Add Coriolis force for realistic ballistics (T006 complete implementation)
-      const earthAngularVelocity = new Vector3(0, 0, 7.2921159e-5); // Earth's rotation rate (rad/s)
-      const coriolis = Forces.coriolis(
-        mass,
-        earthAngularVelocity,
-        state.velocity
-      );
-
-      // Convert force to acceleration: a = F/m
-      const totalForce = Forces.sum(gravity, drag, coriolis);
-      return totalForce.multiply(1 / mass);
-    };
-    this.physicsEngine = new PhysicsEngine(accelerationFunction);
+    // Initialize physics engine with RK4 integration
+    // Use centralized physics logic for consistency
+    this.physicsEngine = new PhysicsEngine(
+      StandardPhysics.accelerationFunction
+    );
 
     // Initialize trajectory renderer
     this.trajectoryRenderer = new TrajectoryRenderer({
@@ -517,31 +484,10 @@ export class GameScene {
       muzzleVelocity * Math.sin(elevationRad)
     );
 
-    // Use same physics setup as projectiles
-    const mass = PHYSICS_CONSTANTS.PROJECTILE_MASS;
-    const accelerationFunction = (state: State3D, _time: number): Vector3 => {
-      const Fg = Forces.gravity(
-        mass,
-        PHYSICS_CONSTANTS.GRAVITY_ACCELERATION,
-        new Vector3(
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.x,
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.y,
-          PHYSICS_CONSTANTS.GRAVITY_DIRECTION.z
-        )
-      );
-
-      const Fd = Forces.drag(
-        state.velocity,
-        PHYSICS_CONSTANTS.AIR_DENSITY_SEA_LEVEL,
-        PHYSICS_CONSTANTS.PROJECTILE_DRAG_COEFFICIENT,
-        PHYSICS_CONSTANTS.PROJECTILE_CROSS_SECTIONAL_AREA
-      );
-
-      const totalForce = Forces.sum(Fg, Fd);
-      return totalForce.multiply(1 / mass);
-    };
-
-    const physicsEngine = new PhysicsEngine(accelerationFunction);
+    // Use same physics setup as projectiles via centralized StandardPhysics
+    const physicsEngine = new PhysicsEngine(
+      StandardPhysics.accelerationFunction
+    );
 
     let state: State3D = {
       position: new Vector3(
