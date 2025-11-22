@@ -20,7 +20,7 @@ import {
   GAME_CONSTANTS,
   CRT_COLORS,
 } from '../../data/Constants';
-import { TargetType } from '../../game/entities/Target';
+import { Target, TargetType } from '../../game/entities/Target';
 import { Artillery } from '../../game/entities/Artillery';
 import { UIManager, UIEvents } from '../UIManager';
 import { RadarTarget } from '../components/RadarRenderer';
@@ -54,15 +54,6 @@ export interface GameSceneConfig {
   selectedStage: StageConfig;
 }
 
-interface TargetState {
-  id: string;
-  position: Vector3;
-  velocity?: Vector3;
-  isDestroyed: boolean;
-  type: string;
-  spawnTime: number;
-}
-
 interface ProjectileState {
   id: string;
   position: Vector3;
@@ -91,15 +82,15 @@ export class GameScene {
   private startTime: number = 0;
 
   // Game entities
-  private targets: TargetState[] = [];
+  private targets: Target[] = [];
   private projectiles: ProjectileState[] = [];
   private artillery: Artillery;
   private artilleryPosition: Vector3;
 
   // Targeting system
   private targetingState: TargetingState = TargetingState.NO_TARGET;
-  private trackedTarget: TargetState | null = null;
-  private lockedTarget: TargetState | null = null;
+  private trackedTarget: Target | null = null;
+  private lockedTarget: Target | null = null;
   // Auto mode for automatic artillery control
   private isAutoMode: boolean = false;
 
@@ -251,24 +242,23 @@ export class GameScene {
 
     // Initialize targets from stage configuration
     this.targets = this.config.selectedStage.targets.map(
-      (targetConfig, index) => ({
-        id: `target-${index}`,
-        position: new Vector3(
-          targetConfig.position.x,
-          targetConfig.position.y,
-          targetConfig.position.z
-        ),
-        velocity: targetConfig.velocity
-          ? new Vector3(
-              targetConfig.velocity.x,
-              targetConfig.velocity.y,
-              targetConfig.velocity.z
-            )
-          : undefined,
-        isDestroyed: false,
-        type: targetConfig.type,
-        spawnTime: this.gameTime + targetConfig.spawnDelay,
-      })
+      targetConfig =>
+        new Target(
+          new Vector3(
+            targetConfig.position.x,
+            targetConfig.position.y,
+            targetConfig.position.z
+          ),
+          targetConfig.type,
+          targetConfig.velocity
+            ? new Vector3(
+                targetConfig.velocity.x,
+                targetConfig.velocity.y,
+                targetConfig.velocity.z
+              )
+            : undefined,
+          this.gameTime + targetConfig.spawnDelay
+        )
     );
 
     // Clear projectiles and effects
@@ -490,7 +480,7 @@ export class GameScene {
       const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
 
       const radarTarget: RadarTarget = {
-        id: target.id,
+        id: target.trackId,
         position: target.position,
         velocity: target.velocity || new Vector3(0, 0, 0),
         type: target.type,
@@ -603,12 +593,8 @@ export class GameScene {
       // Check if target should spawn
       if (this.gameTime < target.spawnTime) return;
 
-      // Update position based on velocity
-      if (target.velocity) {
-        target.position = target.position.add(
-          target.velocity.multiply(deltaTime)
-        );
-      }
+      // Update target position using its own update method
+      target.update(deltaTime);
 
       // Check if target reached artillery position (game over condition)
       const distance = target.position
@@ -688,7 +674,7 @@ export class GameScene {
         if (distance < 50) {
           // 50m collision radius
           // Hit!
-          target.isDestroyed = true;
+          target.destroy();
           projectile.isActive = false;
 
           // Calculate actual collision point (T047)
@@ -715,8 +701,10 @@ export class GameScene {
             // Disable auto mode when locked target is destroyed
             this.isAutoMode = false;
             // Reset target tracking
-            this.leadAngleCalculator.resetTargetTracking();
-            this.lastTrackedTargetId = null;
+            if (this.lastTrackedTargetId !== target.trackId) {
+              this.leadAngleCalculator.resetTargetTracking();
+              this.lastTrackedTargetId = target.trackId;
+            }
           }
         }
       });
@@ -949,6 +937,13 @@ export class GameScene {
       this.updateRadarToTarget(this.trackedTarget);
     } else if (this.lockedTarget) {
       console.log(`Unlocking target: ${this.lockedTarget.id}`);
+      // Auto-lock on closest target if in auto mode
+      if (this.isAutoMode && !this.lockedTarget) {
+        this.handleTargetLock();
+        if (this.lockedTarget) {
+          console.log('Auto-locked on target:', this.lockedTarget.trackId);
+        }
+      }
       // Unlock current target if already locked
       this.lockedTarget = null;
       this.targetingState = TargetingState.NO_TARGET;
@@ -982,9 +977,9 @@ export class GameScene {
   }
 
   /**
-   * Find target near cursor
+   * Find target near cursor position (for manual targeting)
    */
-  private findTargetNearCursor(): TargetState | null {
+  private findTargetNearCursor(): Target | null {
     // Find target that matches radar crosshairs (azimuth + range)
     const BEAM_WIDTH_DEGREES = 5; // 5 degree radar beam width as per spec
     const RANGE_TOLERANCE = 200; // 200m range tolerance
@@ -1024,9 +1019,10 @@ export class GameScene {
   }
 
   /**
-   * Update radar to track target
+   * Update radar to point at specific target
    */
-  private updateRadarToTarget(target: TargetState): void {
+  private updateRadarToTarget(target: Target): void {
+    // Calculate direction to target
     const dx = target.position.x - this.artilleryPosition.x;
     const dy = target.position.y - this.artilleryPosition.y;
     const dz = target.position.z - this.artilleryPosition.z;

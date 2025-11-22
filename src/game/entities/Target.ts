@@ -46,13 +46,20 @@ export class Target {
   private _velocity: Vector3;
   private _type: TargetType;
   private _state: TargetState = TargetState.ACTIVE;
+  public spawnTime: number = 0;
 
-  constructor(position: Vector3, type: TargetType, velocity?: Vector3) {
+  constructor(
+    position: Vector3,
+    type: TargetType,
+    velocity?: Vector3,
+    spawnTime: number = 0
+  ) {
     this._trackId = Target.nextTrackId++;
     if (Target.nextTrackId > 99) Target.nextTrackId = 1;
 
     this._position = position.copy();
     this._type = type;
+    this.spawnTime = spawnTime;
 
     // Set velocity based on type (UI-02)
     if (velocity) {
