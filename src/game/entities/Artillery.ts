@@ -42,6 +42,10 @@ export class Artillery {
   private readonly ROTATION_SPEED_AZIMUTH = 10; // degrees per second
   private readonly ROTATION_SPEED_ELEVATION = 5; // degrees per second
 
+  // Reload mechanics
+  private _reloadTime: number = 0; // seconds since firing
+  private readonly RELOAD_COOLDOWN = 2.0; // 2 seconds reload time
+
   constructor(position: Vector3) {
     this._position = position.copy();
     this._leadCalculator = new LeadAngleCalculator();
@@ -123,6 +127,14 @@ export class Artillery {
         this._currentElevation += Math.sign(diff) * maxRotation;
       }
     }
+
+    // Update reload timer
+    if (this._state === ArtilleryState.FIRED) {
+      this._reloadTime += deltaTime;
+      if (this._reloadTime >= this.RELOAD_COOLDOWN) {
+        this.reload();
+      }
+    }
   }
 
   /**
@@ -172,7 +184,7 @@ export class Artillery {
    * Fire projectile towards target (GS-03)
    */
   fire(): ProjectileData {
-    if (!this.canFire) {
+    if (!this.canFire()) {
       throw new Error('Artillery not ready to fire');
     }
 
@@ -201,6 +213,7 @@ export class Artillery {
    */
   reload(): void {
     this._state = ArtilleryState.READY;
+    this._reloadTime = 0;
   }
 
   /**
