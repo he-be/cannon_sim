@@ -6,6 +6,7 @@
 import { Vector3 } from '../../math/Vector3';
 import { LeadAngleCalculator, LeadAngle } from '../LeadAngleCalculator';
 import { ArtilleryConfiguration } from '../../targeting/TargetTracker';
+import { PHYSICS_CONSTANTS } from '../../data/Constants';
 
 export enum ArtilleryState {
   READY = 'ready',
@@ -197,7 +198,7 @@ export class Artillery {
 
     // Use current actual angles for firing
     // Calculate velocity vector based on current azimuth and elevation
-    const muzzleVelocity = 800; // Using value from getConfiguration
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
     const azimuthRad = this._currentAzimuth * (Math.PI / 180);
     const elevationRad = this._currentElevation * (Math.PI / 180);
 
