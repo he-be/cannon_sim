@@ -55,6 +55,8 @@ export interface ControlPanelState {
     elevation: number;
     range: number;
   } | null;
+  artilleryReloadProgress: number; // 0.0 to 1.0
+  canFire: boolean;
 }
 
 export class ControlPanelRenderer {
@@ -104,6 +106,8 @@ export class ControlPanelRenderer {
       gameTime: 0,
       targetInfo: null,
       radarInfo: null,
+      artilleryReloadProgress: 1.0,
+      canFire: true,
     };
   }
 
@@ -345,6 +349,16 @@ export class ControlPanelRenderer {
     if (newState.leadAngle !== undefined) {
       this.updateLeadAngle(newState.leadAngle);
     }
+
+    if (
+      newState.artilleryReloadProgress !== undefined ||
+      newState.canFire !== undefined
+    ) {
+      this.updateFireButton(
+        newState.canFire ?? this.state.canFire,
+        newState.artilleryReloadProgress ?? this.state.artilleryReloadProgress
+      );
+    }
   }
 
   private updateRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
@@ -425,6 +439,18 @@ export class ControlPanelRenderer {
       this.leadAngleGroup.updateElevation(null);
       this.leadAngleGroup.updateInfoItem('Confidence', 'No target locked');
       this.leadAngleGroup.removeInfoItem('Time');
+    }
+  }
+
+  private updateFireButton(canFire: boolean, reloadProgress: number): void {
+    if (canFire) {
+      this.fireButton.setText('FIRE');
+      this.fireButton.setProgress(1.0);
+      this.fireButton.setDisabled(false);
+    } else {
+      this.fireButton.setText('RELOAD');
+      this.fireButton.setProgress(reloadProgress);
+      this.fireButton.setDisabled(true);
     }
   }
 

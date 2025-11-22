@@ -407,6 +407,16 @@ export class UIManager {
   }
 
   /**
+   * Set artillery reload state
+   */
+  setArtilleryState(canFire: boolean, reloadProgress: number): void {
+    this.controlPanel.updateState({
+      canFire,
+      artilleryReloadProgress: reloadProgress,
+    });
+  }
+
+  /**
    * Add detected target to radar
    */
   addRadarTarget(target: RadarTarget): void {

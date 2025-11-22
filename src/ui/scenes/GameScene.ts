@@ -402,6 +402,12 @@ export class GameScene {
       this.artillery.currentElevation
     );
 
+    // Update artillery reload state
+    this.uiManager.setArtilleryState(
+      this.artillery.canFire(),
+      this.artillery.reloadProgress
+    );
+
     // Update radar state
     this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
     this.uiManager.setRadarRange(this.radarRange);

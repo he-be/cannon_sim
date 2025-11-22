@@ -79,6 +79,13 @@ export class Artillery {
     return this._commandedElevation;
   }
 
+  get reloadProgress(): number {
+    if (this._state === ArtilleryState.READY) {
+      return 1.0;
+    }
+    return Math.min(this._reloadTime / this.RELOAD_COOLDOWN, 1.0);
+  }
+
   canFire(): boolean {
     return this._state === ArtilleryState.READY;
   }
