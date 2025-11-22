@@ -202,8 +202,8 @@ export function validateStageConfig(stage: StageConfig): boolean {
 
     // Moving targets must have velocity
     if (
-      (target.type === TargetType.MOVING_SLOW ||
-        target.type === TargetType.MOVING_FAST) &&
+      (target.type === TargetType.FRIGATE ||
+        target.type === TargetType.CRUISER) &&
       !target.velocity
     ) {
       return false;

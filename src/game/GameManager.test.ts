@@ -1,4 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  afterAll,
+  vi,
+} from 'vitest';
 import { GameManager, GameState } from './GameManager';
 import { SceneType } from '../ui/scenes/TitleScene';
 import { CanvasManager } from '../rendering/CanvasManager';
@@ -17,30 +26,42 @@ vi.mock('../data/StageData');
 
 // Mock requestAnimationFrame and cancelAnimationFrame
 const mockRequestAnimationFrame = vi.fn(callback => {
-  // Use vi.fn() to simulate setTimeout for 60 FPS
-  callback();
-  return 1;
+  return globalThis.setTimeout(
+    () => callback(performance.now()),
+    16
+  ) as unknown as number;
 });
-const mockCancelAnimationFrame = vi.fn();
+const mockCancelAnimationFrame = vi.fn(id => {
+  globalThis.clearTimeout(id);
+});
 
 Object.defineProperty(globalThis, 'requestAnimationFrame', {
   value: mockRequestAnimationFrame,
   configurable: true,
+  writable: true,
 });
 Object.defineProperty(globalThis, 'cancelAnimationFrame', {
   value: mockCancelAnimationFrame,
   configurable: true,
+  writable: true,
 });
 
 describe('GameManager (T030-2 - Complete Rewrite)', () => {
   let gameManager: GameManager;
   let mockCanvasManager: CanvasManager;
 
+  beforeAll(() => {
+    vi.useFakeTimers();
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequestAnimationFrame.mockClear();
     mockCancelAnimationFrame.mockClear();
-    vi.useFakeTimers();
     vi.setSystemTime(1000000000);
 
     // Mock CanvasManager
@@ -144,7 +165,6 @@ describe('GameManager (T030-2 - Complete Rewrite)', () => {
 
   afterEach(() => {
     gameManager.destroy();
-    vi.useRealTimers();
   });
 
   describe('initialization', () => {

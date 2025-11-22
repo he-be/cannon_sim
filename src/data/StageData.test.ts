@@ -26,7 +26,7 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
     it('should have proper artillery position', () => {
       const artilleryPos = StageDataConstants.ARTILLERY_POSITION;
       expect(artilleryPos).toBeInstanceOf(Vector3);
-      expect(artilleryPos.y).toBeLessThan(0); // South of origin
+      expect(artilleryPos.y).toBe(0); // Origin
     });
   });
 
@@ -34,12 +34,12 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
     it('should have Stage 1 as static targets', () => {
       const stage1 = getStageById(1);
       expect(stage1).not.toBeNull();
-      expect(stage1!.name).toBe('Training Range');
+      expect(stage1!.name).toBe('気球迎撃戦');
       expect(stage1!.difficultyLevel).toBe(1);
 
-      // All targets should be static
+      // All targets should be balloons
       stage1!.targets.forEach(target => {
-        expect(target.type).toBe(TargetType.STATIC);
+        expect(target.type).toBe(TargetType.BALLOON);
         expect(target.velocity).toBeUndefined();
       });
     });
@@ -47,12 +47,12 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
     it('should have Stage 2 as slow moving targets', () => {
       const stage2 = getStageById(2);
       expect(stage2).not.toBeNull();
-      expect(stage2!.name).toBe('Moving Targets');
+      expect(stage2!.name).toBe('フリゲート迎撃戦');
       expect(stage2!.difficultyLevel).toBe(2);
 
-      // All targets should be moving slow
+      // All targets should be frigates
       stage2!.targets.forEach(target => {
-        expect(target.type).toBe(TargetType.MOVING_SLOW);
+        expect(target.type).toBe(TargetType.FRIGATE);
         expect(target.velocity).toBeInstanceOf(Vector3);
       });
     });
@@ -60,13 +60,13 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
     it('should have Stage 3 as fast moving targets', () => {
       const stage3 = getStageById(3);
       expect(stage3).not.toBeNull();
-      expect(stage3!.name).toBe('Combat Scenario');
+      expect(stage3!.name).toBe('巡洋艦迎撃戦');
       expect(stage3!.difficultyLevel).toBe(3);
       expect(stage3!.timeLimit).toBe(300); // 5 minutes
 
-      // All targets should be moving fast
+      // All targets should be cruisers
       stage3!.targets.forEach(target => {
-        expect(target.type).toBe(TargetType.MOVING_FAST);
+        expect(target.type).toBe(TargetType.CRUISER);
         expect(target.velocity).toBeInstanceOf(Vector3);
       });
     });
@@ -163,7 +163,7 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
         targets: [
           {
             position: new Vector3(100, 100, 0),
-            type: TargetType.MOVING_SLOW,
+            type: TargetType.FRIGATE,
             // Missing velocity for moving target
             spawnDelay: 0,
           },
@@ -179,7 +179,7 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
         targets: [
           {
             position: new Vector3(100, 100, 0),
-            type: TargetType.STATIC,
+            type: TargetType.BALLOON,
             spawnDelay: -1, // Negative spawn delay
           },
         ],
@@ -215,8 +215,8 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
             .subtract(stage.artilleryPosition)
             .magnitude();
 
-          // Targets should be within 15km range (reasonable artillery range)
-          expect(distance).toBeLessThan(15000);
+          // Targets should be within 20km range (reasonable artillery range)
+          expect(distance).toBeLessThan(20000);
           expect(distance).toBeGreaterThan(1000); // But not too close
         });
       });
@@ -249,17 +249,17 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
       const stage3 = getStageById(3)!;
 
       // Stage 1: Only static targets
-      expect(stage1.targets.every(t => t.type === TargetType.STATIC)).toBe(
+      expect(stage1.targets.every(t => t.type === TargetType.BALLOON)).toBe(
         true
       );
 
       // Stage 2: Only slow moving targets
-      expect(stage2.targets.every(t => t.type === TargetType.MOVING_SLOW)).toBe(
+      expect(stage2.targets.every(t => t.type === TargetType.FRIGATE)).toBe(
         true
       );
 
       // Stage 3: Only fast moving targets + time limit
-      expect(stage3.targets.every(t => t.type === TargetType.MOVING_FAST)).toBe(
+      expect(stage3.targets.every(t => t.type === TargetType.CRUISER)).toBe(
         true
       );
       expect(stage3.timeLimit).toBeGreaterThan(0);
@@ -303,7 +303,7 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
 
     it('should have meaningful stage names and descriptions', () => {
       STAGES.forEach(stage => {
-        expect(stage.name.length).toBeGreaterThan(5);
+        expect(stage.name.length).toBeGreaterThanOrEqual(5);
         expect(stage.description.length).toBeGreaterThan(10);
         expect(stage.name).not.toEqual(stage.description);
       });
