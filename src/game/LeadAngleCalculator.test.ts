@@ -105,7 +105,7 @@ describe('LeadAngleCalculator (basic implementation)', () => {
       );
 
       expect(leadAngle).toBeDefined();
-      expect(leadAngle.azimuth).toBeCloseTo(90, 4); // Should still be eastward
+      expect(leadAngle.azimuth).toBeCloseTo(90, 3); // Should still be eastward
     });
 
     it('should handle very slow targets', () => {

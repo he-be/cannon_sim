@@ -272,7 +272,7 @@ export class ShootingMethodSolver {
 
       // Clamp angles to reasonable ranges
       azimuth = this.normalizeAzimuth(azimuth);
-      elevation = Math.max(1.0, Math.min(89.0, elevation));
+      elevation = Math.max(0.1, Math.min(89.9, elevation));
     }
 
     const result = {
@@ -444,7 +444,7 @@ export class ShootingMethodSolver {
 
       // Clamp angles to reasonable ranges
       azimuth = this.normalizeAzimuth(azimuth);
-      elevation = Math.max(1.0, Math.min(89.0, elevation));
+      elevation = Math.max(0.1, Math.min(89.9, elevation));
     }
 
     const result = {
@@ -540,8 +540,6 @@ export class ShootingMethodSolver {
 
     // Optimization: Stop if we are clearly moving away from the target
     // We track if distance has been increasing for a while
-    let distanceIncreasingCount = 0;
-    const DISTANCE_INCREASE_THRESHOLD = 10; // Number of steps to confirm divergence
 
     // Simulate complete trajectory until ground impact (FIXED: allow simulation to start)
     while (time < this.MAX_FLIGHT_TIME) {
@@ -603,20 +601,6 @@ export class ShootingMethodSolver {
           currentTargetPosition.y,
           currentTargetPosition.z
         );
-        distanceIncreasingCount = 0; // Reset counter
-      } else {
-        distanceIncreasingCount++;
-      }
-
-      // Optimization: Early exit if we have passed the CPA and are moving away
-      // We wait for a few steps to be sure it's not a local fluctuation
-      if (
-        distanceIncreasingCount > DISTANCE_INCREASE_THRESHOLD &&
-        minDistance < 10000
-      ) {
-        // Only exit if we found a "reasonable" CPA (e.g. < 10km) or if we simulated enough
-        // This prevents exiting too early if the initial guess is very far off
-        break;
       }
 
       // Exit when projectile hits ground (but allow simulation to run first)
@@ -987,51 +971,39 @@ export class ShootingMethodSolver {
     }
 
     // Use ballistic trajectory equation for better initial guess
-    // For projectile motion: R = (v0²/g) * sin(2θ) * cos²(θ) - accounting for height
-    // Approximate solution using iterative approach
+    // Analytic solution for projectile motion with height difference:
+    // theta = atan( (v^2 +/- sqrt(v^4 - g(g*x^2 + 2*y*v^2))) / (g*x) )
 
-    let bestElevation = 30; // Default
-    let minTimeOfFlight = Infinity;
+    const v2 = v0 * v0;
+    const v4 = v2 * v2;
+    const x = horizontalRange;
+    const y = heightDifference;
 
-    // Test multiple elevation angles to find the one with reasonable flight time
-    for (let testElevation = 10; testElevation <= 80; testElevation += 10) {
-      const elevRad = testElevation * (Math.PI / 180);
-      const v0x = v0 * Math.cos(elevRad);
-      const v0z = v0 * Math.sin(elevRad);
+    const root = v4 - g * (g * x * x + 2 * y * v2);
 
-      // Simple ballistic flight time calculation (ignoring air resistance for initial guess)
-      // z = v0z*t - 0.5*g*t² + z0
-      // When projectile hits target height: heightDifference = v0z*t - 0.5*g*t²
-      // Solve quadratic: 0.5*g*t² - v0z*t + heightDifference = 0
+    if (root >= 0) {
+      // Target is within theoretical vacuum range
+      const sqrtRoot = Math.sqrt(root);
 
-      const a = 0.5 * g;
-      const b = -v0z;
-      const c = heightDifference;
-      const discriminant = b * b - 4 * a * c;
+      // Calculate both low and high trajectories
+      const thetaLow = Math.atan((v2 - sqrtRoot) / (g * x));
+      // const thetaHigh = Math.atan((v2 + sqrtRoot) / (g * x));
 
-      if (discriminant >= 0) {
-        const t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
-        const t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
-        const flightTime = Math.max(t1, t2); // Use positive solution
+      // Prefer low trajectory (direct fire)
+      const bestElevation = thetaLow * (180 / Math.PI);
 
-        if (flightTime > 0) {
-          const calculatedRange = v0x * flightTime;
-          const rangeDifference = Math.abs(calculatedRange - horizontalRange);
+      // Ensure we don't aim into the ground if target is lower
+      // But allow negative angles if physically possible?
+      // For now, clamp to positive as per game rules usually
 
-          if (rangeDifference < minTimeOfFlight) {
-            minTimeOfFlight = rangeDifference;
-            bestElevation = testElevation;
-          }
-        }
-      }
+      // If the low trajectory is too low (e.g. blocked by terrain or min elevation),
+      // we might consider high trajectory, but the requirement is to prefer low.
+
+      return Math.max(0.1, Math.min(89.9, bestElevation));
     }
 
-    // Fine-tune around the best elevation
-    const fineElevation =
-      bestElevation +
-      (heightDifference / horizontalRange) * (180 / Math.PI) * 0.3;
-
-    return Math.max(5.0, Math.min(80.0, fineElevation));
+    // Fallback for out of range or complex cases (use 45 degrees for max range)
+    return 45.0;
   }
 
   /**
