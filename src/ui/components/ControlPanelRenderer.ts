@@ -30,8 +30,6 @@ export interface ControlPanelEvents {
 export interface ControlPanelState {
   azimuth: number; // -180 to 180 (Current)
   elevation: number; // 0 to 90 (Current)
-  commandedAzimuth?: number;
-  commandedElevation?: number;
   isLocked: boolean;
   isAutoMode: boolean;
   leadAngle: {
@@ -129,8 +127,6 @@ export class ControlPanelRenderer {
     this.artilleryGroup = new InfoGroupComponent('artillery', 'Artillery', [
       { label: 'Az', value: `${this.state.azimuth.toFixed(1)}°` },
       { label: 'El', value: `${this.state.elevation.toFixed(1)}°` },
-      { label: 'Cmd Az', value: '---°' },
-      { label: 'Cmd El', value: '---°' },
     ]);
 
     // Sliders
@@ -141,7 +137,7 @@ export class ControlPanelRenderer {
       180,
       (value: number) => {
         this.state.azimuth = value;
-        this.artilleryGroup.updateAzimuth(value);
+        this.updateArtilleryInfo(this.state.azimuth, this.state.elevation);
         this.events.onAzimuthChange(value);
       },
       0.1
@@ -154,7 +150,7 @@ export class ControlPanelRenderer {
       90,
       (value: number) => {
         this.state.elevation = value;
-        this.artilleryGroup.updateElevation(value);
+        this.updateArtilleryInfo(this.state.azimuth, this.state.elevation);
         this.events.onElevationChange(value);
       },
       0.1
@@ -281,7 +277,6 @@ export class ControlPanelRenderer {
       // The requirement says "UI displays both".
       // Let's update the text display to show both.
       this.azimuthSlider.setValue(newState.azimuth);
-      this.artilleryGroup.updateAzimuth(newState.azimuth);
     }
 
     if (
@@ -289,21 +284,6 @@ export class ControlPanelRenderer {
       newState.elevation !== oldState.elevation
     ) {
       this.elevationSlider.setValue(newState.elevation);
-      this.artilleryGroup.updateElevation(newState.elevation);
-    }
-
-    if (newState.commandedAzimuth !== undefined) {
-      this.artilleryGroup.updateInfoItem(
-        'Cmd Az',
-        `${newState.commandedAzimuth.toFixed(1)}°`
-      );
-    }
-
-    if (newState.commandedElevation !== undefined) {
-      this.artilleryGroup.updateInfoItem(
-        'Cmd El',
-        `${newState.commandedElevation.toFixed(1)}°`
-      );
     }
 
     if (
@@ -359,6 +339,18 @@ export class ControlPanelRenderer {
         newState.artilleryReloadProgress ?? this.state.artilleryReloadProgress
       );
     }
+
+    if (newState.azimuth !== undefined || newState.elevation !== undefined) {
+      this.updateArtilleryInfo(
+        newState.azimuth ?? this.state.azimuth,
+        newState.elevation ?? this.state.elevation
+      );
+    }
+  }
+
+  private updateArtilleryInfo(azimuth: number, elevation: number): void {
+    this.artilleryGroup.updateInfoItem('Az', `${azimuth.toFixed(1)}°`);
+    this.artilleryGroup.updateInfoItem('El', `${elevation.toFixed(1)}°`);
   }
 
   private updateRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
@@ -459,17 +451,10 @@ export class ControlPanelRenderer {
     return { ...this.state };
   }
 
-  setAngles(
-    azimuth: number,
-    elevation: number,
-    commandedAzimuth?: number,
-    commandedElevation?: number
-  ): void {
+  setAngles(azimuth: number, elevation: number): void {
     this.updateState({
       azimuth,
       elevation,
-      commandedAzimuth,
-      commandedElevation,
     });
   }
 

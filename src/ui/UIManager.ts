@@ -335,18 +335,8 @@ export class UIManager {
   /**
    * Set artillery angles
    */
-  setArtilleryAngles(
-    currentAzimuth: number,
-    currentElevation: number,
-    commandedAzimuth?: number,
-    commandedElevation?: number
-  ): void {
-    this.controlPanel.setAngles(
-      currentAzimuth,
-      currentElevation,
-      commandedAzimuth,
-      commandedElevation
-    );
+  setArtilleryAngles(currentAzimuth: number, currentElevation: number): void {
+    this.controlPanel.setAngles(currentAzimuth, currentElevation);
   }
 
   /**
