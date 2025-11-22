@@ -78,7 +78,15 @@ export class TextComponent extends UIComponent {
   updateSize(): void {
     // Create temporary canvas to measure text
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      // Fallback for environments without canvas support (e.g. some tests)
+      this.bounds.width = this.text.length * 8;
+      this.bounds.height = 16;
+      return;
+    }
+
     ctx.font = this.font;
 
     const metrics = ctx.measureText(this.text);
@@ -91,7 +99,12 @@ export class TextComponent extends UIComponent {
   // Get the measured width of the text
   getTextWidth(): number {
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      return this.text.length * 8;
+    }
+
     ctx.font = this.font;
     return ctx.measureText(this.text).width;
   }

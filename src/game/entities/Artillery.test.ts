@@ -138,8 +138,7 @@ describe('Artillery (spec-compliant)', () => {
 
       expect(leadInfo).toBeDefined();
       expect(leadInfo!.leadAngle).toBeDefined();
-      expect(leadInfo!.confidence).toBeGreaterThan(0);
-      expect(leadInfo!.confidence).toBeLessThanOrEqual(1);
+      expect(['HIGH', 'MEDIUM', 'LOW']).toContain(leadInfo!.confidence);
       expect(leadInfo!.leadDistance).toBeGreaterThan(0);
     });
 

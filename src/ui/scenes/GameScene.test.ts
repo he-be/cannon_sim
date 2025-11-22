@@ -49,7 +49,15 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     mockCanvas = {
       width: 1200,
       height: 800,
-    } as HTMLCanvasElement;
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      getBoundingClientRect: () => ({
+        left: 0,
+        top: 0,
+        width: 1200,
+        height: 800,
+      }),
+    } as unknown as HTMLCanvasElement;
 
     mockContext = {
       fillStyle: '',
@@ -72,6 +80,13 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
       stroke: vi.fn(),
       arc: vi.fn(),
       fill: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
+      measureText: vi.fn(() => ({ width: 10 })),
+      translate: vi.fn(),
+      scale: vi.fn(),
+      rotate: vi.fn(),
+      setLineDash: vi.fn(),
     } as any;
 
     mockCanvasManager = {
@@ -98,7 +113,9 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
   });
 
   afterEach(() => {
-    gameScene.destroy();
+    if (gameScene) {
+      gameScene.destroy();
+    }
     vi.clearAllMocks();
   });
 
@@ -478,7 +495,15 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
       const smallCanvas = {
         width: 800,
         height: 600,
-      } as HTMLCanvasElement;
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        getBoundingClientRect: () => ({
+          left: 0,
+          top: 0,
+          width: 800,
+          height: 600,
+        }),
+      } as unknown as HTMLCanvasElement;
 
       const smallCanvasManager = {
         getCanvas: () => smallCanvas,

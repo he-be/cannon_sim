@@ -34,7 +34,6 @@ export interface TargetTrackingState {
   lastCalculationTime: number;
   calculationCount: number;
   lastConverged: boolean;
-  calculationTimeHistory: number[]; // Track calculation times for delay estimation
 }
 
 export interface IncrementalCalculationOptions {
@@ -49,21 +48,8 @@ export interface IncrementalCalculationOptions {
  * High-precision lead angle calculator using Shooting Method
  * Replaces placeholder implementation with mathematically rigorous approach
  */
-interface CachedResult {
-  result: RecommendedLeadResult;
-  timestamp: number;
-  key: string;
-}
-
 export class LeadAngleCalculator {
   private shootingMethodSolver: ShootingMethodSolver;
-
-  // Performance optimization: caching and rate limiting
-  private resultCache = new Map<string, CachedResult>();
-  private lastCalculationTime = 0;
-  private readonly CACHE_TTL = 100; // 100ms cache time for fast-moving target adaptation // 500ms cache time
-  private readonly MIN_CALCULATION_INTERVAL = 16; // 60Hz calculation rate for responsive tracking (~16.67ms) // Maximum 10Hz calculation rate for moving targets (reduced from 100ms)
-  private readonly MAX_CACHE_SIZE = 50; // Limit cache size
 
   // Target tracking state for incremental updates
   private currentTargetState: TargetTrackingState | null = null;
@@ -85,7 +71,7 @@ export class LeadAngleCalculator {
 
   /**
    * Calculate lead angle for hitting a moving target (GS-07)
-   * Uses Shooting Method for mathematically accurate calculation
+   * Uses Shooting Method for accurate ballistic calculation
    */
   calculateLeadAngle(
     artilleryPosition: Vector3,
@@ -107,40 +93,12 @@ export class LeadAngleCalculator {
 
   /**
    * Calculate recommended lead angle with detailed information (UI display)
-   * Includes performance optimization with caching and rate limiting
    */
   calculateRecommendedLead(
     artilleryPosition: Vector3,
     targetPosition: Vector3,
     targetVelocity: Vector3
   ): RecommendedLeadResult {
-    const now = Date.now();
-
-    // Rate limiting: limit calculation frequency
-    if (now - this.lastCalculationTime < this.MIN_CALCULATION_INTERVAL) {
-      // Check cache for recent result
-      const cacheKey = this.generateCacheKey(
-        artilleryPosition,
-        targetPosition,
-        targetVelocity
-      );
-      const cached = this.getCachedResult(cacheKey, now);
-      if (cached) {
-        return cached.result;
-      }
-    }
-
-    // Check cache before expensive calculation
-    const cacheKey = this.generateCacheKey(
-      artilleryPosition,
-      targetPosition,
-      targetVelocity
-    );
-    const cached = this.getCachedResult(cacheKey, now);
-    if (cached) {
-      return cached.result;
-    }
-
     // Perform Shooting Method calculation
     const shootingResult = this.shootingMethodSolver.solve(
       artilleryPosition,
@@ -155,7 +113,7 @@ export class LeadAngleCalculator {
     const leadDistance =
       targetVelocity.magnitude() * (shootingResult.flightTime || 0);
 
-    const result: RecommendedLeadResult = {
+    return {
       leadAngle: {
         azimuth: this.normalizeAzimuth(shootingResult.azimuth),
         elevation: Math.max(5, Math.min(85, shootingResult.elevation)),
@@ -167,12 +125,6 @@ export class LeadAngleCalculator {
       accuracy: shootingResult.finalError,
       leadDistance,
     };
-
-    // Cache the result
-    this.cacheResult(cacheKey, result, now);
-    this.lastCalculationTime = now;
-
-    return result;
   }
 
   /**
@@ -197,24 +149,6 @@ export class LeadAngleCalculator {
 
     const isMovingTarget = targetVelocity.magnitude() > 1.0; // > 1 m/s
 
-    // COMPENSATION: Predict where target will be when calculation completes
-    // Use average calculation time from previous iterations to predict delay
-    let compensatedTargetPosition = targetPosition;
-    if (isMovingTarget && this.currentTargetState) {
-      const estimatedCalculationTime =
-        this.estimateCalculationTime(isMovingTarget);
-      const compensationTimeSeconds = estimatedCalculationTime / 1000.0;
-
-      // Compensate for calculation delay: predict target position when calculation finishes
-      compensatedTargetPosition = targetPosition.add(
-        targetVelocity.multiply(compensationTimeSeconds)
-      );
-
-      console.log(
-        `Delay compensation: Est.calc=${estimatedCalculationTime.toFixed(0)}ms, Offset=${(targetVelocity.magnitude() * compensationTimeSeconds).toFixed(1)}m`
-      );
-    }
-
     let result: RecommendedLeadResult;
 
     // For moving targets, use incremental updates if available
@@ -225,7 +159,7 @@ export class LeadAngleCalculator {
     ) {
       result = this.performIncrementalCalculation(
         artilleryPosition,
-        compensatedTargetPosition, // Use compensated position
+        targetPosition,
         targetVelocity,
         targetId,
         calculationStartTime
@@ -234,24 +168,19 @@ export class LeadAngleCalculator {
       // For static targets or first-time calculations, use standard method
       result = this.calculateRecommendedLead(
         artilleryPosition,
-        compensatedTargetPosition, // Use compensated position
+        targetPosition,
         targetVelocity
       );
     }
 
-    // Measure actual calculation time and update tracking
-    const calculationEndTime = Date.now();
-    const actualCalculationTime = calculationEndTime - calculationStartTime;
-
-    // Update target tracking state with actual calculation time
-    this.updateTargetTrackingWithTiming(
+    // Update target tracking state
+    this.updateTargetTracking(
       targetId,
-      targetPosition, // Store original position, not compensated
+      targetPosition,
       targetVelocity,
       result.leadAngle,
-      calculationEndTime,
-      result.converged || false,
-      actualCalculationTime
+      calculationStartTime,
+      result.converged || false
     );
 
     return result;
@@ -386,36 +315,6 @@ export class LeadAngleCalculator {
     timestamp: number,
     converged: boolean
   ): void {
-    // Use default calculation time for legacy calls
-    this.updateTargetTrackingWithTiming(
-      targetId,
-      targetPosition,
-      targetVelocity,
-      calculatedAngle,
-      timestamp,
-      converged,
-      0 // Default calculation time for legacy calls
-    );
-  }
-
-  /**
-   * Update target tracking with calculation timing information
-   */
-  private updateTargetTrackingWithTiming(
-    targetId: string,
-    targetPosition: Vector3,
-    targetVelocity: Vector3,
-    calculatedAngle: LeadAngle,
-    timestamp: number,
-    converged: boolean,
-    calculationTime: number
-  ): void {
-    const previousHistory =
-      this.currentTargetState?.calculationTimeHistory || [];
-
-    // Keep last 10 calculation times for averaging
-    const newHistory = [...previousHistory, calculationTime].slice(-10);
-
     this.currentTargetState = {
       targetId,
       lastPosition: new Vector3(
@@ -435,25 +334,7 @@ export class LeadAngleCalculator {
       lastCalculationTime: timestamp,
       calculationCount: (this.currentTargetState?.calculationCount || 0) + 1,
       lastConverged: converged,
-      calculationTimeHistory: newHistory,
     };
-  }
-
-  /**
-   * Estimate calculation time based on historical data
-   */
-  private estimateCalculationTime(isMovingTarget: boolean): number {
-    if (!this.currentTargetState?.calculationTimeHistory?.length) {
-      // Default estimates based on target type
-      return isMovingTarget ? 30 : 20; // ms
-    }
-
-    const history = this.currentTargetState.calculationTimeHistory;
-    const avgTime =
-      history.reduce((sum, time) => sum + time, 0) / history.length;
-
-    // Add small safety margin (10ms) to account for variance
-    return Math.max(avgTime + 10, 10);
   }
 
   /**
@@ -471,9 +352,6 @@ export class LeadAngleCalculator {
     return this.currentTargetState;
   }
 
-  /**
-   * Calculate confidence based on Shooting Method performance
-   */
   /**
    * Estimate flight time based on distance (simple ballistic approximation)
    */
@@ -509,110 +387,5 @@ export class LeadAngleCalculator {
     while (azimuth < 0) azimuth += 360;
     while (azimuth >= 360) azimuth -= 360;
     return azimuth;
-  }
-
-  /**
-   * Generate cache key for position and velocity vectors
-   */
-  private generateCacheKey(
-    artilleryPos: Vector3,
-    targetPos: Vector3,
-    targetVel: Vector3
-  ): string {
-    // Round to reasonable precision for caching (1m position, 1m/s velocity)
-    const roundedArtillery = `${Math.round(artilleryPos.x)},${Math.round(artilleryPos.y)},${Math.round(artilleryPos.z)}`;
-    const roundedTarget = `${Math.round(targetPos.x)},${Math.round(targetPos.y)},${Math.round(targetPos.z)}`;
-    const roundedVelocity = `${Math.round(targetVel.x)},${Math.round(targetVel.y)},${Math.round(targetVel.z)}`;
-
-    return `${roundedArtillery}|${roundedTarget}|${roundedVelocity}`;
-  }
-
-  /**
-   * Get cached result if still valid
-   */
-  private getCachedResult(
-    key: string,
-    currentTime: number
-  ): CachedResult | null {
-    const cached = this.resultCache.get(key);
-    if (cached && currentTime - cached.timestamp < this.CACHE_TTL) {
-      return cached;
-    }
-
-    // Clean up expired entry
-    if (cached) {
-      this.resultCache.delete(key);
-    }
-
-    return null;
-  }
-
-  /**
-   * Cache calculation result
-   */
-  private cacheResult(
-    key: string,
-    result: RecommendedLeadResult,
-    timestamp: number,
-    _ttl: number = this.CACHE_TTL
-  ): void {
-    // Clean up cache if it gets too large
-    if (this.resultCache.size >= this.MAX_CACHE_SIZE) {
-      this.cleanupCache(timestamp);
-    }
-
-    this.resultCache.set(key, {
-      result,
-      timestamp,
-      key,
-    });
-  }
-
-  /**
-   * Clean up expired cache entries
-   */
-  private cleanupCache(currentTime: number): void {
-    const entriesToDelete: string[] = [];
-
-    for (const [key, cached] of this.resultCache.entries()) {
-      if (currentTime - cached.timestamp > this.CACHE_TTL) {
-        entriesToDelete.push(key);
-      }
-    }
-
-    // If still too many entries, delete oldest ones
-    if (
-      this.resultCache.size - entriesToDelete.length >
-      this.MAX_CACHE_SIZE * 0.8
-    ) {
-      const sortedEntries = Array.from(this.resultCache.entries()).sort(
-        (a, b) => a[1].timestamp - b[1].timestamp
-      );
-
-      const toDelete = sortedEntries.slice(
-        0,
-        Math.floor(this.MAX_CACHE_SIZE * 0.3)
-      );
-      toDelete.forEach(([key]) => entriesToDelete.push(key));
-    }
-
-    entriesToDelete.forEach(key => this.resultCache.delete(key));
-  }
-
-  /**
-   * Clear all cached results (useful for testing or parameter changes)
-   */
-  public clearCache(): void {
-    this.resultCache.clear();
-  }
-
-  /**
-   * Get cache statistics for debugging
-   */
-  public getCacheStats(): { size: number; hitRate?: number } {
-    return {
-      size: this.resultCache.size,
-      // Hit rate tracking could be added if needed
-    };
   }
 }

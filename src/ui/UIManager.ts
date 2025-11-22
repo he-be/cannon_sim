@@ -121,13 +121,13 @@ export class UIManager {
   /**
    * Render all UI components
    */
-  render(): void {
+  render(time: number = 0): void {
     this.clearCanvas();
     this.renderLayout();
     this.renderControlPanel();
     this.renderRadars();
     this.renderTargetInfoPanel();
-    this.renderScanLines();
+    this.renderScanLines(time);
   }
 
   private clearCanvas(): void {
@@ -224,7 +224,7 @@ export class UIManager {
     ctx.restore();
   }
 
-  private renderScanLines(): void {
+  private renderScanLines(time: number): void {
     const ctx = this.canvasManager.context;
 
     ctx.save();
@@ -234,6 +234,17 @@ export class UIManager {
     for (let y = 0; y < this.canvasManager.height; y += 3) {
       ctx.fillRect(0, y, this.canvasManager.width, 1);
     }
+
+    // Moving scan line (refresh bar effect)
+    const scanSpeed = 100; // pixels per second
+    const scanHeight = 20; // Height of the moving bar
+    const scanY =
+      ((time * scanSpeed) % (this.canvasManager.height + scanHeight)) -
+      scanHeight;
+
+    // Use a slightly brighter color for the moving line
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+    ctx.fillRect(0, scanY, this.canvasManager.width, 2); // Height 2 as expected by test
 
     ctx.restore();
   }

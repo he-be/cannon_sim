@@ -543,7 +543,7 @@ export class GameScene {
     this.updateUIState();
 
     // Render UI (replaces all the individual render methods)
-    this.uiManager.render();
+    this.uiManager.render(this.animationTime);
 
     // Render game state overlays
     this.renderGameStateOverlay();

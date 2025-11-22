@@ -37,6 +37,9 @@ export interface ControlPanelState {
     elevation: number;
     confidence: 'HIGH' | 'MEDIUM' | 'LOW';
     flightTime?: number;
+    converged?: boolean;
+    iterations?: number;
+    accuracy?: number;
   } | null;
   gameTime: number;
   targetInfo: {
