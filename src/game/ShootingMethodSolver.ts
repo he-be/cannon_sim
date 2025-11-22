@@ -97,6 +97,11 @@ export class ShootingMethodSolver {
    * Solve shooting problem using Newton-Raphson method
    * Finds azimuth and elevation angles for hitting moving target
    */
+  /**
+   * Solve shooting problem using Newton-Raphson method
+   * Finds azimuth and elevation angles for hitting moving target
+   * Optimized with Broyden's method to reduce expensive Jacobian recalculations
+   */
   solve(
     artilleryPosition: Vector3,
     targetPosition: Vector3,
@@ -129,6 +134,15 @@ export class ShootingMethodSolver {
     // Reset oscillation detection
     this.errorHistory = [];
     this.angleHistory = [];
+
+    // Variables for Broyden's update
+    let currentJacobian: {
+      dE_dAzimuth: Vector3;
+      dE_dElevation: Vector3;
+    } | null = null;
+    let prevAzimuth = azimuth;
+    let prevElevation = elevation;
+    let prevErrorVector: Vector3 | null = null;
 
     for (let iteration = 0; iteration < this.MAX_ITERATIONS; iteration++) {
       // CORRECTED: Use CPA-based error calculation for accurate moving target handling
@@ -168,29 +182,82 @@ export class ShootingMethodSolver {
       }
 
       // Detect oscillation after 3 iterations
+      let isOscillating = false;
       if (iteration >= 3) {
-        const isOscillating = this.detectOscillation(iteration);
+        isOscillating = this.detectOscillation(iteration);
         if (isOscillating) {
           console.log(
             `ShootingMethod: Oscillation detected at iteration ${iteration}, using conservative damping`
           );
+          // If oscillating, force full Jacobian recalculation to get back on track
+          currentJacobian = null;
         }
       }
 
-      // Calculate Jacobian matrix for Newton-Raphson correction using CPA method
-      const jacobian = this.calculateJacobianCPA(
-        artilleryPosition,
-        azimuth,
-        elevation,
-        targetPosition,
-        targetVelocity
-      );
+      // Calculate or Update Jacobian
+      if (iteration === 0 || currentJacobian === null || isOscillating) {
+        // First iteration or reset: Calculate full Jacobian using finite differences (expensive: 2 extra simulations)
+        currentJacobian = this.calculateJacobianCPA(
+          artilleryPosition,
+          azimuth,
+          elevation,
+          targetPosition,
+          targetVelocity
+        );
+      } else {
+        // Subsequent iterations: Update Jacobian using Broyden's method (cheap: 0 extra simulations)
+        // J_{k+1} = J_k + ((ΔF - J_k * Δx) / ||Δx||^2) * Δx^T
+
+        const deltaAz = azimuth - prevAzimuth;
+        const deltaEl = elevation - prevElevation;
+
+        // Avoid update if change is too small to be numerically stable
+        if (Math.abs(deltaAz) > 1e-6 || Math.abs(deltaEl) > 1e-6) {
+          const deltaF = errorVector.subtract(prevErrorVector!);
+
+          // J_k * Δx
+          // J * [dAz, dEl]^T = dE_dAz * dAz + dE_dEl * dEl
+          const J_times_dx = currentJacobian.dE_dAzimuth
+            .multiply(deltaAz)
+            .add(currentJacobian.dE_dElevation.multiply(deltaEl));
+
+          // Numerator: ΔF - J_k * Δx
+          const numerator = deltaF.subtract(J_times_dx);
+
+          // Denominator: ||Δx||^2 = dAz^2 + dEl^2
+          const denominator = deltaAz * deltaAz + deltaEl * deltaEl;
+
+          // Update columns
+          // col1_new = col1_old + (numerator / denom) * dAz
+          const updateVector = numerator.multiply(1.0 / denominator);
+
+          currentJacobian.dE_dAzimuth = currentJacobian.dE_dAzimuth.add(
+            updateVector.multiply(deltaAz)
+          );
+          currentJacobian.dE_dElevation = currentJacobian.dE_dElevation.add(
+            updateVector.multiply(deltaEl)
+          );
+
+          console.log(
+            `ShootingMethod: Jacobian updated using Broyden's method`
+          );
+        } else {
+          // If step is too small, maybe we are stuck? Recalculate full Jacobian next time?
+          // For now, keep old Jacobian
+          console.log(
+            `ShootingMethod: Step too small for Broyden update, keeping previous Jacobian`
+          );
+        }
+      }
+
+      // Store current state for next Broyden update
+      prevAzimuth = azimuth;
+      prevElevation = elevation;
+      prevErrorVector = errorVector;
 
       // Apply Newton-Raphson correction: [θ, φ] = [θ, φ] - J⁻¹ * E
-      const isOscillating =
-        iteration >= 3 ? this.detectOscillation(iteration) : false;
       const angleCorrection = this.solveLinearSystem(
-        jacobian,
+        currentJacobian,
         errorVector,
         isOscillating
       );
@@ -230,6 +297,11 @@ export class ShootingMethodSolver {
    * Solve shooting problem starting from provided initial guess angles
    * Used for incremental calculations with previous results as starting point
    */
+  /**
+   * Solve shooting problem starting from provided initial guess angles
+   * Used for incremental calculations with previous results as starting point
+   * Optimized with Broyden's method
+   */
   solveFromInitialGuess(
     artilleryPosition: Vector3,
     targetPosition: Vector3,
@@ -245,9 +317,6 @@ export class ShootingMethodSolver {
     console.log(
       `ShootingMethod (Incremental): Starting from - Az: ${azimuth.toFixed(2)}°, El: ${elevation.toFixed(2)}°`
     );
-    console.log(
-      `ShootingMethod (Incremental): Max iterations: ${maxIterations}, Tolerance: ${convergenceTolerance.toFixed(1)}m`
-    );
 
     let converged = false;
     let finalError = Infinity;
@@ -256,6 +325,15 @@ export class ShootingMethodSolver {
     // Reset oscillation detection for this calculation
     const errorHistory: number[] = [];
     const angleHistory: { azimuth: number; elevation: number }[] = [];
+
+    // Variables for Broyden's update
+    let currentJacobian: {
+      dE_dAzimuth: Vector3;
+      dE_dElevation: Vector3;
+    } | null = null;
+    let prevAzimuth = azimuth;
+    let prevElevation = elevation;
+    let prevErrorVector: Vector3 | null = null;
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
       // CORRECTED: Use CPA-based error calculation for accurate moving target handling
@@ -296,7 +374,7 @@ export class ShootingMethodSolver {
         break;
       }
 
-      // Detect oscillation after 3 iterations (but less aggressive damping for incremental mode)
+      // Detect oscillation after 3 iterations
       let isOscillating = false;
       if (iteration >= 3) {
         isOscillating = this.detectOscillationInHistory(
@@ -308,21 +386,49 @@ export class ShootingMethodSolver {
           console.log(
             `ShootingMethod (Incremental): Oscillation detected at iteration ${iteration}`
           );
+          currentJacobian = null; // Reset Jacobian on oscillation
         }
       }
 
-      // Calculate Jacobian matrix for Newton-Raphson correction using CPA method
-      const jacobian = this.calculateJacobianCPA(
-        artilleryPosition,
-        azimuth,
-        elevation,
-        targetPosition,
-        targetVelocity
-      );
+      // Calculate or Update Jacobian
+      if (iteration === 0 || currentJacobian === null || isOscillating) {
+        currentJacobian = this.calculateJacobianCPA(
+          artilleryPosition,
+          azimuth,
+          elevation,
+          targetPosition,
+          targetVelocity
+        );
+      } else {
+        // Broyden's update
+        const deltaAz = azimuth - prevAzimuth;
+        const deltaEl = elevation - prevElevation;
+
+        if (Math.abs(deltaAz) > 1e-6 || Math.abs(deltaEl) > 1e-6) {
+          const deltaF = errorVector.subtract(prevErrorVector!);
+          const J_times_dx = currentJacobian.dE_dAzimuth
+            .multiply(deltaAz)
+            .add(currentJacobian.dE_dElevation.multiply(deltaEl));
+          const numerator = deltaF.subtract(J_times_dx);
+          const denominator = deltaAz * deltaAz + deltaEl * deltaEl;
+          const updateVector = numerator.multiply(1.0 / denominator);
+
+          currentJacobian.dE_dAzimuth = currentJacobian.dE_dAzimuth.add(
+            updateVector.multiply(deltaAz)
+          );
+          currentJacobian.dE_dElevation = currentJacobian.dE_dElevation.add(
+            updateVector.multiply(deltaEl)
+          );
+        }
+      }
+
+      prevAzimuth = azimuth;
+      prevElevation = elevation;
+      prevErrorVector = errorVector;
 
       // Apply Newton-Raphson correction with incremental-specific damping
       const angleCorrection = this.solveLinearSystemIncremental(
-        jacobian,
+        currentJacobian,
         errorVector,
         isOscillating,
         finalError
@@ -357,177 +463,6 @@ export class ShootingMethodSolver {
     );
 
     return result;
-  }
-
-  /**
-   * Simulate projectile trajectory with given launch angles
-   * Terminates when reaching target horizontal distance for accurate error calculation
-   */
-  private simulateTrajectory(
-    startPosition: Vector3,
-    azimuthDeg: number,
-    elevationDeg: number,
-    targetPosition?: Vector3
-  ): { endPosition: Vector3; flightTime: number } | null {
-    // Convert angles to radians
-    const azimuthRad = azimuthDeg * (Math.PI / 180);
-    const elevationRad = elevationDeg * (Math.PI / 180);
-
-    // Calculate initial velocity vector
-    const v0 = this.ballisticParams.initialVelocity;
-
-    // Debug: Check if initial values are valid
-    if (!isFinite(azimuthRad) || !isFinite(elevationRad) || !isFinite(v0)) {
-      console.error('Invalid initial values:', {
-        azimuthDeg,
-        elevationDeg,
-        v0,
-      });
-      return null;
-    }
-
-    const initialVelocity = new Vector3(
-      v0 * Math.cos(elevationRad) * Math.sin(azimuthRad), // East
-      v0 * Math.cos(elevationRad) * Math.cos(azimuthRad), // North
-      v0 * Math.sin(elevationRad) // Up
-    );
-
-    // Debug: Check if initial velocity is valid
-    if (
-      !isFinite(initialVelocity.x) ||
-      !isFinite(initialVelocity.y) ||
-      !isFinite(initialVelocity.z)
-    ) {
-      console.error('Invalid initial velocity:', initialVelocity);
-      return null;
-    }
-
-    // Initialize state
-    let state: State3D = {
-      position: new Vector3(startPosition.x, startPosition.y, startPosition.z),
-      velocity: new Vector3(
-        initialVelocity.x,
-        initialVelocity.y,
-        initialVelocity.z
-      ),
-    };
-
-    let time = 0;
-    let previousState = state;
-
-    // Calculate target horizontal distance
-    const targetHorizontalDistance = targetPosition
-      ? Math.sqrt(
-          (targetPosition.x - startPosition.x) ** 2 +
-            (targetPosition.y - startPosition.y) ** 2
-        )
-      : Infinity;
-
-    // Debug initial state
-    console.log(
-      `Trajectory: Az=${azimuthDeg.toFixed(2)}°, El=${elevationDeg.toFixed(2)}°, V0=${initialVelocity.magnitude().toFixed(1)}m/s, TargetDist=${targetHorizontalDistance.toFixed(0)}m`
-    );
-
-    // Integrate trajectory with safety checks
-    while (time < this.MAX_FLIGHT_TIME) {
-      // Advance physics simulation
-      const newState = this.physicsEngine.integrate(
-        state,
-        time,
-        this.PHYSICS_TIMESTEP
-      );
-
-      // Safety check for invalid state
-      if (
-        !isFinite(newState.position.x) ||
-        !isFinite(newState.position.y) ||
-        !isFinite(newState.position.z) ||
-        !isFinite(newState.velocity.x) ||
-        !isFinite(newState.velocity.y) ||
-        !isFinite(newState.velocity.z)
-      ) {
-        console.error(
-          'Invalid state detected at time',
-          time,
-          'state:',
-          newState
-        );
-        return null;
-      }
-
-      time += this.PHYSICS_TIMESTEP;
-
-      // Check if projectile reached target horizontal distance
-      if (targetPosition && targetHorizontalDistance < Infinity) {
-        const currentHorizontalDistance = Math.sqrt(
-          (newState.position.x - startPosition.x) ** 2 +
-            (newState.position.y - startPosition.y) ** 2
-        );
-        const previousHorizontalDistance = Math.sqrt(
-          (previousState.position.x - startPosition.x) ** 2 +
-            (previousState.position.y - startPosition.y) ** 2
-        );
-
-        // Check if we crossed the target distance
-        if (
-          (previousHorizontalDistance <= targetHorizontalDistance &&
-            currentHorizontalDistance >= targetHorizontalDistance) ||
-          (previousHorizontalDistance >= targetHorizontalDistance &&
-            currentHorizontalDistance <= targetHorizontalDistance)
-        ) {
-          // Linear interpolation
-          const deltaDistance =
-            currentHorizontalDistance - previousHorizontalDistance;
-          if (Math.abs(deltaDistance) > 1e-12) {
-            const t =
-              (targetHorizontalDistance - previousHorizontalDistance) /
-              deltaDistance;
-            const interpolatedPosition = new Vector3(
-              previousState.position.x +
-                t * (newState.position.x - previousState.position.x),
-              previousState.position.y +
-                t * (newState.position.y - previousState.position.y),
-              previousState.position.z +
-                t * (newState.position.z - previousState.position.z)
-            );
-            const interpolatedTime =
-              time - this.PHYSICS_TIMESTEP + t * this.PHYSICS_TIMESTEP;
-
-            console.log(
-              `Trajectory complete: t=${interpolatedTime.toFixed(2)}s, pos=${interpolatedPosition.x.toFixed(0)},${interpolatedPosition.y.toFixed(0)},${interpolatedPosition.z.toFixed(0)}`
-            );
-
-            return {
-              endPosition: interpolatedPosition,
-              flightTime: interpolatedTime,
-            };
-          }
-        }
-      }
-
-      // Ground impact check
-      if (!targetPosition && newState.position.z <= 0) {
-        console.log(
-          `Ground impact: t=${time.toFixed(2)}s, range=${Math.sqrt(newState.position.x ** 2 + newState.position.y ** 2).toFixed(0)}m`
-        );
-        return {
-          endPosition: newState.position,
-          flightTime: time,
-        };
-      }
-
-      previousState = state;
-      state = newState;
-    }
-
-    // Timeout
-    console.warn(
-      `Trajectory timeout: t=${time.toFixed(2)}s, final pos=${state.position.x.toFixed(0)},${state.position.y.toFixed(0)},${state.position.z.toFixed(0)}`
-    );
-    return {
-      endPosition: state.position,
-      flightTime: time,
-    };
   }
 
   /**
@@ -603,6 +538,11 @@ export class ShootingMethodSolver {
       `CPA Trajectory: Az=${azimuthDeg.toFixed(2)}°, El=${elevationDeg.toFixed(2)}°, V0=${initialVelocity.magnitude().toFixed(1)}m/s, MovingTarget=${isMovingTarget}`
     );
 
+    // Optimization: Stop if we are clearly moving away from the target
+    // We track if distance has been increasing for a while
+    let distanceIncreasingCount = 0;
+    const DISTANCE_INCREASE_THRESHOLD = 10; // Number of steps to confirm divergence
+
     // Simulate complete trajectory until ground impact (FIXED: allow simulation to start)
     while (time < this.MAX_FLIGHT_TIME) {
       // Advance physics simulation
@@ -663,6 +603,20 @@ export class ShootingMethodSolver {
           currentTargetPosition.y,
           currentTargetPosition.z
         );
+        distanceIncreasingCount = 0; // Reset counter
+      } else {
+        distanceIncreasingCount++;
+      }
+
+      // Optimization: Early exit if we have passed the CPA and are moving away
+      // We wait for a few steps to be sure it's not a local fluctuation
+      if (
+        distanceIncreasingCount > DISTANCE_INCREASE_THRESHOLD &&
+        minDistance < 10000
+      ) {
+        // Only exit if we found a "reasonable" CPA (e.g. < 10km) or if we simulated enough
+        // This prevents exiting too early if the initial guess is very far off
+        break;
       }
 
       // Exit when projectile hits ground (but allow simulation to run first)
@@ -997,13 +951,6 @@ export class ShootingMethodSolver {
    * Predict target position at given future time
    * PT(tf) = PT(0) + vT * tf
    */
-  private predictTargetPosition(
-    currentPosition: Vector3,
-    velocity: Vector3,
-    flightTime: number
-  ): Vector3 {
-    return currentPosition.add(velocity.multiply(flightTime));
-  }
 
   /**
    * Calculate initial azimuth guess using target bearing
