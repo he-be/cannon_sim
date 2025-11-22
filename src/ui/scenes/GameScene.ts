@@ -36,6 +36,9 @@ interface ExtendedLeadAngle {
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   convergenceError?: number;
   flightTime?: number;
+  converged?: boolean;
+  iterations?: number;
+  accuracy?: number;
 }
 export enum GameState {
   PLAYING = 'playing',
@@ -125,6 +128,22 @@ export class GameScene {
 
   // Animation
   private animationTime: number = 0;
+
+  // Keyboard state for smooth controls
+  private keyState: {
+    ArrowLeft: boolean;
+    ArrowRight: boolean;
+    ArrowUp: boolean;
+    ArrowDown: boolean;
+  } = {
+    ArrowLeft: false,
+    ArrowRight: false,
+    ArrowUp: false,
+    ArrowDown: false,
+  };
+
+  private readonly RADAR_ROTATION_SPEED = 60; // degrees per second
+  private readonly RADAR_ZOOM_SPEED = 5000; // meters per second
 
   // UI Layout is now handled by UIManager
 
@@ -306,6 +325,7 @@ export class GameScene {
 
     // Keyboard events for game controls
     window.addEventListener('keydown', event => this.handleKeyDown(event));
+    window.addEventListener('keyup', event => this.handleKeyUp(event));
   }
 
   /**
@@ -319,6 +339,9 @@ export class GameScene {
 
     // Update targets
     this.updateTargets(deltaTime);
+
+    // Update radar controls based on keyboard state
+    this.updateRadarControls(deltaTime);
 
     // Update projectiles
     this.updateProjectiles(deltaTime);
@@ -558,6 +581,7 @@ export class GameScene {
   destroy(): void {
     this.mouseHandler.destroy();
     window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp);
   }
 
   /**
@@ -1041,7 +1065,24 @@ export class GameScene {
   /**
    * Handle keyboard events
    */
+  /**
+   * Handle keyboard key down events
+   */
   private handleKeyDown = (event: KeyboardEvent): void => {
+    // Prevent default scrolling for arrow keys and space
+    if (
+      ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
+        event.key
+      )
+    ) {
+      event.preventDefault();
+    }
+
+    // Update key state
+    if (event.key in this.keyState) {
+      this.keyState[event.key as keyof typeof this.keyState] = true;
+    }
+
     switch (event.key) {
       case 'r':
       case 'R':
@@ -1052,14 +1093,79 @@ export class GameScene {
       case ' ':
         if (this.gameState === GameState.STAGE_CLEAR) {
           this.onSceneTransition({ type: SceneType.STAGE_SELECT });
+        } else if (this.gameState === GameState.PLAYING) {
+          this.fireProjectile();
         }
         break;
       case 'f':
       case 'F':
         this.fireProjectile();
         break;
+      case 'l':
+      case 'L':
+        this.handleTargetLock();
+        break;
+      case 'k':
+      case 'K':
+        this.handleAutoToggle();
+        break;
     }
   };
+
+  /**
+   * Handle keyboard key up events
+   */
+  private handleKeyUp = (event: KeyboardEvent): void => {
+    if (event.key in this.keyState) {
+      this.keyState[event.key as keyof typeof this.keyState] = false;
+    }
+  };
+
+  /**
+   * Update radar controls based on keyboard state
+   */
+  private updateRadarControls(deltaTime: number): void {
+    let layoutChanged = false;
+
+    if (this.keyState.ArrowLeft) {
+      // Rotate radar left (decrease azimuth)
+      this.radarAzimuth =
+        (this.radarAzimuth - this.RADAR_ROTATION_SPEED * deltaTime + 360) % 360;
+      layoutChanged = true;
+    }
+    if (this.keyState.ArrowRight) {
+      // Rotate radar right (increase azimuth)
+      this.radarAzimuth =
+        (this.radarAzimuth + this.RADAR_ROTATION_SPEED * deltaTime) % 360;
+      layoutChanged = true;
+    }
+
+    if (layoutChanged) {
+      this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
+    }
+
+    let rangeChanged = false;
+    if (this.keyState.ArrowUp) {
+      // Increase radar range
+      this.radarRange = Math.min(
+        this.radarRange + this.RADAR_ZOOM_SPEED * deltaTime,
+        this.maxRadarRange
+      );
+      rangeChanged = true;
+    }
+    if (this.keyState.ArrowDown) {
+      // Decrease radar range
+      this.radarRange = Math.max(
+        this.radarRange - this.RADAR_ZOOM_SPEED * deltaTime,
+        1000
+      );
+      rangeChanged = true;
+    }
+
+    if (rangeChanged) {
+      this.uiManager.setRadarRange(this.radarRange);
+    }
+  }
 
   /**
    * Render radar elevation display in horizontal radar (T046)
