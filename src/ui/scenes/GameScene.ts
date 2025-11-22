@@ -417,6 +417,34 @@ export class GameScene {
       this.uiManager.setTargetInfo(null);
     }
 
+    // Update target list (TRACK)
+    const targetListData = this.targets
+      .filter(t => !t.isDestroyed && this.gameTime >= t.spawnTime)
+      .map(target => {
+        const relativePos = target.position.subtract(this.artilleryPosition);
+        const distance = relativePos.magnitude();
+
+        // Calculate if approaching or receding
+        // Dot product of velocity and relative position vector
+        // If negative, they are opposing (approaching)
+        // If positive, they are aligned (receding)
+        let isApproaching = false;
+        if (target.velocity) {
+          const dot = target.velocity.dot(relativePos);
+          isApproaching = dot < 0;
+        }
+
+        return {
+          id: target.id,
+          type: this.getTargetDisplayName(target.type as TargetType),
+          distance: distance,
+          altitude: target.position.z,
+          isApproaching: isApproaching,
+        };
+      });
+
+    this.uiManager.setTargetList(targetListData);
+
     // Update lead angle
     if (this.currentLeadAngle) {
       this.uiManager.setLeadAngle(this.currentLeadAngle);

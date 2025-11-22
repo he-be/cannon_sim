@@ -18,6 +18,10 @@ import {
   RadarTarget,
   RadarState,
 } from './components/RadarRenderer';
+import {
+  TargetListRenderer,
+  TargetListData,
+} from './components/TargetListRenderer';
 import { CRT_COLORS } from '../data/Constants';
 
 export interface UIEvents extends ControlPanelEvents, RadarEvents {}
@@ -34,6 +38,7 @@ export class UIManager {
   // UI Components
   private controlPanel!: ControlPanelRenderer;
   private radarRenderer!: RadarRenderer;
+  private targetListRenderer!: TargetListRenderer;
 
   // Layout configuration
   private layout: UILayoutConfig;
@@ -41,6 +46,7 @@ export class UIManager {
     controlPanel: { x: number; y: number; width: number; height: number };
     horizontalRadar: { x: number; y: number; width: number; height: number };
     verticalRadar: { x: number; y: number; width: number; height: number };
+    targetList: { x: number; y: number; width: number; height: number };
   };
 
   constructor(
@@ -84,7 +90,13 @@ export class UIManager {
         x: canvasWidth - this.layout.verticalRadarWidth,
         y: 0,
         width: this.layout.verticalRadarWidth,
-        height: Math.floor(canvasHeight * 0.65), // 65% of height for radar, rest for target info
+        height: Math.floor(canvasHeight * 0.5), // 50% of height for radar
+      },
+      targetList: {
+        x: canvasWidth - this.layout.verticalRadarWidth,
+        y: Math.floor(canvasHeight * 0.5),
+        width: this.layout.verticalRadarWidth,
+        height: Math.floor(canvasHeight * 0.5),
       },
     };
   }
@@ -116,6 +128,12 @@ export class UIManager {
       this.bounds.horizontalRadar,
       this.bounds.verticalRadar
     );
+
+    // Initialize target list renderer
+    this.targetListRenderer = new TargetListRenderer(
+      this.canvasManager,
+      this.bounds.targetList
+    );
   }
 
   /**
@@ -126,7 +144,7 @@ export class UIManager {
     this.renderLayout();
     this.renderControlPanel();
     this.renderRadars();
-    this.renderTargetInfoPanel();
+    this.renderTargetList();
     this.renderScanLines(time);
   }
 
@@ -196,32 +214,8 @@ export class UIManager {
     this.radarRenderer.render();
   }
 
-  private renderTargetInfoPanel(): void {
-    const ctx = this.canvasManager.context;
-    const bounds = {
-      x: this.bounds.verticalRadar.x,
-      y: this.bounds.verticalRadar.y + this.bounds.verticalRadar.height,
-      width: this.bounds.verticalRadar.width,
-      height:
-        this.canvasManager.height -
-        (this.bounds.verticalRadar.y + this.bounds.verticalRadar.height),
-    };
-
-    ctx.save();
-
-    // Panel background
-    ctx.fillStyle = 'rgba(0, 50, 0, 0.3)';
-    ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
-
-    // Panel border
-    ctx.strokeStyle = CRT_COLORS.GRID_LINE;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
-
-    // This will be populated by the control panel's target info
-    // The target info display is handled by the ControlPanelRenderer
-
-    ctx.restore();
+  private renderTargetList(): void {
+    this.targetListRenderer.render();
   }
 
   private renderScanLines(time: number): void {
@@ -476,6 +470,13 @@ export class UIManager {
     this.calculateBounds();
     // Reinitialize components with new bounds
     this.initializeComponents();
+  }
+
+  /**
+   * Update target list
+   */
+  setTargetList(targets: TargetListData[]): void {
+    this.targetListRenderer.updateTargets(targets);
   }
 
   /**
