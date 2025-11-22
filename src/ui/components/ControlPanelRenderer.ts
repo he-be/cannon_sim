@@ -260,6 +260,8 @@ export class ControlPanelRenderer {
     const oldState = { ...this.state };
     this.state = { ...this.state, ...newState };
 
+    let layoutChanged = false;
+
     // Update components based on state changes
     if (
       newState.azimuth !== undefined &&
@@ -284,6 +286,7 @@ export class ControlPanelRenderer {
       this.lockButton.setText(newState.isLocked ? 'UNLOCK' : 'LOCK ON');
       // Enable AUTO button only when locked
       this.autoButton.setVisible(newState.isLocked);
+      layoutChanged = true;
     }
 
     if (
@@ -294,6 +297,11 @@ export class ControlPanelRenderer {
       // Disable sliders when in auto mode
       this.azimuthSlider.setVisible(!newState.isAutoMode);
       this.elevationSlider.setVisible(!newState.isAutoMode);
+      layoutChanged = true;
+    }
+
+    if (layoutChanged) {
+      this.updateLayout();
     }
 
     if (
@@ -318,13 +326,8 @@ export class ControlPanelRenderer {
 
   private updateRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
     if (radarInfo) {
-      // Convert azimuth from 0-360 to -180-180 to match Artillery display
-      let normalizedAzimuth = radarInfo.azimuth;
-      if (normalizedAzimuth > 180) {
-        normalizedAzimuth = normalizedAzimuth - 360;
-      }
-
-      this.radarGroup.updateAzimuth(normalizedAzimuth);
+      // Use standardized 0-360 azimuth
+      this.radarGroup.updateAzimuth(radarInfo.azimuth);
       this.radarGroup.updateElevation(radarInfo.elevation);
       this.radarGroup.updateRange(radarInfo.range);
     } else {
@@ -377,13 +380,8 @@ export class ControlPanelRenderer {
           confidenceColor = CRT_COLORS.SECONDARY_TEXT;
       }
 
-      // Convert azimuth from 0-360 to -180-180 to match Artillery display
-      let normalizedAzimuth = leadAngle.azimuth;
-      if (normalizedAzimuth > 180) {
-        normalizedAzimuth = normalizedAzimuth - 360;
-      }
-
-      this.leadAngleGroup.updateAzimuth(normalizedAzimuth);
+      // Use standardized 0-360 azimuth
+      this.leadAngleGroup.updateAzimuth(leadAngle.azimuth);
       this.leadAngleGroup.updateElevation(leadAngle.elevation);
       this.leadAngleGroup.updateInfoItem(
         'Confidence',
@@ -440,6 +438,15 @@ export class ControlPanelRenderer {
     this.updateState({ radarInfo });
   }
 
+  private updateLayout(): void {
+    // Recalculate dynamic heights
+    this.buttonsContainer.bounds.height =
+      this.buttonsContainer.getPreferredHeight();
+
+    // Force root container to recalculate layout
+    this.rootContainer.calculateLayout();
+  }
+
   private calculateAllLayouts(): void {
     // First, ensure all leaf components have proper sizes
     this.titleComponent.updateSize();
@@ -458,7 +465,11 @@ export class ControlPanelRenderer {
     this.radarGroup.bounds.height = 80;
     this.targetingGroup.bounds.height = 40;
     this.leadAngleGroup.bounds.height = 80;
-    this.buttonsContainer.bounds.height = 85;
+
+    // Initial dynamic height calculation
+    this.buttonsContainer.bounds.height =
+      this.buttonsContainer.getPreferredHeight();
+
     this.timeDisplay.bounds.height = 20;
 
     // Now calculate the main layout

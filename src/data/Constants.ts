@@ -57,10 +57,10 @@ export const CRT_COLORS = {
 } as const;
 
 export const FONTS = {
-  TITLE: 'bold 18px monospace',
-  SUBTITLE: '14px monospace',
-  DATA: '12px monospace',
-  SMALL: '10px monospace',
+  TITLE: 'bold 18px "Space Mono", monospace',
+  SUBTITLE: '14px "Space Mono", monospace',
+  DATA: '12px "Space Mono", monospace',
+  SMALL: '10px "Space Mono", monospace',
 } as const;
 
 /**

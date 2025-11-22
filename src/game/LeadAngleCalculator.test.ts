@@ -120,7 +120,9 @@ describe('LeadAngleCalculator (basic implementation)', () => {
       );
 
       // Should be very close to direct aim
-      const directAimAzimuth = Math.atan2(500, 500) * (180 / Math.PI);
+      // Convert Math.atan2 (East=0, CCW) to Nav (North=0, CW)
+      const mathAzimuth = Math.atan2(500, 500) * (180 / Math.PI);
+      const directAimAzimuth = 90 - mathAzimuth; // 45 degrees
       expect(Math.abs(leadAngle.azimuth - directAimAzimuth)).toBeLessThan(2);
     });
   });

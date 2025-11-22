@@ -36,6 +36,13 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/** Normalize angle to [0, 360) range */
+export function normalizeAngleDegrees(degrees: number): number {
+  degrees = degrees % 360;
+  if (degrees < 0) degrees += 360;
+  return degrees;
+}
+
 /** Normalize angle to [-π, π) range */
 export function normalizeAngleRad(theta: number): number {
   const twoPi = Math.PI * 2;

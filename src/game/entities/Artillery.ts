@@ -74,7 +74,17 @@ export class Artillery {
     const horizontalDistance = Math.sqrt(delta.x * delta.x + delta.y * delta.y);
 
     const elevation = Math.atan2(delta.z, horizontalDistance) * (180 / Math.PI);
-    const azimuth = Math.atan2(delta.y, delta.x) * (180 / Math.PI);
+
+    // Convert from Math.atan2 (East=0, CCW) to Navigation (North=0, CW)
+    // Math: East=0, North=90, West=180, South=-90
+    // Nav: North=0, East=90, South=180, West=270
+    // Formula: Nav = 90 - Math
+    const mathAzimuth = Math.atan2(delta.y, delta.x) * (180 / Math.PI);
+    let azimuth = 90 - mathAzimuth;
+
+    // Normalize to 0-360
+    azimuth = azimuth % 360;
+    if (azimuth < 0) azimuth += 360;
 
     return { elevation, azimuth };
   }
@@ -132,10 +142,16 @@ export class Artillery {
     }
 
     const delta = this._targetPosition.subtract(this._position);
-    const bearing = Math.atan2(delta.y, delta.x) * (180 / Math.PI);
+    const mathAzimuth = Math.atan2(delta.y, delta.x) * (180 / Math.PI);
 
-    // Convert to 0-360 degrees
-    return bearing < 0 ? bearing + 360 : bearing;
+    // Convert to Navigation (North=0, CW)
+    let bearing = 90 - mathAzimuth;
+
+    // Normalize to 0-360
+    bearing = bearing % 360;
+    if (bearing < 0) bearing += 360;
+
+    return bearing;
   }
 
   /**
@@ -160,8 +176,8 @@ export class Artillery {
    */
   getLeadCalculationInfo(): {
     leadAngle: LeadAngle;
-    confidence: number;
-    leadDistance: number;
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+    leadDistance?: number;
   } | null {
     if (!this._targetPosition) {
       return null;
