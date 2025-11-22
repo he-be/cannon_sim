@@ -28,8 +28,10 @@ export interface ControlPanelEvents {
 }
 
 export interface ControlPanelState {
-  azimuth: number; // -180 to 180
-  elevation: number; // 0 to 90
+  azimuth: number; // -180 to 180 (Current)
+  elevation: number; // 0 to 90 (Current)
+  commandedAzimuth?: number;
+  commandedElevation?: number;
   isLocked: boolean;
   isAutoMode: boolean;
   leadAngle: {
@@ -123,6 +125,8 @@ export class ControlPanelRenderer {
     this.artilleryGroup = new InfoGroupComponent('artillery', 'Artillery', [
       { label: 'Az', value: `${this.state.azimuth.toFixed(1)}°` },
       { label: 'El', value: `${this.state.elevation.toFixed(1)}°` },
+      { label: 'Cmd Az', value: '---°' },
+      { label: 'Cmd El', value: '---°' },
     ]);
 
     // Sliders
@@ -267,6 +271,11 @@ export class ControlPanelRenderer {
       newState.azimuth !== undefined &&
       newState.azimuth !== oldState.azimuth
     ) {
+      // Sliders control commanded value, but we update them to reflect current state if manual?
+      // Actually, sliders should probably reflect commanded value if we want to control it.
+      // But for now let's keep them showing current, or maybe commanded?
+      // The requirement says "UI displays both".
+      // Let's update the text display to show both.
       this.azimuthSlider.setValue(newState.azimuth);
       this.artilleryGroup.updateAzimuth(newState.azimuth);
     }
@@ -277,6 +286,20 @@ export class ControlPanelRenderer {
     ) {
       this.elevationSlider.setValue(newState.elevation);
       this.artilleryGroup.updateElevation(newState.elevation);
+    }
+
+    if (newState.commandedAzimuth !== undefined) {
+      this.artilleryGroup.updateInfoItem(
+        'Cmd Az',
+        `${newState.commandedAzimuth.toFixed(1)}°`
+      );
+    }
+
+    if (newState.commandedElevation !== undefined) {
+      this.artilleryGroup.updateInfoItem(
+        'Cmd El',
+        `${newState.commandedElevation.toFixed(1)}°`
+      );
     }
 
     if (
@@ -410,8 +433,18 @@ export class ControlPanelRenderer {
     return { ...this.state };
   }
 
-  setAngles(azimuth: number, elevation: number): void {
-    this.updateState({ azimuth, elevation });
+  setAngles(
+    azimuth: number,
+    elevation: number,
+    commandedAzimuth?: number,
+    commandedElevation?: number
+  ): void {
+    this.updateState({
+      azimuth,
+      elevation,
+      commandedAzimuth,
+      commandedElevation,
+    });
   }
 
   setLeadAngle(leadAngle: ControlPanelState['leadAngle']): void {
@@ -461,7 +494,7 @@ export class ControlPanelRenderer {
     this.menuButton.bounds = { x: 0, y: 0, width: 120, height: 25 };
 
     // Set info group heights
-    this.artilleryGroup.bounds.height = 60;
+    this.artilleryGroup.bounds.height = 80; // Increased height for extra info
     this.radarGroup.bounds.height = 80;
     this.targetingGroup.bounds.height = 40;
     this.leadAngleGroup.bounds.height = 80;

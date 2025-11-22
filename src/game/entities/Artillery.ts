@@ -33,6 +33,15 @@ export class Artillery {
   private _state: ArtilleryState = ArtilleryState.READY;
   private _leadCalculator: LeadAngleCalculator;
 
+  // Heavy cannon mechanics
+  private _currentAzimuth: number = 0;
+  private _currentElevation: number = 45;
+  private _commandedAzimuth: number = 0;
+  private _commandedElevation: number = 45;
+
+  private readonly ROTATION_SPEED_AZIMUTH = 10; // degrees per second
+  private readonly ROTATION_SPEED_ELEVATION = 5; // degrees per second
+
   constructor(position: Vector3) {
     this._position = position.copy();
     this._leadCalculator = new LeadAngleCalculator();
@@ -50,8 +59,70 @@ export class Artillery {
     return this._state;
   }
 
+  get currentAzimuth(): number {
+    return this._currentAzimuth;
+  }
+
+  get currentElevation(): number {
+    return this._currentElevation;
+  }
+
+  get commandedAzimuth(): number {
+    return this._commandedAzimuth;
+  }
+
+  get commandedElevation(): number {
+    return this._commandedElevation;
+  }
+
   canFire(): boolean {
     return this._state === ArtilleryState.READY;
+  }
+
+  /**
+   * Set commanded angles for the artillery to rotate towards
+   */
+  setCommandedAngles(azimuth: number, elevation: number): void {
+    this._commandedAzimuth = azimuth;
+    this._commandedElevation = elevation;
+  }
+
+  /**
+   * Update artillery state (rotation)
+   */
+  update(deltaTime: number): void {
+    // Update Azimuth
+    if (this._currentAzimuth !== this._commandedAzimuth) {
+      let diff = this._commandedAzimuth - this._currentAzimuth;
+
+      // Handle wrap-around (shortest path)
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+
+      const maxRotation = this.ROTATION_SPEED_AZIMUTH * deltaTime;
+
+      if (Math.abs(diff) <= maxRotation) {
+        this._currentAzimuth = this._commandedAzimuth;
+      } else {
+        this._currentAzimuth += Math.sign(diff) * maxRotation;
+      }
+
+      // Normalize current azimuth
+      this._currentAzimuth = this._currentAzimuth % 360;
+      if (this._currentAzimuth < 0) this._currentAzimuth += 360;
+    }
+
+    // Update Elevation
+    if (this._currentElevation !== this._commandedElevation) {
+      const diff = this._commandedElevation - this._currentElevation;
+      const maxRotation = this.ROTATION_SPEED_ELEVATION * deltaTime;
+
+      if (Math.abs(diff) <= maxRotation) {
+        this._currentElevation = this._commandedElevation;
+      } else {
+        this._currentElevation += Math.sign(diff) * maxRotation;
+      }
+    }
   }
 
   /**
@@ -66,6 +137,17 @@ export class Artillery {
    * Calculate firing angle for targeting (UI-01)
    */
   getFiringAngle(): FiringAngle {
+    // Return current actual angles
+    return {
+      elevation: this._currentElevation,
+      azimuth: this._currentAzimuth,
+    };
+  }
+
+  /**
+   * Calculate required firing angle to hit target
+   */
+  calculateFiringSolution(): FiringAngle {
     if (!this._targetPosition) {
       throw new Error('No target position set');
     }
@@ -76,9 +158,6 @@ export class Artillery {
     const elevation = Math.atan2(delta.z, horizontalDistance) * (180 / Math.PI);
 
     // Convert from Math.atan2 (East=0, CCW) to Navigation (North=0, CW)
-    // Math: East=0, North=90, West=180, South=-90
-    // Nav: North=0, East=90, South=180, West=270
-    // Formula: Nav = 90 - Math
     const mathAzimuth = Math.atan2(delta.y, delta.x) * (180 / Math.PI);
     let azimuth = 90 - mathAzimuth;
 
@@ -97,16 +176,17 @@ export class Artillery {
       throw new Error('Artillery not ready to fire');
     }
 
-    if (!this._targetPosition) {
-      throw new Error('No target position set');
-    }
+    // Use current actual angles for firing
+    // Calculate velocity vector based on current azimuth and elevation
+    const muzzleVelocity = 800; // Using value from getConfiguration
+    const azimuthRad = this._currentAzimuth * (Math.PI / 180);
+    const elevationRad = this._currentElevation * (Math.PI / 180);
 
-    const delta = this._targetPosition.subtract(this._position);
-    const distance = delta.magnitude();
-
-    // Simple velocity calculation towards target
-    // Physics engine will handle proper trajectory calculation
-    const velocity = delta.normalize().multiply(distance * 0.1);
+    const velocity = new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
 
     this._state = ArtilleryState.FIRED;
 

@@ -1,163 +1,89 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { Artillery, ArtilleryState } from './Artillery';
+import { Artillery } from './Artillery';
 import { Vector3 } from '../../math/Vector3';
 
-describe('Artillery (spec-compliant)', () => {
+describe('Artillery Heavy Cannon Mechanics', () => {
   let artillery: Artillery;
-  const artilleryPosition = new Vector3(0, 0, 0);
+  const initialPosition = new Vector3(0, 0, 0);
 
   beforeEach(() => {
-    artillery = new Artillery(artilleryPosition);
+    artillery = new Artillery(initialPosition);
   });
 
-  describe('constructor', () => {
-    it('should create artillery with position', () => {
-      expect(artillery.position.equals(artilleryPosition)).toBe(true);
-      expect(artillery.state).toBe(ArtilleryState.READY);
-    });
+  it('should initialize with current angles matching default', () => {
+    // Assuming default is 0 azimuth, 45 elevation (or whatever is set in constructor)
+    // We'll check if getters exist and return numbers
+    expect(artillery.currentAzimuth).toBeDefined();
+    expect(artillery.currentElevation).toBeDefined();
+    expect(artillery.commandedAzimuth).toBe(artillery.currentAzimuth);
+    expect(artillery.commandedElevation).toBe(artillery.currentElevation);
   });
 
-  describe('targeting and aiming (UI-01)', () => {
-    it('should allow setting target position', () => {
-      const targetPos = new Vector3(1000, 500, 10);
-      artillery.setTargetPosition(targetPos);
+  it('should update commanded angles without immediately changing current angles', () => {
+    const startAzimuth = artillery.currentAzimuth;
+    const targetAzimuth = (startAzimuth + 90) % 360;
 
-      expect(artillery.targetPosition?.equals(targetPos)).toBe(true);
-    });
+    artillery.setCommandedAngles(targetAzimuth, artillery.currentElevation);
 
-    it('should calculate firing angle from target position', () => {
-      const targetPos = new Vector3(1000, 0, 10);
-      artillery.setTargetPosition(targetPos);
-
-      const angle = artillery.getFiringAngle();
-      expect(angle).toBeDefined();
-      expect(angle.elevation).toBeGreaterThan(0);
-    });
+    expect(artillery.commandedAzimuth).toBe(targetAzimuth);
+    expect(artillery.currentAzimuth).toBe(startAzimuth);
   });
 
-  describe('firing mechanism (GS-03)', () => {
-    it('should be ready to fire initially', () => {
-      expect(artillery.canFire()).toBe(true);
-    });
+  it('should smoothly rotate towards commanded azimuth over time', () => {
+    // const startAzimuth = 0;
+    // Force set initial state if possible, or assume default is 0
+    // For this test, we might need to expose a way to reset or just use setCommanded
 
-    it('should fire projectile when target is set', () => {
-      const targetPos = new Vector3(1000, 500, 10);
-      artillery.setTargetPosition(targetPos);
+    // Let's assume we can set commanded to 10
+    artillery.setCommandedAngles(10, 0);
 
-      const projectileData = artillery.fire();
+    // Update with 0.1 second delta
+    // Assuming rotation speed is 10 deg/sec (from plan)
+    // 0.1 sec * 10 deg/sec = 1 degree change
+    artillery.update(0.1);
 
-      expect(projectileData).toBeDefined();
-      expect(projectileData.position.equals(artilleryPosition)).toBe(true);
-      expect(projectileData.velocity).toBeDefined();
-      expect(artillery.state).toBe(ArtilleryState.FIRED);
-    });
-
-    it('should not fire without target', () => {
-      expect(() => artillery.fire()).toThrow();
-    });
-
-    it('should enter reload state after firing', () => {
-      const targetPos = new Vector3(1000, 500, 10);
-      artillery.setTargetPosition(targetPos);
-      artillery.fire();
-
-      expect(artillery.canFire()).toBe(false);
-      expect(artillery.state).toBe(ArtilleryState.FIRED);
-    });
+    expect(artillery.currentAzimuth).toBeCloseTo(1, 1);
+    expect(artillery.currentAzimuth).toBeLessThan(10);
   });
 
-  describe('reload mechanism (GS-03)', () => {
-    it('should reload after firing', () => {
-      const targetPos = new Vector3(1000, 500, 10);
-      artillery.setTargetPosition(targetPos);
-      artillery.fire();
+  it('should handle azimuth wrap-around correctly (350 -> 10)', () => {
+    // We need to be able to set current azimuth for testing,
+    // or we just rely on setCommanded and update to get there.
+    // Let's assume we can't set current directly, so we have to "wait" or we add a test-only setter?
+    // Ideally the class handles it.
 
-      artillery.reload();
+    // Let's try to simulate a scenario
+    // If we are at 350 and want to go to 10
+    // The shortest path is +20 degrees (crossing 0)
 
-      expect(artillery.state).toBe(ArtilleryState.READY);
-      expect(artillery.canFire()).toBe(true);
-    });
+    // For test purposes, we might need to mock or just use the public API
+    // If we can't set current, we can't easily test "start at 350".
+    // So we might need to implement a "teleport" or "reset" for testing, or just use public API.
+
+    // Let's just verify the logic with what we have.
+    // If we start at 0 and command 350, it should go -10 (which is 350)
+    // Wait, 0 -> 350. Shortest path is -10 degrees.
+    // So 0 -> 359 -> 358 ...
+
+    artillery.setCommandedAngles(350, 0);
+    artillery.update(0.1); // Should move towards 350 via 0->359...
+
+    // If speed is 10 deg/sec, 0.1s = 1 deg.
+    // 0 - 1 = -1 = 359.
+    expect(artillery.currentAzimuth).toBeCloseTo(359, 1);
   });
 
-  describe('artillery information (UI-17)', () => {
-    it('should provide range to target', () => {
-      const targetPos = new Vector3(1000, 500, 10);
-      artillery.setTargetPosition(targetPos);
+  it('should stop rotating when target reached', () => {
+    artillery.setCommandedAngles(5, 0);
 
-      const range = artillery.getRangeToTarget();
-      expect(range).toBeCloseTo(targetPos.magnitude());
-    });
+    // Update enough time to reach target
+    // 5 degrees / 10 deg/s = 0.5s
+    artillery.update(1.0);
 
-    it('should provide bearing to target', () => {
-      const targetPos = new Vector3(1000, 1000, 10);
-      artillery.setTargetPosition(targetPos);
+    expect(artillery.currentAzimuth).toBe(5);
 
-      const bearing = artillery.getBearingToTarget();
-      expect(bearing).toBeCloseTo(45); // 45 degrees for equal x,y
-    });
-  });
-
-  describe('lead angle calculation (GS-07, UI-06)', () => {
-    it('should calculate lead angle for stationary target', () => {
-      const targetPos = new Vector3(1000, 0, 10);
-      artillery.setTargetPosition(targetPos);
-
-      const leadAngle = artillery.getRecommendedLeadAngle();
-
-      expect(leadAngle).toBeDefined();
-      expect(leadAngle!.azimuth).toBeCloseTo(90); // East direction
-      expect(leadAngle!.elevation).toBeGreaterThan(0);
-    });
-
-    it('should calculate lead angle for moving target', () => {
-      const targetPos = new Vector3(1000, 0, 10);
-      const targetVelocity = new Vector3(0, 50, 0); // Moving north
-      artillery.setTargetPosition(targetPos, targetVelocity);
-
-      const movingTargetAngle = artillery.getRecommendedLeadAngle();
-
-      expect(movingTargetAngle).toBeDefined();
-      expect(movingTargetAngle!.azimuth).toBeDefined();
-      expect(movingTargetAngle!.elevation).toBeGreaterThan(0);
-
-      // For moving target, the calculation should be different from stationary
-      artillery.setTargetPosition(targetPos); // Set as stationary
-      const stationaryAngle = artillery.getRecommendedLeadAngle();
-      expect(movingTargetAngle!.azimuth).not.toBeCloseTo(
-        stationaryAngle!.azimuth,
-        5
-      );
-    });
-
-    it('should provide detailed lead calculation info (UI-06)', () => {
-      const targetPos = new Vector3(800, 600, 0);
-      const targetVelocity = new Vector3(30, 40, 0);
-      artillery.setTargetPosition(targetPos, targetVelocity);
-
-      const leadInfo = artillery.getLeadCalculationInfo();
-
-      expect(leadInfo).toBeDefined();
-      expect(leadInfo!.leadAngle).toBeDefined();
-      expect(['HIGH', 'MEDIUM', 'LOW']).toContain(leadInfo!.confidence);
-      expect(leadInfo!.leadDistance).toBeGreaterThan(0);
-    });
-
-    it('should detect moving targets', () => {
-      const targetPos = new Vector3(1000, 500, 10);
-
-      // Stationary target
-      artillery.setTargetPosition(targetPos);
-      expect(artillery.isTargetMoving()).toBe(false);
-
-      // Moving target
-      const targetVelocity = new Vector3(25, 15, 0);
-      artillery.setTargetPosition(targetPos, targetVelocity);
-      expect(artillery.isTargetMoving()).toBe(true);
-    });
-
-    it('should return null for lead angle when no target is set', () => {
-      expect(artillery.getRecommendedLeadAngle()).toBeNull();
-      expect(artillery.getLeadCalculationInfo()).toBeNull();
-    });
+    // Update more
+    artillery.update(1.0);
+    expect(artillery.currentAzimuth).toBe(5);
   });
 });

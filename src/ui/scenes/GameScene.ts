@@ -26,6 +26,7 @@ import {
   CRT_COLORS,
 } from '../../data/Constants';
 import { TargetType } from '../../game/entities/Target';
+import { Artillery } from '../../game/entities/Artillery';
 import { UIManager, UIEvents } from '../UIManager';
 import { RadarTarget } from '../components/RadarRenderer';
 
@@ -96,6 +97,7 @@ export class GameScene {
   // Game entities
   private targets: TargetState[] = [];
   private projectiles: ProjectileState[] = [];
+  private artillery: Artillery;
   private artilleryPosition: Vector3;
 
   // Targeting system
@@ -106,8 +108,8 @@ export class GameScene {
   private isAutoMode: boolean = false;
 
   // Artillery controls
-  private azimuthAngle: number = 0;
-  private elevationAngle: number = 45;
+  // Artillery controls
+  // Removed: azimuthAngle and elevationAngle are now managed by Artillery entity
 
   // Radar controls
   private radarAzimuth: number = 0;
@@ -161,10 +163,16 @@ export class GameScene {
     // Initialize UI Manager with event handlers
     const uiEvents: UIEvents = {
       onAzimuthChange: (value: number) => {
-        this.azimuthAngle = value;
+        this.artillery.setCommandedAngles(
+          value,
+          this.artillery.commandedElevation
+        );
       },
       onElevationChange: (value: number) => {
-        this.elevationAngle = value;
+        this.artillery.setCommandedAngles(
+          this.artillery.commandedAzimuth,
+          value
+        );
       },
       onFireClick: () => {
         this.fireProjectile();
@@ -256,6 +264,9 @@ export class GameScene {
       this.config.selectedStage.artilleryPosition.z
     );
 
+    // Initialize Artillery entity
+    this.artillery = new Artillery(this.artilleryPosition);
+
     // Initialize lead angle calculator for GS-07 requirement
     this.leadAngleCalculator = new LeadAngleCalculator();
 
@@ -340,6 +351,9 @@ export class GameScene {
     // Update targets
     this.updateTargets(deltaTime);
 
+    // Update artillery (heavy cannon mechanics)
+    this.artillery.update(deltaTime);
+
     // Update radar controls based on keyboard state
     this.updateRadarControls(deltaTime);
 
@@ -380,8 +394,13 @@ export class GameScene {
    * Update UI state with current game data
    */
   private updateUIState(): void {
-    // Update artillery angles
-    this.uiManager.setArtilleryAngles(this.azimuthAngle, this.elevationAngle);
+    // Update artillery angles (display both current and commanded)
+    // Note: UIManager needs update to support displaying both
+    // For now, we pass current angles as the main display
+    this.uiManager.setArtilleryAngles(
+      this.artillery.currentAzimuth,
+      this.artillery.currentElevation
+    );
 
     // Update radar state
     this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
@@ -482,8 +501,8 @@ export class GameScene {
   private calculateTrajectoryPrediction(): Vector3[] {
     const trajectory: Vector3[] = [];
 
-    const azimuthRad = (this.azimuthAngle * Math.PI) / 180;
-    const elevationRad = (this.elevationAngle * Math.PI) / 180;
+    const azimuthRad = (this.artillery.currentAzimuth * Math.PI) / 180;
+    const elevationRad = (this.artillery.currentElevation * Math.PI) / 180;
 
     const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
     const initialVelocity = new Vector3(
@@ -869,20 +888,23 @@ export class GameScene {
    * Fire a projectile
    */
   private fireProjectile(): void {
-    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
-    const azimuthRad = this.azimuthAngle * (Math.PI / 180);
-    const elevationRad = this.elevationAngle * (Math.PI / 180);
+    // Use artillery entity to fire
+    if (!this.artillery.canFire()) return;
 
-    const velocity = new Vector3(
-      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.sin(elevationRad)
-    );
+    // Set target position if locked (though firing uses current angles)
+    if (this.lockedTarget) {
+      this.artillery.setTargetPosition(
+        this.lockedTarget.position,
+        this.lockedTarget.velocity
+      );
+    }
+
+    const projectileData = this.artillery.fire();
 
     const projectile: ProjectileState = {
       id: `projectile-${Date.now()}`,
-      position: this.artilleryPosition.copy(),
-      velocity,
+      position: projectileData.position,
+      velocity: projectileData.velocity,
       isActive: true,
       spawnTime: this.gameTime,
     };
@@ -903,8 +925,8 @@ export class GameScene {
    */
   private updateTrajectoryPrediction(): void {
     const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
-    const azimuthRad = this.azimuthAngle * (Math.PI / 180);
-    const elevationRad = this.elevationAngle * (Math.PI / 180);
+    const azimuthRad = this.artillery.currentAzimuth * (Math.PI / 180);
+    const elevationRad = this.artillery.currentElevation * (Math.PI / 180);
 
     const predictedVelocity = new Vector3(
       muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
@@ -1238,8 +1260,10 @@ export class GameScene {
 
       // If in auto mode, apply lead angles to artillery
       if (this.isAutoMode) {
-        this.azimuthAngle = leadResult.leadAngle.azimuth;
-        this.elevationAngle = leadResult.leadAngle.elevation;
+        this.artillery.setCommandedAngles(
+          leadResult.leadAngle.azimuth,
+          leadResult.leadAngle.elevation
+        );
         console.log(
           `Auto mode: Applied Az=${leadResult.leadAngle.azimuth.toFixed(1)}°, El=${leadResult.leadAngle.elevation.toFixed(1)}°`
         );
