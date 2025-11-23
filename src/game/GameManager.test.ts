@@ -16,6 +16,7 @@ import { StageSelectScene } from '../ui/scenes/StageSelectScene';
 import { GameScene } from '../ui/scenes/GameScene';
 import { getStageById } from '../data/StageData';
 import { Vector3 } from '../math/Vector3';
+import { UIMode } from '../ui/UIMode';
 
 // Mock all scene classes
 vi.mock('../ui/scenes/TitleScene');
@@ -434,6 +435,59 @@ describe('GameManager (T030-2 - Complete Rewrite)', () => {
     it('should provide access to canvas manager', () => {
       const canvasManager = gameManager.getCanvasManager();
       expect(canvasManager).toBe(mockCanvasManager);
+    });
+
+    it('should transition to GameScene with correct stage data', () => {
+      // Setup mock stage data
+      const mockStage = {
+        id: 1,
+        name: 'Test Stage',
+        difficultyLevel: 1,
+      };
+      vi.mocked(getStageById).mockReturnValue(mockStage as any);
+
+      // Trigger transition
+      const transitionCallback = vi.mocked(TitleScene).mock.calls[0][1];
+      transitionCallback({
+        type: SceneType.GAME,
+        data: { selectedStage: mockStage },
+      });
+
+      expect(GameScene).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        { selectedStage: mockStage }
+      );
+      expect(gameManager.getGameStats().currentStage).toBe(1);
+    });
+
+    it('should transition to GameScene with correct UI mode', () => {
+      // Setup mock stage data
+      const mockStage = {
+        id: 1,
+        name: 'Test Stage',
+        difficultyLevel: 1,
+      };
+      vi.mocked(getStageById).mockReturnValue(mockStage as any);
+
+      // Trigger transition with UI mode
+      const transitionCallback = vi.mocked(TitleScene).mock.calls[0][1];
+      transitionCallback({
+        type: SceneType.GAME,
+        data: {
+          selectedStage: mockStage,
+          uiMode: UIMode.MODE_B,
+        },
+      });
+
+      expect(GameScene).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        {
+          selectedStage: mockStage,
+          uiMode: UIMode.MODE_B,
+        }
+      );
     });
 
     it('should pass canvas manager to all scenes', () => {

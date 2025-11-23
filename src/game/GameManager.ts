@@ -14,6 +14,7 @@ import {
 import { StageSelectScene } from '../ui/scenes/StageSelectScene';
 import { GameScene, GameSceneConfig } from '../ui/scenes/GameScene';
 import { getStageById, StageConfig } from '../data/StageData';
+import { UIMode } from '../ui/UIMode';
 
 export enum GameState {
   INITIALIZING = 'initializing',
@@ -124,8 +125,11 @@ export class GameManager {
           typeof transition.data === 'object' &&
           'selectedStage' in transition.data
         ) {
-          const data = transition.data as { selectedStage: StageConfig };
-          this.showGameScene(data.selectedStage);
+          const data = transition.data as {
+            selectedStage: StageConfig;
+            uiMode?: UIMode;
+          };
+          this.showGameScene(data.selectedStage, data.uiMode);
         }
         break;
     }
@@ -154,11 +158,12 @@ export class GameManager {
   }
 
   /**
-   * Show game scene with selected stage
+   * Show game scene with selected stage and UI mode
    */
-  private showGameScene(stageConfig: StageConfig): void {
+  private showGameScene(stageConfig: StageConfig, uiMode?: UIMode): void {
     const gameConfig: GameSceneConfig = {
       selectedStage: stageConfig,
+      uiMode: uiMode,
     };
     this.currentScene = new GameScene(
       this.canvasManager,
