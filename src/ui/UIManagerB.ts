@@ -67,6 +67,7 @@ export class UIManagerB {
   private circularTargets: CircularScopeTarget[] = [];
   private aScopeTargets: AScopeTarget[] = [];
   private trajectoryPath: Vector2[] = [];
+  private projectiles: Array<{ position: Vector3; isActive: boolean }> = [];
 
   constructor(
     canvasManager: CanvasManager,
@@ -244,7 +245,8 @@ export class UIManagerB {
       this.circularTargets,
       this.radarAzimuth,
       this.radarRange,
-      this.trajectoryPath
+      this.trajectoryPath,
+      this.projectiles
     );
 
     ctx.restore();
@@ -260,7 +262,14 @@ export class UIManagerB {
     );
     ctx.clip();
 
-    this.aScope.render(this.aScopeTargets, this.rangeGate, this.radarRange);
+    this.aScope.render(
+      this.aScopeTargets,
+      this.rangeGate,
+      this.radarRange,
+      this.projectiles,
+      this.radarAzimuth,
+      this.radarElevation
+    );
 
     ctx.restore();
   }
@@ -439,15 +448,14 @@ export class UIManagerB {
   }
 
   updateProjectiles(
-    _projectiles: Array<{
+    projectiles: Array<{
       id: string;
       position: Vector3;
       velocity: Vector3;
       isActive: boolean;
     }>
   ): void {
-    // Projectiles are shown on circular scope via trajectory
-    // Not needed for UIManagerB as they're handled differently
+    this.projectiles = projectiles;
   }
 
   updateTrajectoryPrediction(trajectory: Vector2[]): void {

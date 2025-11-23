@@ -5,6 +5,7 @@
 
 import { CanvasManager } from '../../rendering/CanvasManager';
 import { Vector2 } from '../../math/Vector2';
+import { Vector3 } from '../../math/Vector3';
 import { CRT_COLORS } from '../../data/Constants';
 
 export interface CircularScopeTarget {
@@ -46,7 +47,8 @@ export class CircularScopeRenderer {
     targets: CircularScopeTarget[],
     radarAzimuth: number,
     maxRange: number,
-    trajectoryPath?: Vector2[]
+    trajectoryPath?: Vector2[],
+    projectiles?: Array<{ position: Vector3; isActive: boolean }>
   ): void {
     const ctx = this.canvasManager.context;
 
@@ -69,6 +71,10 @@ export class CircularScopeRenderer {
 
     if (trajectoryPath && trajectoryPath.length > 0) {
       this.renderTrajectory(trajectoryPath, maxRange);
+    }
+
+    if (projectiles && projectiles.length > 0) {
+      this.renderProjectiles(projectiles, maxRange);
     }
 
     ctx.restore();
@@ -230,6 +236,42 @@ export class CircularScopeRenderer {
 
     ctx.stroke();
     ctx.setLineDash([]); // Reset dash pattern
+  }
+
+  /**
+   * Render projectiles as white dots
+   */
+  private renderProjectiles(
+    projectiles: Array<{ position: Vector3; isActive: boolean }>,
+    maxRange: number
+  ): void {
+    const ctx = this.canvasManager.context;
+    const center = this.bounds.center;
+    const radius = this.bounds.radius;
+
+    ctx.fillStyle = CRT_COLORS.PROJECTILE; // White
+
+    for (const projectile of projectiles) {
+      if (!projectile.isActive) continue;
+
+      // Calculate distance and azimuth from projectile position
+      // Note: Radar is at (0,0,0)
+      const distance = Math.sqrt(
+        projectile.position.x * projectile.position.x +
+          projectile.position.y * projectile.position.y
+      );
+      const azimuth = Math.atan2(projectile.position.x, projectile.position.y);
+
+      // Map to scope coordinates
+      const r = Math.min((distance / maxRange) * radius, radius);
+      const x = center.x + r * Math.sin(azimuth);
+      const y = center.y - r * Math.cos(azimuth); // Y is inverted
+
+      // Draw projectile dot
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2); // 3px radius
+      ctx.fill();
+    }
   }
 
   /**

@@ -4,6 +4,7 @@
  */
 
 import { CanvasManager } from '../../rendering/CanvasManager';
+import { Vector3 } from '../../math/Vector3';
 import { CRT_COLORS } from '../../data/Constants';
 
 export interface AScopeTarget {
@@ -37,7 +38,14 @@ export class AScopeRenderer {
   /**
    * Render the A-Scope
    */
-  render(targets: AScopeTarget[], rangeGate: number, maxRange: number): void {
+  render(
+    targets: AScopeTarget[],
+    rangeGate: number,
+    maxRange: number,
+    projectiles?: Array<{ position: Vector3; isActive: boolean }>,
+    radarAzimuth?: number,
+    radarElevation?: number
+  ): void {
     const ctx = this.canvasManager.context;
 
     ctx.save();
@@ -55,6 +63,16 @@ export class AScopeRenderer {
     this.renderGrid(maxRange);
     this.renderBaseline();
     this.renderTargetResponse(targets, maxRange);
+
+    if (projectiles && projectiles.length > 0 && radarAzimuth !== undefined) {
+      this.renderProjectiles(
+        projectiles,
+        maxRange,
+        radarAzimuth,
+        radarElevation || 0
+      );
+    }
+
     this.renderRangeGate(rangeGate, maxRange);
 
     ctx.restore();
@@ -146,7 +164,82 @@ export class AScopeRenderer {
       ctx.lineTo(px, py);
       ctx.stroke();
       ctx.restore();
+      ctx.stroke();
+      ctx.restore();
     }
+  }
+
+  /**
+   * Render projectiles as small spikes if within beam
+   */
+  private renderProjectiles(
+    projectiles: Array<{ position: Vector3; isActive: boolean }>,
+    maxRange: number,
+    radarAzimuth: number,
+    radarElevation: number
+  ): void {
+    const ctx = this.canvasManager.context;
+    const { x, y, width, height } = this.bounds;
+
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+    ctx.lineWidth = 2;
+
+    for (const projectile of projectiles) {
+      if (!projectile.isActive) continue;
+
+      // Check if in beam
+      if (!this.isProjectileInBeam(projectile, radarAzimuth, radarElevation))
+        continue;
+
+      // Calculate distance
+      const distance = Math.sqrt(
+        projectile.position.x * projectile.position.x +
+          projectile.position.y * projectile.position.y
+      );
+
+      // Calculate X position based on distance
+      const px = x + (distance / maxRange) * width;
+
+      // Small spike height (fixed strength approx 0.3)
+      const spikeHeight = height * 0.3;
+      const py = y + height - spikeHeight;
+
+      // Draw spike
+      ctx.beginPath();
+      ctx.moveTo(px, y + height);
+      ctx.lineTo(px, py);
+      ctx.stroke();
+    }
+  }
+
+  private isProjectileInBeam(
+    projectile: { position: Vector3 },
+    radarAzimuth: number,
+    radarElevation: number
+  ): boolean {
+    // Calculate bearing to projectile
+    // Note: atan2(x, y) for 0=North clockwise
+    const bearing =
+      Math.atan2(projectile.position.x, projectile.position.y) *
+      (180 / Math.PI);
+
+    let relativeBearing = bearing - radarAzimuth;
+
+    // Normalize to -180 to 180
+    while (relativeBearing > 180) relativeBearing -= 360;
+    while (relativeBearing < -180) relativeBearing += 360;
+
+    // Calculate elevation to projectile
+    const horizontalDistance = Math.sqrt(
+      projectile.position.x * projectile.position.x +
+        projectile.position.y * projectile.position.y
+    );
+    const elevation =
+      Math.atan2(projectile.position.z, horizontalDistance) * (180 / Math.PI);
+    const elevationDiff = Math.abs(elevation - radarElevation);
+
+    // Check both azimuth and elevation (5 degree beam width)
+    return Math.abs(relativeBearing) <= 2.5 && elevationDiff <= 2.5;
   }
 
   /**

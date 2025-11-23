@@ -150,14 +150,14 @@ export class RadarRenderer {
     // Draw range cursor (in main area)
     this.drawRangeCursor(ctx, mainRadarBounds);
 
+    // Draw trajectory prediction
+    this.drawTrajectoryPrediction(ctx, mainRadarBounds);
+
     // Draw targets
     this.drawTargetsOnHorizontalRadar(ctx, mainRadarBounds);
 
-    // Draw projectiles
+    // Draw projectiles (last to be on top)
     this.drawProjectilesOnHorizontalRadar(ctx, mainRadarBounds);
-
-    // Draw trajectory prediction
-    this.drawTrajectoryPrediction(ctx, mainRadarBounds);
 
     // Draw range slider area
     this.drawRangeSliderArea(ctx, bounds);
@@ -186,14 +186,14 @@ export class RadarRenderer {
     // Draw vertical grid
     this.drawVerticalGrid(ctx, bounds);
 
+    // Draw vertical trajectory prediction
+    this.drawVerticalTrajectoryPrediction(ctx, bounds);
+
     // Draw targets in vertical view
     this.drawTargetsOnVerticalRadar(ctx, bounds);
 
-    // Draw projectiles in vertical view
+    // Draw projectiles in vertical view (last to be on top)
     this.drawProjectilesOnVerticalRadar(ctx, bounds);
-
-    // Draw vertical trajectory prediction
-    this.drawVerticalTrajectoryPrediction(ctx, bounds);
 
     ctx.restore();
   }
@@ -475,9 +475,10 @@ export class RadarRenderer {
       );
       if (!screenPos) return;
 
+      // Display projectiles in white for better visibility against green lines
       ctx.fillStyle = CRT_COLORS.PROJECTILE;
       ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y, 2, 0, 2 * Math.PI);
+      ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
       ctx.fill();
     });
   }
@@ -489,13 +490,17 @@ export class RadarRenderer {
     this.projectiles.forEach(projectile => {
       if (!projectile.isActive) return;
 
+      // Only show projectiles within radar beam width
+      if (!this.isProjectileInBeam(projectile)) return;
+
       const screenPos = this.worldToVerticalRadarScreen(
         projectile.position,
         bounds
       );
       if (!screenPos) return;
 
-      ctx.fillStyle = CRT_COLORS.PROJECTILE;
+      // Small reflection strength: smaller size, semi-transparent green
+      ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
       ctx.beginPath();
       ctx.arc(screenPos.x, screenPos.y, 2, 0, 2 * Math.PI);
       ctx.fill();
@@ -616,6 +621,22 @@ export class RadarRenderer {
   private isTargetInBeam(target: RadarTarget): boolean {
     const dx = target.position.x - this.state.position.x;
     const dy = target.position.y - this.state.position.y;
+
+    const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
+    let relativeBearing = bearing - this.state.azimuth;
+
+    while (relativeBearing > 180) relativeBearing -= 360;
+    while (relativeBearing < -180) relativeBearing += 360;
+
+    return Math.abs(relativeBearing) <= 2.5; // 5 degree beam width
+  }
+
+  /**
+   * Check if projectile is within radar beam width
+   */
+  private isProjectileInBeam(projectile: { position: Vector3 }): boolean {
+    const dx = projectile.position.x - this.state.position.x;
+    const dy = projectile.position.y - this.state.position.y;
 
     const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
     let relativeBearing = bearing - this.state.azimuth;
