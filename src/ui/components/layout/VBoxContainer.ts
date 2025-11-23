@@ -74,7 +74,19 @@ export class VBoxContainer extends ContainerComponent {
 
     for (const child of this.children) {
       if (child.visible) {
-        totalHeight += child.bounds.height;
+        // If child is a container, use its preferred height
+        // Since we don't have a common interface for getPreferredHeight on UIComponent,
+        // we check if the method exists (duck typing) or check instance
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        if (
+          'getPreferredHeight' in child &&
+          typeof (child as any).getPreferredHeight === 'function'
+        ) {
+          totalHeight += (child as any).getPreferredHeight();
+        } else {
+          totalHeight += child.bounds.height;
+        }
+        /* eslint-enable @typescript-eslint/no-explicit-any */
         visibleChildren++;
       }
     }

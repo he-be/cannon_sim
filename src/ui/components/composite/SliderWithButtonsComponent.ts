@@ -1,9 +1,7 @@
 import { HBoxContainer } from '../layout/HBoxContainer';
-import { SliderComponent } from '../interactive/SliderComponent';
 import { AdjustmentButtonComponent } from '../interactive/AdjustmentButtonComponent';
 
 export class SliderWithButtonsComponent extends HBoxContainer {
-  public slider: SliderComponent;
   public minusButton: AdjustmentButtonComponent;
   public plusButton: AdjustmentButtonComponent;
   public value: number;
@@ -33,18 +31,6 @@ export class SliderWithButtonsComponent extends HBoxContainer {
       this.adjustValue(-this.step)
     );
 
-    // Create slider
-    this.slider = new SliderComponent(
-      `${id}-slider`,
-      value,
-      min,
-      max,
-      (newValue: number) => {
-        this.value = newValue;
-        this.onChange(newValue);
-      }
-    );
-
     // Create plus button
     this.plusButton = new AdjustmentButtonComponent(`${id}-plus`, '+', () =>
       this.adjustValue(this.step)
@@ -52,7 +38,7 @@ export class SliderWithButtonsComponent extends HBoxContainer {
 
     // Add components to container
     this.addChild(this.minusButton);
-    this.addChild(this.slider);
+    // Slider removed as per request
     this.addChild(this.plusButton);
 
     // Set total size
@@ -68,7 +54,6 @@ export class SliderWithButtonsComponent extends HBoxContainer {
     const newValue = Math.max(this.min, Math.min(this.max, this.value + delta));
     if (Math.abs(newValue - this.value) > 0.001) {
       this.value = newValue;
-      this.slider.setValue(newValue);
       this.onChange(newValue);
     }
   }
@@ -77,14 +62,12 @@ export class SliderWithButtonsComponent extends HBoxContainer {
     const clampedValue = Math.max(this.min, Math.min(this.max, value));
     if (Math.abs(clampedValue - this.value) > 0.001) {
       this.value = clampedValue;
-      this.slider.setValue(clampedValue);
     }
   }
 
   setRange(min: number, max: number): void {
     this.min = min;
     this.max = max;
-    this.slider.setRange(min, max);
     this.setValue(this.value); // Re-clamp current value
   }
 

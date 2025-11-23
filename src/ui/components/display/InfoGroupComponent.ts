@@ -61,27 +61,16 @@ export class InfoGroupComponent extends VBoxContainer {
         item.color || CRT_COLORS.SECONDARY_TEXT
       );
     } else if (item.type === 'indicator_group' && item.options) {
-      // Create a horizontal box for indicators
-      const hbox = new HBoxContainer(
+      // Create a vertical box for indicators
+      const vbox = new VBoxContainer(
         `${this.id}-${item.label}-container`,
         [],
-        10
+        4
       );
       const groupIndicators = new Map<string, IndicatorComponent>();
 
-      // Add label for the group
-      /*
-      const labelComp = new TextComponent(
-        `${this.id}-${item.label}-label`,
-        `${item.label}:`,
-        FONTS.DATA,
-        CRT_COLORS.SECONDARY_TEXT
-      );
-      hbox.addChild(labelComp);
-      */
-      // Actually, for status/confidence, we might just want the indicators with their own labels
-      // If label is provided, maybe show it above? Or inline?
-      // Let's assume inline label if item.label is not empty/generic
+      // Add label for the group if needed, or just indicators
+      // Let's add indicators directly to vbox
 
       item.options.forEach(opt => {
         const optContainer = new HBoxContainer(
@@ -98,7 +87,7 @@ export class InfoGroupComponent extends VBoxContainer {
         // Set initial state
         indicator.setState(item.value === opt.value);
 
-        const optLabel = new TextComponent(
+        const label = new TextComponent(
           `${this.id}-${item.label}-${opt.value}-lbl`,
           opt.label,
           FONTS.DATA,
@@ -106,13 +95,13 @@ export class InfoGroupComponent extends VBoxContainer {
         );
 
         optContainer.addChild(indicator);
-        optContainer.addChild(optLabel);
+        optContainer.addChild(label);
+        vbox.addChild(optContainer);
 
-        hbox.addChild(optContainer);
         groupIndicators.set(opt.value, indicator);
       });
 
-      component = hbox;
+      component = vbox;
       this.indicatorGroups.set(item.label, groupIndicators);
     } else {
       component = new TextComponent(

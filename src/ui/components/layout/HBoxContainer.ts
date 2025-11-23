@@ -86,4 +86,27 @@ export class HBoxContainer extends ContainerComponent {
 
     return totalWidth;
   }
+
+  // Calculate preferred height (max of children)
+  getPreferredHeight(): number {
+    let maxHeight = 0;
+
+    for (const child of this.children) {
+      if (child.visible) {
+        let childHeight = child.bounds.height;
+        // Check for getPreferredHeight method
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        if (
+          'getPreferredHeight' in child &&
+          typeof (child as any).getPreferredHeight === 'function'
+        ) {
+          childHeight = (child as any).getPreferredHeight();
+        }
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+        maxHeight = Math.max(maxHeight, childHeight);
+      }
+    }
+
+    return maxHeight + this.padding.top + this.padding.bottom;
+  }
 }

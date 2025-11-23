@@ -105,12 +105,16 @@ export class MechanicalCounterComponent extends UIComponent {
       this.bounds.y + this.bounds.height / 2
     );
 
-    const labelWidth = ctx.measureText(labelText).width;
+    // Calculate required counter width based on digits
+    const totalDigits = this.digits + this.decimals;
+    const dotWidth = this.decimals > 0 ? 6 : 0;
+    const requiredCounterWidth = totalDigits * this.digitWidth + dotWidth + 4;
 
     // Draw Counter Background
-    const counterX = this.bounds.x + labelWidth;
+    // Right align: x = bounds.x + bounds.width - counterWidth
+    const counterWidth = requiredCounterWidth;
+    const counterX = this.bounds.x + this.bounds.width - counterWidth;
     const counterY = this.bounds.y;
-    const counterWidth = this.bounds.width - labelWidth;
     const counterHeight = this.bounds.height;
 
     ctx.fillStyle = '#001100'; // Dark background for counter
@@ -133,7 +137,7 @@ export class MechanicalCounterComponent extends UIComponent {
     let currentVal = absValue * power;
 
     // Draw digits from right to left
-    const totalDigits = this.digits + this.decimals;
+    // totalDigits is already calculated above
     let xPos = counterX + counterWidth - this.digitWidth - 2; // Start from right with padding
 
     let carry = 0; // Rotation carry from lower digit
@@ -204,6 +208,23 @@ export class MechanicalCounterComponent extends UIComponent {
           // Wrap display for rendering (though >10 shouldn't happen with single carry)
           // displayValue = displayValue % 10; // Don't wrap yet, handle in draw
         }
+      }
+
+      // Draw separator line if not the first digit (rightmost)
+      if (i > 0) {
+        ctx.beginPath();
+        // Draw line at the right edge of the current digit slot
+        // Since we are moving right-to-left, this is the boundary with the previous digit
+        const lineX = xPos + this.digitWidth;
+        ctx.moveTo(lineX, counterY);
+        ctx.lineTo(lineX, counterY + counterHeight);
+
+        // Use a subtle version of the component color
+        ctx.strokeStyle = this.color;
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
       }
 
       // Draw the digit strip

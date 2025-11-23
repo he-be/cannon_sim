@@ -83,11 +83,11 @@ export class ControlPanelRenderer {
   constructor(
     canvasManager: CanvasManager,
     events: ControlPanelEvents,
-    panelWidth: number = 300
+    _panelWidth: number = 200
   ) {
     this.canvasManager = canvasManager;
     this.events = events;
-    this.panelWidth = panelWidth;
+    this.panelWidth = 180;
     this.panelHeight = canvasManager.height;
 
     this.state = this.createInitialState();
@@ -136,7 +136,7 @@ export class ControlPanelRenderer {
         label: 'El',
         value: this.state.elevation,
         type: 'counter',
-        digits: 2,
+        digits: 3,
         decimals: 1,
       },
     ]);
@@ -171,7 +171,7 @@ export class ControlPanelRenderer {
     // Info groups
     this.radarGroup = new InfoGroupComponent('radar', 'Radar', [
       { label: 'Az', value: 0, type: 'counter', digits: 3, decimals: 1 },
-      { label: 'El', value: 0, type: 'counter', digits: 2, decimals: 1 },
+      { label: 'El', value: 0, type: 'counter', digits: 3, decimals: 1 },
       { label: 'Range', value: 0, type: 'counter', digits: 2, decimals: 2 }, // km
     ]);
 
@@ -201,7 +201,7 @@ export class ControlPanelRenderer {
       'Calculated Lead',
       [
         { label: 'Az', value: 0, type: 'counter', digits: 3, decimals: 1 },
-        { label: 'El', value: 0, type: 'counter', digits: 2, decimals: 1 },
+        { label: 'El', value: 0, type: 'counter', digits: 3, decimals: 1 },
         { label: 'Time', value: 0, type: 'counter', digits: 2, decimals: 2 },
         {
           label: 'Confidence',
@@ -413,7 +413,11 @@ export class ControlPanelRenderer {
   private updateRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
     if (radarInfo) {
       // Use standardized 0-360 azimuth
-      this.radarGroup.updateAzimuth(radarInfo.azimuth);
+      let normalizedAzimuth = radarInfo.azimuth;
+      while (normalizedAzimuth < 0) normalizedAzimuth += 360;
+      while (normalizedAzimuth >= 360) normalizedAzimuth -= 360;
+
+      this.radarGroup.updateAzimuth(normalizedAzimuth);
       this.radarGroup.updateElevation(radarInfo.elevation);
       this.radarGroup.updateRange(radarInfo.range);
     } else {
