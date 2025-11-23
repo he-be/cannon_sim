@@ -302,7 +302,9 @@ export class GameScene {
     this.artillery.update(deltaTime);
 
     // Update UI controls (delegated to UIController)
-    this.uiController.updateControls(deltaTime);
+    // Pass lock state to prevent radar movement when locked
+    const isLocked = this.targetingState === TargetingState.LOCKED_ON;
+    this.uiController.updateControls(deltaTime, isLocked);
 
     // Update projectiles
     this.updateProjectiles(deltaTime);

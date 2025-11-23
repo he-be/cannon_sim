@@ -28,8 +28,10 @@ export interface UIController {
   /**
    * Update controls based on current key states
    * Called every frame with delta time
+   * @param deltaTime - Time elapsed since last frame in seconds
+   * @param isLocked - Whether targeting is locked (radar should not move when locked)
    */
-  updateControls(deltaTime: number): void;
+  updateControls(deltaTime: number, isLocked?: boolean): void;
 
   /**
    * Get the UI manager for this controller

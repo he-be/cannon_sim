@@ -80,8 +80,15 @@ export class UIControllerA implements UIController {
   /**
    * Update radar controls based on current key states
    * This is called every frame from GameScene.update()
+   * @param deltaTime - Time elapsed since last frame in seconds
+   * @param isLocked - Whether targeting is locked (radar should not move when locked)
    */
-  updateControls(deltaTime: number): void {
+  updateControls(deltaTime: number, isLocked: boolean = false): void {
+    // When locked on target, radar should not move
+    if (isLocked) {
+      return;
+    }
+
     let directionChanged = false;
 
     // Update radar azimuth based on arrow left/right
