@@ -488,15 +488,16 @@ export class GameScene {
   }
 
   private updateRadarTargets(): void {
-    // First, remove destroyed targets from radar
+    // First, remove fully destroyed targets from radar
     this.targets.forEach(target => {
       if (target.isDestroyed) {
-        this.uiController.getUIManager().removeRadarTarget(target.id);
+        this.uiController.getUIManager().removeRadarTarget(target.trackId);
       }
     });
 
-    // Convert game targets to radar targets (only active ones)
+    // Convert game targets to radar targets (active and falling targets)
     this.targets.forEach(target => {
+      // Show active and falling targets, but not fully destroyed ones
       if (target.isDestroyed || this.gameTime < target.spawnTime) return;
 
       const dx = target.position.x - this.artilleryPosition.x;
@@ -616,21 +617,45 @@ export class GameScene {
    */
   private updateTargets(deltaTime: number): void {
     this.targets.forEach(target => {
+      // Skip fully destroyed targets
       if (target.isDestroyed) return;
 
       // Check if target should spawn
       if (this.gameTime < target.spawnTime) return;
 
+      // Store previous state to detect ground impact
+      const wasFalling = target.isFalling;
+
       // Update target position using its own update method
+      // This handles both active movement and falling physics
       target.update(deltaTime);
 
-      // Check if target reached artillery position (game over condition)
-      const distance = target.position
-        .subtract(this.artilleryPosition)
-        .magnitude();
-      if (distance < 1000) {
-        // 1km collision radius
-        this.gameState = GameState.GAME_OVER;
+      // Check if falling target just reached ground
+      if (wasFalling && target.isDestroyed) {
+        // Target has reached ground, clear lock-on if this was locked/tracked
+        if (this.trackedTarget === target) {
+          this.trackedTarget = null;
+        }
+        if (this.lockedTarget === target) {
+          this.lockedTarget = null;
+          this.targetingState = TargetingState.NO_TARGET;
+          // Disable auto mode when locked target is destroyed
+          this.isAutoMode = false;
+          // Reset target tracking
+          this.leadAngleCalculator.resetTargetTracking();
+          this.lastTrackedTargetId = null;
+        }
+      }
+
+      // Check if active target reached artillery position (game over condition)
+      if (target.isActive) {
+        const distance = target.position
+          .subtract(this.artilleryPosition)
+          .magnitude();
+        if (distance < 1000) {
+          // 1km collision radius
+          this.gameState = GameState.GAME_OVER;
+        }
       }
     });
   }
@@ -694,15 +719,16 @@ export class GameScene {
       if (!projectile.isActive) return;
 
       this.targets.forEach(target => {
-        if (target.isDestroyed || this.gameTime < target.spawnTime) return;
+        // Only check collision with active targets (not falling or destroyed)
+        if (!target.isActive || this.gameTime < target.spawnTime) return;
 
         const distance = projectile.position
           .subtract(target.position)
           .magnitude();
         if (distance < 50) {
           // 50m collision radius
-          // Hit!
-          target.destroy();
+          // Hit! Transition to falling state instead of immediate destruction
+          target.hit();
           projectile.isActive = false;
 
           // Calculate actual collision point (T047)
@@ -719,21 +745,8 @@ export class GameScene {
             );
           }
 
-          // Clear targeting if this target was being tracked/locked
-          if (this.trackedTarget === target) {
-            this.trackedTarget = null;
-          }
-          if (this.lockedTarget === target) {
-            this.lockedTarget = null;
-            this.targetingState = TargetingState.NO_TARGET;
-            // Disable auto mode when locked target is destroyed
-            this.isAutoMode = false;
-            // Reset target tracking
-            if (this.lastTrackedTargetId !== target.trackId) {
-              this.leadAngleCalculator.resetTargetTracking();
-              this.lastTrackedTargetId = target.trackId;
-            }
-          }
+          // Note: Lock-on is NOT cleared here - target continues to fall
+          // Lock will be cleared when target reaches ground in updateTargets()
         }
       });
     });

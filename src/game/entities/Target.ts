@@ -20,6 +20,7 @@ export enum TargetType {
 
 export enum TargetState {
   ACTIVE = 'active',
+  FALLING = 'falling', // Hit and falling to ground
   DESTROYED = 'destroyed',
 }
 
@@ -89,6 +90,14 @@ export class Target {
     return this._state === TargetState.DESTROYED;
   }
 
+  get isFalling(): boolean {
+    return this._state === TargetState.FALLING;
+  }
+
+  get isActive(): boolean {
+    return this._state === TargetState.ACTIVE;
+  }
+
   /**
    * Get formatted track ID (e.g., "T01")
    */
@@ -139,16 +148,54 @@ export class Target {
    * Update target position based on movement
    */
   update(deltaTime: number): void {
-    if (this._state !== TargetState.ACTIVE) return;
+    if (this._state === TargetState.DESTROYED) return;
 
-    // Simple linear movement for moving targets (exclude static and balloon)
+    // Falling targets: apply gravity
+    if (this._state === TargetState.FALLING) {
+      // Apply gravity to vertical velocity (z-component)
+      const gravity = -9.81; // m/s², downward
+      this._velocity = new Vector3(
+        this._velocity.x,
+        this._velocity.y,
+        this._velocity.z + gravity * deltaTime
+      );
+
+      // Update position with current velocity
+      this._position = this._position.add(this._velocity.multiply(deltaTime));
+
+      // Check if reached ground
+      if (this._position.z <= 0) {
+        this._state = TargetState.DESTROYED;
+      }
+      return;
+    }
+
+    // Active targets: simple linear movement for moving targets (exclude static and balloon)
     if (this._type !== TargetType.STATIC && this._type !== TargetType.BALLOON) {
       this._position = this._position.add(this._velocity.multiply(deltaTime));
     }
   }
 
   /**
-   * Destroy target when hit (GS-08, GS-09)
+   * Hit target - transition to falling state (GS-08, GS-09)
+   * Target will fall to ground with current velocity vector
+   */
+  hit(): void {
+    if (this._state === TargetState.ACTIVE) {
+      this._state = TargetState.FALLING;
+      // Velocity is already set, will be affected by gravity in update()
+    }
+  }
+
+  /**
+   * Check if falling target has reached ground
+   */
+  hasReachedGround(): boolean {
+    return this._state === TargetState.FALLING && this._position.z <= 0;
+  }
+
+  /**
+   * Destroy target immediately (for backward compatibility)
    */
   destroy(): void {
     this._state = TargetState.DESTROYED;
