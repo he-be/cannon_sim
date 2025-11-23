@@ -4,7 +4,8 @@
  */
 
 import { CanvasManager } from '../../rendering/CanvasManager';
-import { UIEvents } from '../UIManager';
+import { UIManager, UIEvents } from '../UIManager';
+import { UIManagerB } from '../UIManagerB';
 import { UIController, RadarState } from './UIController';
 import { GAME_CONSTANTS } from '../../data/Constants';
 
@@ -16,8 +17,7 @@ import { GAME_CONSTANTS } from '../../data/Constants';
  * - I key: Decrease distance gate
  */
 export class UIControllerB implements UIController {
-  // Will be UIManagerB when implemented - using unknown for type safety
-  private uiManager: unknown;
+  private uiManager: UIManagerB;
 
   // Radar state
   private radarAzimuth: number = 0;
@@ -48,13 +48,9 @@ export class UIControllerB implements UIController {
   private readonly RADAR_ELEVATION_SPEED = 30; // degrees per second (elevation)
   private readonly RANGE_GATE_SPEED = 2000; // meters per second
 
-  constructor(_canvasManager: CanvasManager, _events: UIEvents) {
-    // TODO: Create UIManagerB when implemented
-    // For now, throw error to prevent accidental use
-    this.uiManager = null;
-    throw new Error(
-      'UIControllerB not yet fully implemented - UIManagerB required'
-    );
+  constructor(canvasManager: CanvasManager, events: UIEvents) {
+    // Create UIManagerB instance
+    this.uiManager = new UIManagerB(canvasManager, events);
   }
 
   /**
@@ -141,8 +137,7 @@ export class UIControllerB implements UIController {
     }
 
     if (directionChanged) {
-      // TODO: Update UI when UIManagerB is implemented
-      // this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
+      this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
     }
 
     // Update distance gate based on O/I keys
@@ -164,16 +159,16 @@ export class UIControllerB implements UIController {
     }
 
     if (rangeGateChanged) {
-      // TODO: Update UI when UIManagerB is implemented
-      // this.uiManager.setRangeGate(this.rangeGate);
+      this.uiManager.setRangeGate(this.rangeGate);
     }
   }
 
   /**
    * Get the UI manager instance
    */
-  getUIManager(): unknown {
-    return this.uiManager;
+  getUIManager(): UIManager {
+    // UIManagerB implements same interface as UIManager
+    return this.uiManager as unknown as UIManager;
   }
 
   /**
@@ -202,9 +197,9 @@ export class UIControllerB implements UIController {
       this.radarRange = state.range;
     }
 
-    // TODO: Update UI when UIManagerB is implemented
-    // this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
-    // this.uiManager.setRadarRange(this.radarRange);
+    // Update UI to reflect new radar state
+    this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
+    this.uiManager.setRadarRange(this.radarRange);
   }
 
   /**
