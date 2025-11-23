@@ -22,8 +22,10 @@ import {
 } from '../../data/Constants';
 import { Target, TargetType } from '../../game/entities/Target';
 import { Artillery } from '../../game/entities/Artillery';
-import { UIManager, UIEvents } from '../UIManager';
+import { UIEvents } from '../UIManager';
 import { RadarTarget } from '../components/RadarRenderer';
+import { UIController } from '../controllers/UIController';
+import { UIControllerA } from '../controllers/UIControllerA';
 import { StandardPhysics } from '../../physics/StandardPhysics';
 
 // Extended lead angle interface with display information
@@ -74,7 +76,7 @@ export class GameScene {
   private physicsEngine: PhysicsEngine;
   private trajectoryRenderer: TrajectoryRenderer;
   private leadAngleCalculator: LeadAngleCalculator;
-  private uiManager: UIManager;
+  private uiController: UIController;
 
   // Game state
   private gameState: GameState = GameState.PLAYING;
@@ -98,10 +100,8 @@ export class GameScene {
   // Artillery controls
   // Removed: azimuthAngle and elevationAngle are now managed by Artillery entity
 
-  // Radar controls
-  private radarAzimuth: number = 0;
-  private radarElevation: number = 0; // レーダー仰角（度）
-  private radarRange: number = GAME_CONSTANTS.DEFAULT_RADAR_RANGE;
+  // Radar controls managed by UIController
+  // Radar state is now accessed via uiController.getRadarState()
   private maxRadarRange: number = GAME_CONSTANTS.MAX_RADAR_RANGE;
 
   // Mouse control is now handled by UIManager
@@ -118,21 +118,10 @@ export class GameScene {
   // Animation
   private animationTime: number = 0;
 
-  // Keyboard state for smooth controls
-  private keyState: {
-    ArrowLeft: boolean;
-    ArrowRight: boolean;
-    ArrowUp: boolean;
-    ArrowDown: boolean;
-  } = {
-    ArrowLeft: false,
-    ArrowRight: false,
-    ArrowUp: false,
-    ArrowDown: false,
-  };
+  // Keyboard state for game controls (arrow keys handled by UIController)
+  // Removed: ArrowLeft, ArrowRight, ArrowUp, ArrowDown - now in UIController
 
-  private readonly RADAR_ROTATION_SPEED = 60; // degrees per second
-  private readonly RADAR_ZOOM_SPEED = 5000; // meters per second
+  // Radar control speeds moved to UIController
 
   // UI Layout is now handled by UIManager
 
@@ -173,12 +162,11 @@ export class GameScene {
       onMenuClick: () => {
         this.onSceneTransition({ type: SceneType.TITLE });
       },
-      onDirectionChange: (azimuth: number, elevation: number) => {
-        this.radarAzimuth = azimuth;
-        this.radarElevation = elevation;
+      onDirectionChange: (_azimuth: number, _elevation: number) => {
+        // Radar state is managed by UIController
       },
-      onRangeChange: (range: number) => {
-        this.radarRange = range;
+      onRangeChange: (_range: number) => {
+        // Radar state is managed by UIController
       },
       onTargetDetected: (target: RadarTarget) => {
         // Handle target detection if needed
@@ -190,7 +178,8 @@ export class GameScene {
       },
     };
 
-    this.uiManager = new UIManager(this.canvasManager, uiEvents);
+    // Initialize UIController (defaults to MODE_A for backward compatibility)
+    this.uiController = new UIControllerA(this.canvasManager, uiEvents);
 
     // Initialize physics engine with RK4 integration
     // Initialize physics engine with RK4 integration
@@ -292,6 +281,7 @@ export class GameScene {
     });
 
     // Keyboard events for game controls
+    // Arrow keys are handled by UIController, other keys handled here
     window.addEventListener('keydown', event => this.handleKeyDown(event));
     window.addEventListener('keyup', event => this.handleKeyUp(event));
   }
@@ -311,8 +301,8 @@ export class GameScene {
     // Update artillery (heavy cannon mechanics)
     this.artillery.update(deltaTime);
 
-    // Update radar controls based on keyboard state
-    this.updateRadarControls(deltaTime);
+    // Update UI controls (delegated to UIController)
+    this.uiController.updateControls(deltaTime);
 
     // Update projectiles
     this.updateProjectiles(deltaTime);
@@ -354,38 +344,43 @@ export class GameScene {
     // Update artillery angles (display both current and commanded)
     // Note: UIManager needs update to support displaying both
     // For now, we pass current angles as the main display
-    this.uiManager.setArtilleryAngles(
-      this.artillery.currentAzimuth,
-      this.artillery.currentElevation
-    );
+    this.uiController
+      .getUIManager()
+      .setArtilleryAngles(
+        this.artillery.currentAzimuth,
+        this.artillery.currentElevation
+      );
 
     // Update artillery reload state
-    this.uiManager.setArtilleryState(
-      this.artillery.canFire(),
-      this.artillery.reloadProgress
-    );
+    this.uiController
+      .getUIManager()
+      .setArtilleryState(
+        this.artillery.canFire(),
+        this.artillery.reloadProgress
+      );
 
     // Update radar state
-    this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
-    this.uiManager.setRadarRange(this.radarRange);
+    const radarState = this.uiController.getRadarState();
+    this.uiController
+      .getUIManager()
+      .setRadarDirection(radarState.azimuth, radarState.elevation);
+    this.uiController.getUIManager().setRadarRange(radarState.range);
 
     // Update radar info display in left panel (moved from center pane)
-    this.uiManager.setRadarInfo(
-      this.radarAzimuth,
-      this.radarElevation,
-      this.radarRange
-    );
+    this.uiController
+      .getUIManager()
+      .setRadarInfo(radarState.azimuth, radarState.elevation, radarState.range);
 
     // Update game time
-    this.uiManager.setGameTime(this.gameTime);
+    this.uiController.getUIManager().setGameTime(this.gameTime);
 
     // Update lock state
-    this.uiManager.setLockState(
-      this.targetingState === TargetingState.LOCKED_ON
-    );
+    this.uiController
+      .getUIManager()
+      .setLockState(this.targetingState === TargetingState.LOCKED_ON);
 
     // Update auto mode state
-    this.uiManager.setAutoMode(this.isAutoMode);
+    this.uiController.getUIManager().setAutoMode(this.isAutoMode);
 
     // Update target information
     const displayTarget = this.lockedTarget || this.trackedTarget;
@@ -397,14 +392,14 @@ export class GameScene {
         ? displayTarget.velocity.magnitude()
         : 0;
 
-      this.uiManager.setTargetInfo({
+      this.uiController.getUIManager().setTargetInfo({
         status: this.targetingState,
         type: this.getTargetDisplayName(displayTarget.type as TargetType),
         range: distance,
         speed: speed,
       });
     } else {
-      this.uiManager.setTargetInfo(null);
+      this.uiController.getUIManager().setTargetInfo(null);
     }
 
     // Update target list (TRACK)
@@ -443,20 +438,20 @@ export class GameScene {
         };
       });
 
-    this.uiManager.setTargetList(targetListData);
+    this.uiController.getUIManager().setTargetList(targetListData);
 
     // Update lead angle
     if (this.currentLeadAngle) {
-      this.uiManager.setLeadAngle(this.currentLeadAngle);
+      this.uiController.getUIManager().setLeadAngle(this.currentLeadAngle);
     } else {
-      this.uiManager.setLeadAngle(null);
+      this.uiController.getUIManager().setLeadAngle(null);
     }
 
     // Update radar targets
     this.updateRadarTargets();
 
     // Update projectiles
-    this.uiManager.updateProjectiles(this.projectiles);
+    this.uiController.getUIManager().updateProjectiles(this.projectiles);
 
     // Update trajectory prediction
     this.updateUITrajectoryPrediction();
@@ -466,7 +461,7 @@ export class GameScene {
     // First, remove destroyed targets from radar
     this.targets.forEach(target => {
       if (target.isDestroyed) {
-        this.uiManager.removeRadarTarget(target.id);
+        this.uiController.getUIManager().removeRadarTarget(target.id);
       }
     });
 
@@ -489,14 +484,14 @@ export class GameScene {
         strength: 1.0, // Full strength
       };
 
-      this.uiManager.updateRadarTarget(radarTarget);
+      this.uiController.getUIManager().updateRadarTarget(radarTarget);
     });
   }
 
   private updateUITrajectoryPrediction(): void {
     // Calculate trajectory prediction using the same method as before
     const trajectory = this.calculateTrajectoryPrediction();
-    this.uiManager.updateTrajectoryPrediction(trajectory);
+    this.uiController.getUIManager().updateTrajectoryPrediction(trajectory);
   }
 
   private calculateTrajectoryPrediction(): Vector3[] {
@@ -565,7 +560,7 @@ export class GameScene {
     this.updateUIState();
 
     // Render UI (replaces all the individual render methods)
-    this.uiManager.render(this.animationTime);
+    this.uiController.getUIManager().render(this.animationTime);
 
     // Render game state overlays
     this.renderGameStateOverlay();
@@ -850,11 +845,9 @@ export class GameScene {
     );
 
     // Route all mouse events through UIManager
-    const handled = this.uiManager.handleMouseEvent(
-      mousePos,
-      event.type,
-      event.button
-    );
+    const handled = this.uiController
+      .getUIManager()
+      .handleMouseEvent(mousePos, event.type, event.button);
 
     if (!handled) {
       // Handle any game-specific mouse interactions that aren't UI-related
@@ -980,15 +973,15 @@ export class GameScene {
    * Find target near cursor position (for manual targeting)
    */
   private findTargetNearCursor(): Target | null {
-    // Find target that matches radar crosshairs (azimuth + range)
+    // Find target that    // Use radar to find target near cursor
+    const radarState = this.uiController.getRadarState();
     const BEAM_WIDTH_DEGREES = 5; // 5 degree radar beam width as per spec
     const RANGE_TOLERANCE = 200; // 200m range tolerance
 
     return (
       this.targets.find(target => {
-        if (target.isDestroyed || this.gameTime < target.spawnTime) {
+        if (target.isDestroyed || this.gameTime < target.spawnTime)
           return false;
-        }
 
         // Calculate target's bearing and distance from artillery position
         // Using XY plane for horizontal radar calculations
@@ -1001,7 +994,7 @@ export class GameScene {
         if (targetAzimuth < 0) targetAzimuth += 360;
 
         // Normalize radar azimuth to 0-360
-        let radarAz = this.radarAzimuth;
+        let radarAz = radarState.azimuth;
         if (radarAz < 0) radarAz += 360;
 
         // Calculate angular difference (handling 360-degree boundary)
@@ -1011,7 +1004,7 @@ export class GameScene {
         // Check if target is within radar beam width and range cursor tolerance
         const withinBeam = angleDiff <= BEAM_WIDTH_DEGREES / 2;
         const withinRange =
-          Math.abs(targetDistance - this.radarRange) <= RANGE_TOLERANCE;
+          Math.abs(targetDistance - radarState.range) <= RANGE_TOLERANCE;
 
         return withinBeam && withinRange;
       }) || null
@@ -1028,14 +1021,17 @@ export class GameScene {
     const dz = target.position.z - this.artilleryPosition.z;
 
     // Calculate azimuth angle from artillery to target (統一: XY平面)
-    this.radarAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+    const azimuth = Math.atan2(dx, dy) * (180 / Math.PI);
 
     // Calculate horizontal distance (radar range)
     const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
-    this.radarRange = horizontalDistance;
 
     // Calculate elevation angle from artillery to target (T046)
-    this.radarElevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
+    const elevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
+
+    // Update UIController's radar state (this will propagate to UI)
+    this.uiController.getUIManager().setRadarDirection(azimuth, elevation);
+    this.uiController.getUIManager().setRadarRange(horizontalDistance);
   }
 
   /**
@@ -1086,11 +1082,6 @@ export class GameScene {
       event.preventDefault();
     }
 
-    // Update key state
-    if (event.key in this.keyState) {
-      this.keyState[event.key as keyof typeof this.keyState] = true;
-    }
-
     switch (event.key) {
       case 'r':
       case 'R':
@@ -1118,62 +1109,26 @@ export class GameScene {
         this.handleAutoToggle();
         break;
     }
+
+    // Delegate arrow keys to UIController
+    if (
+      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+    ) {
+      this.uiController.handleKeyDown(event);
+    }
   };
 
   /**
    * Handle keyboard key up events
    */
   private handleKeyUp = (event: KeyboardEvent): void => {
-    if (event.key in this.keyState) {
-      this.keyState[event.key as keyof typeof this.keyState] = false;
+    // Delegate arrow keys to UIController
+    if (
+      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+    ) {
+      this.uiController.handleKeyUp(event);
     }
   };
-
-  /**
-   * Update radar controls based on keyboard state
-   */
-  private updateRadarControls(deltaTime: number): void {
-    let layoutChanged = false;
-
-    if (this.keyState.ArrowLeft) {
-      // Rotate radar left (decrease azimuth)
-      this.radarAzimuth =
-        (this.radarAzimuth - this.RADAR_ROTATION_SPEED * deltaTime + 360) % 360;
-      layoutChanged = true;
-    }
-    if (this.keyState.ArrowRight) {
-      // Rotate radar right (increase azimuth)
-      this.radarAzimuth =
-        (this.radarAzimuth + this.RADAR_ROTATION_SPEED * deltaTime) % 360;
-      layoutChanged = true;
-    }
-
-    if (layoutChanged) {
-      this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
-    }
-
-    let rangeChanged = false;
-    if (this.keyState.ArrowUp) {
-      // Increase radar range
-      this.radarRange = Math.min(
-        this.radarRange + this.RADAR_ZOOM_SPEED * deltaTime,
-        this.maxRadarRange
-      );
-      rangeChanged = true;
-    }
-    if (this.keyState.ArrowDown) {
-      // Decrease radar range
-      this.radarRange = Math.max(
-        this.radarRange - this.RADAR_ZOOM_SPEED * deltaTime,
-        1000
-      );
-      rangeChanged = true;
-    }
-
-    if (rangeChanged) {
-      this.uiManager.setRadarRange(this.radarRange);
-    }
-  }
 
   /**
    * Render radar elevation display in horizontal radar (T046)

@@ -92,7 +92,7 @@ describe('GameScene Keyboard Controls', () => {
 
   it('should adjust radar azimuth continuously when Arrow Left/Right is held', () => {
     const setRadarDirectionSpy = vi.spyOn(
-      (gameScene as any).uiManager,
+      (gameScene as any).uiController.getUIManager(),
       'setRadarDirection'
     );
 
@@ -107,7 +107,8 @@ describe('GameScene Keyboard Controls', () => {
     gameScene.update(1.0);
 
     // Should have rotated by RADAR_ROTATION_SPEED (60 degrees/sec)
-    expect((gameScene as any).radarAzimuth).toBe(60);
+    const radarState = (gameScene as any).uiController.getRadarState();
+    expect(radarState.azimuth).toBe(60);
     expect(setRadarDirectionSpy).toHaveBeenCalledWith(60, expect.any(Number));
 
     // Release Arrow Right
@@ -119,7 +120,8 @@ describe('GameScene Keyboard Controls', () => {
     gameScene.update(1.0);
 
     // Should not change
-    expect((gameScene as any).radarAzimuth).toBe(60);
+    const radarState2 = (gameScene as any).uiController.getRadarState();
+    expect(radarState2.azimuth).toBe(60);
 
     // Press Arrow Left
     (gameScene as any).handleKeyDown(
@@ -130,15 +132,16 @@ describe('GameScene Keyboard Controls', () => {
     gameScene.update(0.5);
 
     // Should rotate back by 30 degrees (60 * 0.5) -> 30
-    expect((gameScene as any).radarAzimuth).toBe(30);
+    const radarState3 = (gameScene as any).uiController.getRadarState();
+    expect(radarState3.azimuth).toBe(30);
   });
 
   it('should adjust radar range continuously when Arrow Up/Down is held', () => {
     const setRadarRangeSpy = vi.spyOn(
-      (gameScene as any).uiManager,
+      (gameScene as any).uiController.getUIManager(),
       'setRadarRange'
     );
-    const initialRange = (gameScene as any).radarRange;
+    const initialRange = (gameScene as any).uiController.getRadarState().range;
 
     // Press Arrow Up
     (gameScene as any).handleKeyDown(
@@ -149,7 +152,8 @@ describe('GameScene Keyboard Controls', () => {
     gameScene.update(1.0);
 
     // Should increase by RADAR_ZOOM_SPEED (5000 m/s)
-    expect((gameScene as any).radarRange).toBe(initialRange + 5000);
+    const radarState = (gameScene as any).uiController.getRadarState();
+    expect(radarState.range).toBe(initialRange + 5000);
     expect(setRadarRangeSpy).toHaveBeenCalledWith(initialRange + 5000);
 
     // Release Arrow Up
@@ -166,6 +170,7 @@ describe('GameScene Keyboard Controls', () => {
     gameScene.update(0.5);
 
     // Should decrease by 2500 (5000 * 0.5)
-    expect((gameScene as any).radarRange).toBe(initialRange + 2500);
+    const radarState2 = (gameScene as any).uiController.getRadarState();
+    expect(radarState2.range).toBe(initialRange + 2500);
   });
 });
