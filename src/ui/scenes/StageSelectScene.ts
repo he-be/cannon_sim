@@ -10,9 +10,11 @@ import { getStageById, StageConfig } from '../../data/StageData';
 import { SceneType, SceneTransition } from './TitleScene';
 import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
 import { Vector2 } from '../../math/Vector2';
+import { UIMode } from '../UIMode';
 
 interface StageButtonConfig {
   stage: StageConfig;
+  uiMode: UIMode;
   position: Vector2;
   size: Vector2;
   isHovered: boolean;
@@ -76,6 +78,7 @@ export class StageSelectScene {
     this.clearCanvas();
     this.renderBackground();
     this.renderTitle();
+    this.renderColumnHeaders();
     this.renderStageButtons();
     this.renderInstructions();
     this.renderScanLines();
@@ -89,25 +92,42 @@ export class StageSelectScene {
   }
 
   /**
-   * Setup stage buttons with proper positioning
+   * Setup stage buttons with 2-column layout for UI mode selection
+   * Left column: UI A, Right column: UI B
    */
   private setupStageButtons(): void {
     this.stageButtons = [];
-    const buttonWidth = 350;
-    const buttonHeight = 100;
-    const buttonSpacing = 120;
+    const buttonWidth = 280;
+    const buttonHeight = 90;
+    const verticalSpacing = 110;
+    const horizontalGap = 40;
     const startY = this.canvasManager.height / 2 - 80;
+
+    // Calculate center position for 2-column layout
+    const totalWidth = buttonWidth * 2 + horizontalGap;
+    const leftColumnX = this.canvasManager.width / 2 - totalWidth / 2;
+    const rightColumnX = leftColumnX + buttonWidth + horizontalGap;
 
     for (let i = 1; i <= 3; i++) {
       const stage = getStageById(i);
       if (!stage) continue;
 
-      const buttonX = this.canvasManager.width / 2 - buttonWidth / 2;
-      const buttonY = startY + (i - 1) * buttonSpacing;
+      const y = startY + (i - 1) * verticalSpacing;
 
+      // UI A button (left column)
       this.stageButtons.push({
         stage,
-        position: new Vector2(buttonX, buttonY),
+        uiMode: UIMode.MODE_A,
+        position: new Vector2(leftColumnX, y),
+        size: new Vector2(buttonWidth, buttonHeight),
+        isHovered: false,
+      });
+
+      // UI B button (right column)
+      this.stageButtons.push({
+        stage,
+        uiMode: UIMode.MODE_B,
+        position: new Vector2(rightColumnX, y),
         size: new Vector2(buttonWidth, buttonHeight),
         isHovered: false,
       });
@@ -136,7 +156,7 @@ export class StageSelectScene {
 
     for (const button of this.stageButtons) {
       if (this.isPointInButton(clickPos, button)) {
-        this.handleStageSelection(button.stage);
+        this.handleStageSelection(button);
         break;
       }
     }
@@ -168,12 +188,15 @@ export class StageSelectScene {
   }
 
   /**
-   * Handle stage selection
+   * Handle stage and UI mode selection
    */
-  private handleStageSelection(stage: StageConfig): void {
+  private handleStageSelection(button: StageButtonConfig): void {
     this.onSceneTransition({
       type: SceneType.GAME,
-      data: { selectedStage: stage },
+      data: {
+        selectedStage: button.stage,
+        uiMode: button.uiMode,
+      },
     });
   }
 
@@ -255,12 +278,51 @@ export class StageSelectScene {
   }
 
   /**
-   * Render stage selection buttons
+   * Render column headers for UI modes
+   */
+  private renderColumnHeaders(): void {
+    const ctx = this.canvasManager.context;
+    const buttonWidth = 280;
+    const horizontalGap = 40;
+    const totalWidth = buttonWidth * 2 + horizontalGap;
+    const leftColumnX = this.canvasManager.width / 2 - totalWidth / 2;
+    const rightColumnX = leftColumnX + buttonWidth + horizontalGap;
+    const headerY = this.canvasManager.height / 2 - 120;
+
+    ctx.save();
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // UI A header (left)
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.fillText('UI MODE A', leftColumnX + buttonWidth / 2, headerY);
+    ctx.font = '12px monospace';
+    ctx.fillStyle = this.CRT_COLORS.TERTIARY_TEXT;
+    ctx.fillText('(Classic)', leftColumnX + buttonWidth / 2, headerY + 18);
+
+    // UI B header (right)
+    ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText('UI MODE B', rightColumnX + buttonWidth / 2, headerY);
+    ctx.font = '12px monospace';
+    ctx.fillStyle = this.CRT_COLORS.TERTIARY_TEXT;
+    ctx.fillText(
+      '(Circular Scope)',
+      rightColumnX + buttonWidth / 2,
+      headerY + 18
+    );
+
+    ctx.restore();
+  }
+
+  /**
+   * Render stage selection buttons with UI mode indication
    */
   private renderStageButtons(): void {
     const ctx = this.canvasManager.context;
 
-    this.stageButtons.forEach((button, index) => {
+    this.stageButtons.forEach(button => {
       ctx.save();
 
       // Button background with hover effect
@@ -288,35 +350,24 @@ export class StageSelectScene {
         button.size.y
       );
 
-      // Stage number indicator
-      ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
-      ctx.font = this.FONTS.BUTTON_TITLE;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-
-      const numberX = button.position.x + 15;
-      const numberY = button.position.y + 15;
-      ctx.fillText(`${index + 1}`, numberX, numberY);
-
       // Stage name
       ctx.fillStyle = this.CRT_COLORS.PRIMARY_TEXT;
       ctx.font = this.FONTS.BUTTON_TITLE;
-      ctx.textAlign = 'left';
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
 
-      const nameX = button.position.x + 50;
-      const nameY = button.position.y + 15;
-      ctx.fillText(button.stage.name, nameX, nameY);
+      const centerX = button.position.x + button.size.x / 2;
+      const nameY = button.position.y + 12;
+      ctx.fillText(button.stage.name, centerX, nameY);
 
       // Stage description
       ctx.fillStyle = this.CRT_COLORS.TERTIARY_TEXT;
       ctx.font = this.FONTS.BUTTON_DESC;
-      ctx.textAlign = 'left';
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
 
-      const descX = button.position.x + 50;
-      const descY = button.position.y + 45;
-      ctx.fillText(button.stage.description, descX, descY);
+      const descY = button.position.y + 42;
+      ctx.fillText(button.stage.description, centerX, descY);
 
       // Difficulty indicator
       const difficultyText = this.getDifficultyText(
@@ -327,8 +378,8 @@ export class StageSelectScene {
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
 
-      const diffX = button.position.x + button.size.x - 15;
-      const diffY = button.position.y + button.size.y - 15;
+      const diffX = button.position.x + button.size.x - 10;
+      const diffY = button.position.y + button.size.y - 8;
       ctx.fillText(difficultyText, diffX, diffY);
 
       ctx.restore();
@@ -350,7 +401,7 @@ export class StageSelectScene {
     ctx.textBaseline = 'middle';
 
     ctx.fillText(
-      'Click on a stage to begin your mission',
+      'Click on a stage to begin • Choose between Classic (UI A) or Circular Scope (UI B) interface',
       centerX,
       instructionsY
     );

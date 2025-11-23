@@ -275,8 +275,9 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
     it('should render instructions', () => {
       stageSelectScene.render();
 
+      // Updated instructions text for UI mode selection
       expect(mockContext.fillText).toHaveBeenCalledWith(
-        'Click on a stage to begin your mission',
+        expect.stringContaining('Choose between Classic'),
         expect.any(Number),
         expect.any(Number)
       );
@@ -330,17 +331,18 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
       expect(typeof eventCallback).toBe('function');
     });
 
-    it('should transition to game scene when stage 1 is selected', () => {
+    it('should transition to game scene when stage 1 UI A is selected', () => {
       const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
       const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
         .calls[0][0];
 
-      // Simulate click on stage 1 button area (center of first button)
-      // Button 1: y = height/2 - 80 + 0 * 120 = 300 - 80 = 220, center at 220 + 50 = 270
+      // 2-column layout: Left column (UI A)
+      // Button 1 UI A: leftColumnX = (800 - (280*2 + 40)) / 2 = 100, y = 300 - 80 = 220
+      // Center: x = 100 + 140 = 240, y = 220 + 45 = 265
       const clickEvent = {
         type: 'click',
         position: {
-          canvas: { x: 400, y: 270 }, // Center area of first button
+          canvas: { x: 240, y: 265 }, // Center of Stage 1 UI A button
         },
         button: 0,
         state: 'pressed',
@@ -356,21 +358,21 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
             name: 'Stage 1: Static Targets',
             difficultyLevel: 1 as const,
           }),
+          uiMode: expect.any(String), // UIMode.MODE_A
         },
       });
     });
 
-    it('should transition to game scene when stage 2 is selected', () => {
+    it('should transition to game scene when stage 2 UI A is selected', () => {
       const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
       const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
         .calls[0][0];
 
-      // Simulate click on stage 2 button area (center of second button)
-      // Button 2: y = height/2 - 80 + 1 * 120 = 300 - 80 + 120 = 340, center at 340 + 50 = 390
+      // Button 2 UI A: y = 220 + 110 = 330, center: y = 330 + 45 = 375
       const clickEvent = {
         type: 'click',
         position: {
-          canvas: { x: 400, y: 390 }, // Center area of second button
+          canvas: { x: 240, y: 375 }, // Center of Stage 2 UI A button
         },
         button: 0,
         state: 'pressed',
@@ -386,21 +388,22 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
             name: 'Stage 2: Slow Moving Targets',
             difficultyLevel: 2 as const,
           }),
+          uiMode: expect.any(String),
         },
       });
     });
 
-    it('should transition to game scene when stage 3 is selected', () => {
+    it('should transition to game scene when stage 3 UI B is selected', () => {
       const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
       const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
         .calls[0][0];
 
-      // Simulate click on stage 3 button area (center of third button)
-      // Button 3: y = height/2 - 80 + 2 * 120 = 300 - 80 + 240 = 460, center at 460 + 50 = 510
+      // Right column (UI B): rightColumnX = 100 + 280 + 40 = 420
+      // Button 3 UI B: y = 220 + 2 * 110 = 440, center: x = 420 + 140 = 560, y = 440 + 45 = 485
       const clickEvent = {
         type: 'click',
         position: {
-          canvas: { x: 400, y: 510 }, // Center area of third button
+          canvas: { x: 560, y: 485 }, // Center of Stage 3 UI B button
         },
         button: 0,
         state: 'pressed',
@@ -416,6 +419,7 @@ describe('StageSelectScene (T028-2 - Complete Rewrite)', () => {
             name: 'Stage 3: Fast Moving Targets',
             difficultyLevel: 3 as const,
           }),
+          uiMode: expect.any(String), // UIMode.MODE_B
         },
       });
     });
