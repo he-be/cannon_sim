@@ -302,8 +302,13 @@ export class GameScene {
     this.artillery.update(deltaTime);
 
     // Update UI controls (delegated to UIController)
-    // Pass lock state to prevent radar movement when locked
+    // When locked on target, radar automatically tracks the target
     const isLocked = this.targetingState === TargetingState.LOCKED_ON;
+    if (isLocked && this.lockedTarget) {
+      // Update radar to follow locked target
+      this.updateRadarToLockedTarget();
+    }
+    // Pass lock state to prevent manual radar movement when locked
     this.uiController.updateControls(deltaTime, isLocked);
 
     // Update projectiles
@@ -1014,7 +1019,38 @@ export class GameScene {
   }
 
   /**
-   * Update radar to point at specific target
+   * Update radar to point at locked target
+   * Used for automatic target tracking when locked on
+   */
+  private updateRadarToLockedTarget(): void {
+    if (!this.lockedTarget) return;
+
+    const target = this.lockedTarget;
+
+    // Calculate direction to target
+    const dx = target.position.x - this.artilleryPosition.x;
+    const dy = target.position.y - this.artilleryPosition.y;
+    const dz = target.position.z - this.artilleryPosition.z;
+
+    // Calculate azimuth angle from artillery to target (統一: XY平面)
+    const azimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+
+    // Calculate horizontal distance (radar range)
+    const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
+
+    // Calculate elevation angle from artillery to target (T046)
+    const elevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
+
+    // Update UIController's radar state to track target
+    this.uiController.setRadarState({
+      azimuth,
+      elevation,
+      range: horizontalDistance,
+    });
+  }
+
+  /**
+   * Update radar to point at specific target (for right-click targeting)
    */
   private updateRadarToTarget(target: Target): void {
     // Calculate direction to target
@@ -1032,8 +1068,11 @@ export class GameScene {
     const elevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
 
     // Update UIController's radar state (this will propagate to UI)
-    this.uiController.getUIManager().setRadarDirection(azimuth, elevation);
-    this.uiController.getUIManager().setRadarRange(horizontalDistance);
+    this.uiController.setRadarState({
+      azimuth,
+      elevation,
+      range: horizontalDistance,
+    });
   }
 
   /**

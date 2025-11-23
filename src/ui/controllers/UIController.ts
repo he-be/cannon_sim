@@ -44,6 +44,12 @@ export interface UIController {
   getRadarState(): RadarState;
 
   /**
+   * Set radar state from external source (e.g., target tracking)
+   * Used when radar should track a locked target
+   */
+  setRadarState(state: Partial<RadarState>): void;
+
+  /**
    * Get range gate setting (UI B only, optional)
    */
   getRangeGate?(): number;

@@ -149,6 +149,26 @@ export class UIControllerA implements UIController {
   }
 
   /**
+   * Set radar state from external source (e.g., target tracking)
+   * Used when radar should track a locked target
+   */
+  setRadarState(state: Partial<RadarState>): void {
+    if (state.azimuth !== undefined) {
+      this.radarAzimuth = state.azimuth;
+    }
+    if (state.elevation !== undefined) {
+      this.radarElevation = state.elevation;
+    }
+    if (state.range !== undefined) {
+      this.radarRange = state.range;
+    }
+
+    // Update UI to reflect new radar state
+    this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
+    this.uiManager.setRadarRange(this.radarRange);
+  }
+
+  /**
    * Cleanup resources
    */
   destroy(): void {
