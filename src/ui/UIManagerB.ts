@@ -8,6 +8,7 @@ import { CanvasManager } from '../rendering/CanvasManager';
 import { Vector2 } from '../math/Vector2';
 import { Vector3 } from '../math/Vector3';
 import { ControlPanelRenderer } from './components/ControlPanelRenderer';
+import { RadarTarget } from './components/RadarRenderer';
 import {
   CircularScopeRenderer,
   CircularScopeTarget,
@@ -58,7 +59,8 @@ export class UIManagerB {
 
   // Radar state for rendering
   private radarAzimuth: number = 0;
-  private radarRange: number = 10000;
+  private radarElevation: number = 0;
+  private radarRange: number = 15000;
   private rangeGate: number = 5000;
 
   // Target data
@@ -303,9 +305,9 @@ export class UIManagerB {
 
   // ===== State Update Methods =====
 
-  setRadarDirection(azimuth: number, _elevation: number): void {
+  setRadarDirection(azimuth: number, elevation: number): void {
     this.radarAzimuth = azimuth;
-    // Elevation not stored separately in UI B - tracked via radar state
+    this.radarElevation = elevation;
   }
 
   setRadarRange(range: number): void {
@@ -359,7 +361,55 @@ export class UIManagerB {
     this.controlPanel.setLeadAngle(leadAngle);
   }
 
-  updateRadarTarget(target: CircularScopeTarget): void {
+  updateRadarTarget(target: CircularScopeTarget | RadarTarget): void {
+    // Handle RadarTarget (from GameScene)
+    if ('bearing' in target) {
+      // Update Circular Scope Target
+      const circularTarget: CircularScopeTarget = {
+        id: target.id,
+        azimuth: target.bearing,
+        distance: target.distance,
+      };
+      this.updateCircularTarget(circularTarget);
+
+      // Update A-Scope Target
+      // Only show on A-Scope if within beam width (simplified check)
+      // In a real radar, this would depend on antenna pattern
+      // For now, we'll show all targets on A-Scope but filter by azimuth in renderer if needed
+      // Or better: A-Scope shows what the radar is pointing at.
+      // But here we just update the list. AScopeRenderer might need to know radar azimuth to filter?
+      // Actually AScopeRenderer description says: "Targets only appear when radar azimuth AND elevation match"
+      // But AScopeRenderer.render just renders all targets passed to it.
+      // So filtering should happen here or in GameScene.
+      // GameScene sends all detected targets.
+      // We should filter based on radarAzimuth.
+
+      // Use elevation from RadarTarget (calculated in GameScene)
+      const elevationDiff = Math.abs(target.elevation - this.radarElevation);
+
+      // Calculate shortest azimuth difference (0-180)
+      const azDiff = Math.abs(target.bearing - this.radarAzimuth) % 360;
+      const shortestAzDiff = azDiff > 180 ? 360 - azDiff : azDiff;
+
+      // Beam width approx 5 degrees (both horizontal and vertical)
+      if (shortestAzDiff < 2.5 && elevationDiff < 2.5) {
+        const aScopeTarget: AScopeTarget = {
+          id: target.id,
+          distance: target.distance,
+          strength: target.strength,
+        };
+        this.updateAScopeTarget(aScopeTarget);
+      } else {
+        // Remove from A-Scope if out of beam
+        this.removeAScopeTarget(target.id);
+      }
+    } else {
+      // Handle direct CircularScopeTarget
+      this.updateCircularTarget(target);
+    }
+  }
+
+  private updateCircularTarget(target: CircularScopeTarget): void {
     const existingIndex = this.circularTargets.findIndex(
       t => t.id === target.id
     );
@@ -368,6 +418,10 @@ export class UIManagerB {
     } else {
       this.circularTargets.push(target);
     }
+  }
+
+  private removeAScopeTarget(targetId: string): void {
+    this.aScopeTargets = this.aScopeTargets.filter(t => t.id !== targetId);
   }
 
   removeRadarTarget(targetId: string): void {
@@ -400,8 +454,47 @@ export class UIManagerB {
     this.trajectoryPath = trajectory;
   }
 
-  handleMouseEvent(_event: MouseEvent): boolean {
-    // Mouse interaction for UI B if needed
+  /**
+   * Handle mouse events and route to appropriate components
+   */
+  handleMouseEvent(
+    mousePos: Vector2,
+    eventType:
+      | 'mousedown'
+      | 'mousemove'
+      | 'mouseup'
+      | 'click'
+      | 'dragstart'
+      | 'dragend',
+    _button: number = 0
+  ): boolean {
+    // Only handle basic mouse events, ignore drag events for now
+    if (eventType === 'dragstart' || eventType === 'dragend') {
+      return false;
+    }
+
+    // Check control panel first
+    if (this.isPointInControlPanel(mousePos)) {
+      const localPos = new Vector2(
+        mousePos.x - this.bounds.controlPanel.x,
+        mousePos.y - this.bounds.controlPanel.y
+      );
+      return this.controlPanel.handleMouseEvent(localPos, eventType);
+    }
+
+    // UI B doesn't have interactive scopes (they're display-only)
     return false;
+  }
+
+  /**
+   * Check if point is in control panel bounds
+   */
+  private isPointInControlPanel(pos: Vector2): boolean {
+    return (
+      pos.x >= this.bounds.controlPanel.x &&
+      pos.x <= this.bounds.controlPanel.x + this.bounds.controlPanel.width &&
+      pos.y >= this.bounds.controlPanel.y &&
+      pos.y <= this.bounds.controlPanel.y + this.bounds.controlPanel.height
+    );
   }
 }

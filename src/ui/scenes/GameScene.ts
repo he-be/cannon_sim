@@ -26,6 +26,8 @@ import { UIEvents } from '../UIManager';
 import { RadarTarget } from '../components/RadarRenderer';
 import { UIController } from '../controllers/UIController';
 import { UIControllerA } from '../controllers/UIControllerA';
+import { UIControllerB } from '../controllers/UIControllerB';
+import { UIMode } from '../UIMode';
 import { StandardPhysics } from '../../physics/StandardPhysics';
 
 // Extended lead angle interface with display information
@@ -54,6 +56,7 @@ export enum TargetingState {
 
 export interface GameSceneConfig {
   selectedStage: StageConfig;
+  uiMode?: UIMode;
 }
 
 interface ProjectileState {
@@ -178,8 +181,13 @@ export class GameScene {
       },
     };
 
-    // Initialize UIController (defaults to MODE_A for backward compatibility)
-    this.uiController = new UIControllerA(this.canvasManager, uiEvents);
+    // Initialize UIController based on selected mode
+    const mode = this.config.uiMode || UIMode.MODE_A;
+    if (mode === UIMode.MODE_B) {
+      this.uiController = new UIControllerB(this.canvasManager, uiEvents);
+    } else {
+      this.uiController = new UIControllerA(this.canvasManager, uiEvents);
+    }
 
     // Initialize physics engine with RK4 integration
     // Initialize physics engine with RK4 integration
@@ -371,7 +379,22 @@ export class GameScene {
     this.uiController
       .getUIManager()
       .setRadarDirection(radarState.azimuth, radarState.elevation);
-    this.uiController.getUIManager().setRadarRange(radarState.range);
+
+    // For UI B, radarState.range is the rangeGate (cursor position)
+    // For UI A, radarState.range is the display range
+    // Check if UIManager has setRangeGate method (UI B specific)
+    const uiManager = this.uiController.getUIManager();
+    if ('setRangeGate' in uiManager) {
+      // UI B: Set range gate only, display range is always 15km
+      (
+        uiManager as typeof uiManager & {
+          setRangeGate: (range: number) => void;
+        }
+      ).setRangeGate(radarState.range);
+    } else {
+      // UI A: Set display range (zoom functionality)
+      uiManager.setRadarRange(radarState.range);
+    }
 
     // Update radar info display in left panel (moved from center pane)
     this.uiController
@@ -478,8 +501,10 @@ export class GameScene {
 
       const dx = target.position.x - this.artilleryPosition.x;
       const dy = target.position.y - this.artilleryPosition.y;
+      const dz = target.position.z - this.artilleryPosition.z;
       const distance = Math.sqrt(dx * dx + dy * dy);
       const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
+      const elevation = Math.atan2(dz, distance) * (180 / Math.PI);
 
       const radarTarget: RadarTarget = {
         id: target.trackId,
@@ -488,6 +513,7 @@ export class GameScene {
         type: target.type,
         bearing: bearing,
         distance: distance,
+        elevation: elevation,
         strength: 1.0, // Full strength
       };
 
@@ -1151,9 +1177,12 @@ export class GameScene {
         break;
     }
 
-    // Delegate arrow keys to UIController
+    // Delegate keys to UIController
     if (
-      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
+      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'o', 'i'].includes(
+        event.key.toLowerCase() // Use lowercase for check to handle caps lock/shift
+      ) ||
+      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) // Keep original check for safety
     ) {
       this.uiController.handleKeyDown(event);
     }
@@ -1163,8 +1192,11 @@ export class GameScene {
    * Handle keyboard key up events
    */
   private handleKeyUp = (event: KeyboardEvent): void => {
-    // Delegate arrow keys to UIController
+    // Delegate keys to UIController
     if (
+      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'o', 'i'].includes(
+        event.key.toLowerCase()
+      ) ||
       ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
     ) {
       this.uiController.handleKeyUp(event);

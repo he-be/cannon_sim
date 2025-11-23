@@ -51,6 +51,10 @@ export class UIControllerB implements UIController {
   constructor(canvasManager: CanvasManager, events: UIEvents) {
     // Create UIManagerB instance
     this.uiManager = new UIManagerB(canvasManager, events);
+
+    // Initialize UI with correct radar state
+    this.uiManager.setRadarRange(this.maxRadarRange);
+    this.uiManager.setRangeGate(this.rangeGate);
   }
 
   /**
@@ -178,7 +182,7 @@ export class UIControllerB implements UIController {
     return {
       azimuth: this.radarAzimuth,
       elevation: this.radarElevation,
-      range: this.radarRange,
+      range: this.rangeGate, // Return rangeGate for locking logic (GameScene expects cursor distance)
     };
   }
 
@@ -194,12 +198,13 @@ export class UIControllerB implements UIController {
       this.radarElevation = state.elevation;
     }
     if (state.range !== undefined) {
-      this.radarRange = state.range;
+      this.rangeGate = state.range; // Update range gate, not display range
     }
 
     // Update UI to reflect new radar state
     this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
     this.uiManager.setRadarRange(this.radarRange);
+    this.uiManager.setRangeGate(this.rangeGate);
   }
 
   /**

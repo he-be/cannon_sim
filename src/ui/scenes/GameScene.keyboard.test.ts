@@ -141,7 +141,8 @@ describe('GameScene Keyboard Controls', () => {
       (gameScene as any).uiController.getUIManager(),
       'setRadarRange'
     );
-    const initialRange = (gameScene as any).uiController.getRadarState().range;
+    const initialRange = 5000;
+    (gameScene as any).uiController.setRadarState({ range: initialRange });
 
     // Press Arrow Up
     (gameScene as any).handleKeyDown(
@@ -172,5 +173,34 @@ describe('GameScene Keyboard Controls', () => {
     // Should decrease by 2500 (5000 * 0.5)
     const radarState2 = (gameScene as any).uiController.getRadarState();
     expect(radarState2.range).toBe(initialRange + 2500);
+  });
+
+  it('should delegate O and I keys to UIController', () => {
+    const handleKeyDownSpy = vi.spyOn(
+      (gameScene as any).uiController,
+      'handleKeyDown'
+    );
+    const handleKeyUpSpy = vi.spyOn(
+      (gameScene as any).uiController,
+      'handleKeyUp'
+    );
+
+    // Test O key
+    const eventO = new KeyboardEvent('keydown', { key: 'o' });
+    (gameScene as any).handleKeyDown(eventO);
+    expect(handleKeyDownSpy).toHaveBeenCalledWith(eventO);
+
+    const eventOUp = new KeyboardEvent('keyup', { key: 'o' });
+    (gameScene as any).handleKeyUp(eventOUp);
+    expect(handleKeyUpSpy).toHaveBeenCalledWith(eventOUp);
+
+    // Test I key
+    const eventI = new KeyboardEvent('keydown', { key: 'i' });
+    (gameScene as any).handleKeyDown(eventI);
+    expect(handleKeyDownSpy).toHaveBeenCalledWith(eventI);
+
+    const eventIUp = new KeyboardEvent('keyup', { key: 'i' });
+    (gameScene as any).handleKeyUp(eventIUp);
+    expect(handleKeyUpSpy).toHaveBeenCalledWith(eventIUp);
   });
 });

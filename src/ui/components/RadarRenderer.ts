@@ -25,6 +25,7 @@ export interface RadarTarget {
   type: string;
   bearing: number;
   distance: number;
+  elevation: number;
   strength: number;
 }
 
