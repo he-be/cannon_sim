@@ -125,8 +125,20 @@ export class ControlPanelRenderer {
 
     // Artillery section
     this.artilleryGroup = new InfoGroupComponent('artillery', 'Artillery', [
-      { label: 'Az', value: `${this.state.azimuth.toFixed(1)}°` },
-      { label: 'El', value: `${this.state.elevation.toFixed(1)}°` },
+      {
+        label: 'Az',
+        value: this.state.azimuth,
+        type: 'counter',
+        digits: 3,
+        decimals: 1,
+      },
+      {
+        label: 'El',
+        value: this.state.elevation,
+        type: 'counter',
+        digits: 2,
+        decimals: 1,
+      },
     ]);
 
     // Sliders
@@ -158,22 +170,49 @@ export class ControlPanelRenderer {
 
     // Info groups
     this.radarGroup = new InfoGroupComponent('radar', 'Radar', [
-      { label: 'Az', value: '---°' },
-      { label: 'El', value: '---°' },
-      { label: 'Range', value: '---km' },
+      { label: 'Az', value: 0, type: 'counter', digits: 3, decimals: 1 },
+      { label: 'El', value: 0, type: 'counter', digits: 2, decimals: 1 },
+      { label: 'Range', value: 0, type: 'counter', digits: 2, decimals: 2 }, // km
     ]);
 
     this.targetingGroup = new InfoGroupComponent('targeting', 'Targeting', [
-      { label: 'Status', value: 'MANUAL' },
+      {
+        label: 'Status',
+        value: 'NO_TARGET',
+        type: 'indicator_group',
+        options: [
+          {
+            label: 'SEARCH',
+            value: 'NO_TARGET',
+            color: CRT_COLORS.SECONDARY_TEXT,
+          },
+          { label: 'TRACK', value: 'TRACKING', color: CRT_COLORS.WARNING_TEXT },
+          {
+            label: 'LOCK',
+            value: 'LOCKED_ON',
+            color: CRT_COLORS.TARGET_LOCKED,
+          },
+        ],
+      },
     ]);
 
     this.leadAngleGroup = new InfoGroupComponent(
       'lead-angle',
-      'Recommended Lead',
+      'Calculated Lead',
       [
-        { label: 'Az', value: '---°' },
-        { label: 'El', value: '---°' },
-        { label: 'Confidence', value: 'No target locked' },
+        { label: 'Az', value: 0, type: 'counter', digits: 3, decimals: 1 },
+        { label: 'El', value: 0, type: 'counter', digits: 2, decimals: 1 },
+        { label: 'Time', value: 0, type: 'counter', digits: 2, decimals: 2 },
+        {
+          label: 'Confidence',
+          value: 'LOW',
+          type: 'indicator_group',
+          options: [
+            { label: 'LOW', value: 'LOW', color: CRT_COLORS.CRITICAL_TEXT },
+            { label: 'MED', value: 'MEDIUM', color: CRT_COLORS.WARNING_TEXT },
+            { label: 'HIGH', value: 'HIGH', color: CRT_COLORS.TARGET_LOCKED },
+          ],
+        },
       ]
     );
 
@@ -208,13 +247,25 @@ export class ControlPanelRenderer {
 
     // Build component tree
     this.rootContainer.addChild(this.titleComponent);
+
+    // Order: Radar -> Calculated Lead -> Artillery -> Buttons -> IGT
+
+    // Radar Section
+    this.rootContainer.addChild(this.radarGroup);
+    this.rootContainer.addChild(this.targetingGroup); // Targeting is related to Radar/Lead
+
+    // Calculated Lead Section
+    this.rootContainer.addChild(this.leadAngleGroup);
+
+    // Artillery Section
     this.rootContainer.addChild(this.artilleryGroup);
     this.rootContainer.addChild(this.azimuthSlider);
     this.rootContainer.addChild(this.elevationSlider);
-    this.rootContainer.addChild(this.radarGroup);
-    this.rootContainer.addChild(this.targetingGroup);
-    this.rootContainer.addChild(this.leadAngleGroup);
+
+    // Buttons
     this.rootContainer.addChild(this.buttonsContainer);
+
+    // IGT
     this.rootContainer.addChild(this.timeDisplay);
 
     // Calculate initial layout after all children are added
@@ -236,6 +287,12 @@ export class ControlPanelRenderer {
     ctx.strokeRect(0, 0, this.panelWidth, this.panelHeight);
 
     // Ensure layout is calculated
+    // We need to recalculate layout every frame if we have dynamic content that changes size?
+    // Or at least when state changes.
+    // For mechanical counters, size is fixed.
+    // For indicators, size is fixed.
+    // Text might change length, but usually we reserve space.
+    // Let's rely on updateState calling updateLayout.
     this.rootContainer.calculateLayout();
 
     // Render component tree
@@ -349,8 +406,8 @@ export class ControlPanelRenderer {
   }
 
   private updateArtilleryInfo(azimuth: number, elevation: number): void {
-    this.artilleryGroup.updateInfoItem('Az', `${azimuth.toFixed(1)}°`);
-    this.artilleryGroup.updateInfoItem('El', `${elevation.toFixed(1)}°`);
+    this.artilleryGroup.updateInfoItem('Az', azimuth);
+    this.artilleryGroup.updateInfoItem('El', elevation);
   }
 
   private updateRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
@@ -368,69 +425,40 @@ export class ControlPanelRenderer {
 
   private updateTargetInfo(targetInfo: ControlPanelState['targetInfo']): void {
     if (targetInfo) {
-      let statusColor: string;
-      switch (targetInfo.status) {
-        case 'TRACKING':
-          statusColor = CRT_COLORS.WARNING_TEXT;
-          break;
-        case 'LOCKED_ON':
-          statusColor = CRT_COLORS.CRITICAL_TEXT;
-          break;
-        default:
-          statusColor = CRT_COLORS.SECONDARY_TEXT;
-      }
+      this.targetingGroup.updateStatus(targetInfo.status);
 
-      this.targetingGroup.updateStatus(targetInfo.status, statusColor);
-      this.targetingGroup.updateType(targetInfo.type || null);
-      this.targetingGroup.updateRange(targetInfo.range || null);
-      this.targetingGroup.updateSpeed(targetInfo.speed || null);
+      // Add extra info if needed, but we removed Type/Range/Speed from initial setup
+      // If we want them back, we should add them to initial setup or dynamically add them
+      // For now, let's assume we only want Status indicators as per request
+      // Or we can add them back as text below indicators?
+      // The request focused on "targeting status... lamp indicator".
+      // Let's keep it simple for now.
+
+      if (targetInfo.range) this.targetingGroup.updateRange(targetInfo.range);
+      if (targetInfo.speed) this.targetingGroup.updateSpeed(targetInfo.speed);
+      if (targetInfo.type) this.targetingGroup.updateType(targetInfo.type);
     } else {
-      this.targetingGroup.updateStatus('MANUAL');
-      this.targetingGroup.removeInfoItem('Type');
-      this.targetingGroup.removeInfoItem('Range');
-      this.targetingGroup.removeInfoItem('Speed');
+      this.targetingGroup.updateStatus('NO_TARGET');
     }
   }
 
   private updateLeadAngle(leadAngle: ControlPanelState['leadAngle']): void {
     if (leadAngle) {
-      let confidenceColor: string;
-      switch (leadAngle.confidence) {
-        case 'HIGH':
-          confidenceColor = CRT_COLORS.TARGET_LOCKED;
-          break;
-        case 'MEDIUM':
-          confidenceColor = CRT_COLORS.WARNING_TEXT;
-          break;
-        case 'LOW':
-          confidenceColor = CRT_COLORS.CRITICAL_TEXT;
-          break;
-        default:
-          confidenceColor = CRT_COLORS.SECONDARY_TEXT;
-      }
-
       // Use standardized 0-360 azimuth
       this.leadAngleGroup.updateAzimuth(leadAngle.azimuth);
       this.leadAngleGroup.updateElevation(leadAngle.elevation);
-      this.leadAngleGroup.updateInfoItem(
-        'Confidence',
-        leadAngle.confidence,
-        confidenceColor
-      );
+      this.leadAngleGroup.updateConfidence(leadAngle.confidence);
 
       if (leadAngle.flightTime) {
-        this.leadAngleGroup.addInfoItem({
-          label: 'Time',
-          value: `${leadAngle.flightTime.toFixed(2)}s`,
-        });
+        this.leadAngleGroup.updateInfoItem('Time', leadAngle.flightTime);
       } else {
-        this.leadAngleGroup.removeInfoItem('Time');
+        this.leadAngleGroup.updateInfoItem('Time', 0);
       }
     } else {
-      this.leadAngleGroup.updateAzimuth(null);
-      this.leadAngleGroup.updateElevation(null);
-      this.leadAngleGroup.updateInfoItem('Confidence', 'No target locked');
-      this.leadAngleGroup.removeInfoItem('Time');
+      this.leadAngleGroup.updateAzimuth(0); // Reset to 0
+      this.leadAngleGroup.updateElevation(0);
+      this.leadAngleGroup.updateConfidence('LOW'); // Default to LOW or none?
+      this.leadAngleGroup.updateInfoItem('Time', 0);
     }
   }
 
@@ -487,6 +515,16 @@ export class ControlPanelRenderer {
     this.buttonsContainer.bounds.height =
       this.buttonsContainer.getPreferredHeight();
 
+    // Recalculate group heights as they might change if items are added/removed
+    // (Though currently we only update values, not add/remove items mostly)
+    this.artilleryGroup.bounds.height =
+      this.artilleryGroup.getPreferredHeight();
+    this.radarGroup.bounds.height = this.radarGroup.getPreferredHeight();
+    this.targetingGroup.bounds.height =
+      this.targetingGroup.getPreferredHeight();
+    this.leadAngleGroup.bounds.height =
+      this.leadAngleGroup.getPreferredHeight();
+
     // Force root container to recalculate layout
     this.rootContainer.calculateLayout();
   }
@@ -504,11 +542,14 @@ export class ControlPanelRenderer {
     this.lockButton.bounds = { x: 0, y: 0, width: 120, height: 25 };
     this.menuButton.bounds = { x: 0, y: 0, width: 120, height: 25 };
 
-    // Set info group heights
-    this.artilleryGroup.bounds.height = 80; // Increased height for extra info
-    this.radarGroup.bounds.height = 80;
-    this.targetingGroup.bounds.height = 40;
-    this.leadAngleGroup.bounds.height = 80;
+    // Set info group heights dynamically
+    this.artilleryGroup.bounds.height =
+      this.artilleryGroup.getPreferredHeight();
+    this.radarGroup.bounds.height = this.radarGroup.getPreferredHeight();
+    this.targetingGroup.bounds.height =
+      this.targetingGroup.getPreferredHeight();
+    this.leadAngleGroup.bounds.height =
+      this.leadAngleGroup.getPreferredHeight();
 
     // Initial dynamic height calculation
     this.buttonsContainer.bounds.height =
