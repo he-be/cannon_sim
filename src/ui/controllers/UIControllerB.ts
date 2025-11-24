@@ -8,6 +8,7 @@ import { UIManager, UIEvents } from '../UIManager';
 import { UIManagerB } from '../UIManagerB';
 import { UIController, RadarState } from './UIController';
 import { GAME_CONSTANTS } from '../../data/Constants';
+import { RadarController } from '../../game/RadarController';
 
 /**
  * UIControllerB implements the new UI behavior (UI B)
@@ -19,11 +20,9 @@ import { GAME_CONSTANTS } from '../../data/Constants';
 export class UIControllerB implements UIController {
   private uiManager: UIManagerB;
   private events: UIEvents;
+  private radarController: RadarController;
 
-  // Radar state
-  private radarAzimuth: number = 0;
-  private radarElevation: number = 0;
-  private radarRange: number = GAME_CONSTANTS.DEFAULT_RADAR_RANGE;
+  // Range gate state (not part of RadarController)
   private rangeGate: number = 5000; // Distance gate (initial 5km)
   private readonly maxRadarRange: number = GAME_CONSTANTS.MAX_RADAR_RANGE;
 
@@ -49,9 +48,14 @@ export class UIControllerB implements UIController {
   private readonly RADAR_ELEVATION_SPEED = 30; // degrees per second (elevation)
   private readonly RANGE_GATE_SPEED = 2000; // meters per second
 
-  constructor(canvasManager: CanvasManager, events: UIEvents) {
+  constructor(
+    canvasManager: CanvasManager,
+    events: UIEvents,
+    radarController: RadarController
+  ) {
     // Store events for firing
     this.events = events;
+    this.radarController = radarController;
 
     // Create UIManagerB instance
     this.uiManager = new UIManagerB(canvasManager, events);
@@ -108,54 +112,40 @@ export class UIControllerB implements UIController {
    * @param deltaTime - Time elapsed since last frame in seconds
    */
   updateControls(deltaTime: number): void {
-    // NOTE: Radar can move even when locked (independent from artillery)
+    // Calculate radar deltas from keyboard input
+    let deltaAzimuth = 0;
+    let deltaElevation = 0;
 
-    let directionChanged = false;
-    let azimuthChanged = false;
-    let elevationChanged = false;
-
-    // Update radar azimuth based on arrow left/right
     if (this.keyState.ArrowLeft) {
-      this.radarAzimuth =
-        (this.radarAzimuth - this.RADAR_ROTATION_SPEED * deltaTime + 360) % 360;
-      directionChanged = true;
-      azimuthChanged = true;
+      deltaAzimuth -= this.RADAR_ROTATION_SPEED * deltaTime;
     }
     if (this.keyState.ArrowRight) {
-      this.radarAzimuth =
-        (this.radarAzimuth + this.RADAR_ROTATION_SPEED * deltaTime) % 360;
-      directionChanged = true;
-      azimuthChanged = true;
+      deltaAzimuth += this.RADAR_ROTATION_SPEED * deltaTime;
     }
-
-    // Update radar elevation based on arrow up/down (DIFFERENT FROM UI A!)
     if (this.keyState.ArrowUp) {
-      this.radarElevation = Math.min(
-        this.radarElevation + this.RADAR_ELEVATION_SPEED * deltaTime,
-        90
-      );
-      directionChanged = true;
-      elevationChanged = true;
+      deltaElevation += this.RADAR_ELEVATION_SPEED * deltaTime;
     }
     if (this.keyState.ArrowDown) {
-      this.radarElevation = Math.max(
-        this.radarElevation - this.RADAR_ELEVATION_SPEED * deltaTime,
-        0
-      );
-      directionChanged = true;
-      elevationChanged = true;
+      deltaElevation -= this.RADAR_ELEVATION_SPEED * deltaTime;
     }
 
-    if (directionChanged) {
-      this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
+    // Update radar controller
+    const newState = this.radarController.updateManual(
+      deltaAzimuth,
+      deltaElevation
+    );
 
-      // Fire events to update GameScene's radar state
-      if (azimuthChanged) {
-        this.events.onAzimuthChange(this.radarAzimuth);
+    if (newState) {
+      // Fire events to sync with GameScene
+      if (deltaAzimuth !== 0) {
+        this.events.onAzimuthChange(newState.azimuth);
       }
-      if (elevationChanged) {
-        this.events.onElevationChange(this.radarElevation);
+      if (deltaElevation !== 0) {
+        this.events.onElevationChange(newState.elevation);
       }
+
+      // Update UI
+      this.uiManager.setRadarDirection(newState.azimuth, newState.elevation);
     }
 
     // Update distance gate based on O/I keys
@@ -193,9 +183,10 @@ export class UIControllerB implements UIController {
    * Get current radar state
    */
   getRadarState(): RadarState {
+    const radarState = this.radarController.getState();
     return {
-      azimuth: this.radarAzimuth,
-      elevation: this.radarElevation,
+      azimuth: radarState.azimuth,
+      elevation: radarState.elevation,
       range: this.rangeGate, // Return rangeGate for locking logic (GameScene expects cursor distance)
     };
   }
@@ -206,19 +197,18 @@ export class UIControllerB implements UIController {
    */
   setRadarState(state: Partial<RadarState>): void {
     if (state.azimuth !== undefined) {
-      this.radarAzimuth = state.azimuth;
+      this.radarController.setAzimuth(state.azimuth);
     }
     if (state.elevation !== undefined) {
-      this.radarElevation = state.elevation;
+      this.radarController.setElevation(state.elevation);
     }
     if (state.range !== undefined) {
-      this.rangeGate = state.range; // Update range gate, not display range
+      this.rangeGate = state.range;
+      this.uiManager.setRangeGate(this.rangeGate);
     }
 
-    // Update UI to reflect new radar state
-    this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
-    this.uiManager.setRadarRange(this.radarRange);
-    this.uiManager.setRangeGate(this.rangeGate);
+    const radarState = this.radarController.getState();
+    this.uiManager.setRadarDirection(radarState.azimuth, radarState.elevation);
   }
 
   /**

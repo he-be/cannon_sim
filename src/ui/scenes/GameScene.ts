@@ -29,6 +29,8 @@ import { UIControllerA } from '../controllers/UIControllerA';
 import { UIControllerB } from '../controllers/UIControllerB';
 import { UIMode } from '../UIMode';
 import { StandardPhysics } from '../../physics/StandardPhysics';
+import { EntityManager } from '../../game/EntityManager';
+import { RadarController } from '../../game/RadarController';
 
 // Extended lead angle interface with display information
 interface ExtendedLeadAngle {
@@ -87,8 +89,9 @@ export class GameScene {
   private startTime: number = 0;
 
   // Game entities
-  private targets: Target[] = [];
-  private projectiles: ProjectileState[] = [];
+  private entityManager: EntityManager;
+  private targets: Target[] = []; // Deprecated: use entityManager
+  private projectiles: ProjectileState[] = []; // Deprecated: use entityManager
   private artillery: Artillery;
   private artilleryPosition: Vector3;
 
@@ -147,6 +150,9 @@ export class GameScene {
     this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
     this.effectRenderer = new EffectRenderer(this.canvasManager);
 
+    // Initialize EntityManager
+    this.entityManager = new EntityManager();
+
     // Initialize UI Manager with event handlers
     const uiEvents: UIEvents = {
       onAzimuthChange: (value: number) => {
@@ -190,8 +196,16 @@ export class GameScene {
 
     // Initialize UIController based on selected mode
     const mode = this.config.uiMode || UIMode.MODE_A;
+
+    // Create RadarController for UI B
+    const radarController = new RadarController();
+
     if (mode === UIMode.MODE_B) {
-      this.uiController = new UIControllerB(this.canvasManager, uiEvents);
+      this.uiController = new UIControllerB(
+        this.canvasManager,
+        uiEvents,
+        radarController
+      );
     } else {
       this.uiController = new UIControllerA(this.canvasManager, uiEvents);
     }
@@ -250,7 +264,7 @@ export class GameScene {
     this.isRadarAutoRotating = false;
 
     // Initialize targets from stage configuration
-    this.targets = this.config.selectedStage.targets.map(
+    const targets = this.config.selectedStage.targets.map(
       targetConfig =>
         new Target(
           new Vector3(
@@ -269,6 +283,10 @@ export class GameScene {
           this.gameTime + targetConfig.spawnDelay
         )
     );
+
+    // Initialize EntityManager with targets
+    this.entityManager.initializeTargets(targets);
+    this.targets = targets; // Keep for compatibility during migration
 
     // Clear projectiles and effects
     this.projectiles = [];
