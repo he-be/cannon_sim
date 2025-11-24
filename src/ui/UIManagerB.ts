@@ -139,6 +139,7 @@ export class UIManagerB {
         onFireClick: this.events.onFireClick,
         onLockToggle: this.events.onLockToggle,
         onAutoToggle: this.events.onAutoToggle,
+        onRadarRotateToggle: this.events.onRadarRotateToggle,
         onMenuClick: this.events.onMenuClick,
       },
       this.layout.controlPanelWidth
@@ -167,7 +168,7 @@ export class UIManagerB {
     this.clearCanvas();
     this.renderLayout();
     this.renderControlPanel();
-    this.renderScopes();
+    this.renderScopes(time);
     this.renderTargetList();
     this.renderScanLines(time);
   }
@@ -227,7 +228,7 @@ export class UIManagerB {
     ctx.restore();
   }
 
-  private renderScopes(): void {
+  private renderScopes(time: number): void {
     const ctx = this.canvasManager.context;
 
     // Render Circular Scope
@@ -241,17 +242,21 @@ export class UIManagerB {
     );
     ctx.clip();
 
+    // Render circular scope (PPI)
+    // Pass current time for afterimage effect
     this.circularScope.render(
       this.circularTargets,
       this.radarAzimuth,
+      this.radarElevation,
       this.radarRange,
       this.trajectoryPath,
-      this.projectiles
+      this.projectiles,
+      time * 1000 // Convert seconds to ms
     );
 
     ctx.restore();
 
-    // Render A-Scope
+    // Render A-scope
     ctx.save();
     ctx.beginPath();
     ctx.rect(
@@ -378,6 +383,7 @@ export class UIManagerB {
         id: target.id,
         azimuth: target.bearing,
         distance: target.distance,
+        elevation: target.elevation,
       };
       this.updateCircularTarget(circularTarget);
 

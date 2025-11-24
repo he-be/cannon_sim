@@ -111,6 +111,7 @@ export class UIManager {
         onFireClick: this.events.onFireClick,
         onLockToggle: this.events.onLockToggle,
         onAutoToggle: this.events.onAutoToggle,
+        onRadarRotateToggle: this.events.onRadarRotateToggle,
         onMenuClick: this.events.onMenuClick,
       },
       this.layout.controlPanelWidth

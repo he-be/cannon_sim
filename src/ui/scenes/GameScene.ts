@@ -121,6 +121,14 @@ export class GameScene {
   // Animation
   private animationTime: number = 0;
 
+  // Radar state (independent from artillery)
+  private radarAzimuth: number = 0;
+  private radarElevation: number = 45;
+
+  // Radar auto-rotation state
+  private isRadarAutoRotating: boolean = false;
+  private readonly RADAR_ROTATION_SPEED = 30; // degrees per second
+
   // Keyboard state for game controls (arrow keys handled by UIController)
   // Removed: ArrowLeft, ArrowRight, ArrowUp, ArrowDown - now in UIController
 
@@ -142,16 +150,12 @@ export class GameScene {
     // Initialize UI Manager with event handlers
     const uiEvents: UIEvents = {
       onAzimuthChange: (value: number) => {
-        this.artillery.setCommandedAngles(
-          value,
-          this.artillery.commandedElevation
-        );
+        this.radarAzimuth = value;
+        this.isRadarAutoRotating = false; // Cancel auto-rotation on manual input
       },
       onElevationChange: (value: number) => {
-        this.artillery.setCommandedAngles(
-          this.artillery.commandedAzimuth,
-          value
-        );
+        this.radarElevation = value;
+        // Elevation does NOT cancel auto-rotation (per spec)
       },
       onFireClick: () => {
         this.fireProjectile();
@@ -161,6 +165,9 @@ export class GameScene {
       },
       onAutoToggle: () => {
         this.handleAutoToggle();
+      },
+      onRadarRotateToggle: () => {
+        this.toggleRadarAutoRotation();
       },
       onMenuClick: () => {
         this.onSceneTransition({ type: SceneType.TITLE });
@@ -237,6 +244,11 @@ export class GameScene {
     this.gameTime = 0;
     this.gameState = GameState.PLAYING;
 
+    // Initialize radar state
+    this.radarAzimuth = 0;
+    this.radarElevation = 45;
+    this.isRadarAutoRotating = false;
+
     // Initialize targets from stage configuration
     this.targets = this.config.selectedStage.targets.map(
       targetConfig =>
@@ -266,13 +278,6 @@ export class GameScene {
     this.targetingState = TargetingState.NO_TARGET;
     this.trackedTarget = null;
     this.lockedTarget = null;
-
-    // Reset auto mode
-    this.isAutoMode = false;
-
-    // Reset target tracking
-    this.leadAngleCalculator.resetTargetTracking();
-    this.lastTrackedTargetId = null;
   }
 
   /**
@@ -303,11 +308,34 @@ export class GameScene {
 
     if (this.gameState !== GameState.PLAYING) return;
 
+    // Handle radar auto-rotation
+    if (
+      this.isRadarAutoRotating &&
+      this.targetingState !== TargetingState.LOCKED_ON
+    ) {
+      this.radarAzimuth += this.RADAR_ROTATION_SPEED * deltaTime;
+      if (this.radarAzimuth >= 360) this.radarAzimuth -= 360;
+
+      // Sync with UIController so manual control continues from current position
+      this.uiController.setRadarState({
+        azimuth: this.radarAzimuth,
+        elevation: this.radarElevation,
+      });
+    }
+
     // Update targets
     this.updateTargets(deltaTime);
 
     // Update artillery (heavy cannon mechanics)
     this.artillery.update(deltaTime);
+
+    // AUTO mode: Track Calculated Lead
+    if (this.isAutoMode && this.currentLeadAngle) {
+      this.artillery.setCommandedAngles(
+        this.currentLeadAngle.azimuth,
+        this.currentLeadAngle.elevation
+      );
+    }
 
     // Update UI controls (delegated to UIController)
     // When locked on target, radar automatically tracks the target
@@ -378,7 +406,7 @@ export class GameScene {
     const radarState = this.uiController.getRadarState();
     this.uiController
       .getUIManager()
-      .setRadarDirection(radarState.azimuth, radarState.elevation);
+      .setRadarDirection(this.radarAzimuth, this.radarElevation);
 
     // For UI B, radarState.range is the rangeGate (cursor position)
     // For UI A, radarState.range is the display range
@@ -399,7 +427,7 @@ export class GameScene {
     // Update radar info display in left panel (moved from center pane)
     this.uiController
       .getUIManager()
-      .setRadarInfo(radarState.azimuth, radarState.elevation, radarState.range);
+      .setRadarInfo(this.radarAzimuth, this.radarElevation, radarState.range);
 
     // Update game time
     this.uiController.getUIManager().setGameTime(this.gameTime);
@@ -460,7 +488,7 @@ export class GameScene {
         }
 
         return {
-          id: target.trackId, // Use formatted Txx ID
+          id: target.id, // Use formatted Txx ID
           bearing: bearing,
           distance: distance,
           altitude: target.position.z,
@@ -491,7 +519,7 @@ export class GameScene {
     // First, remove fully destroyed targets from radar
     this.targets.forEach(target => {
       if (target.isDestroyed) {
-        this.uiController.getUIManager().removeRadarTarget(target.trackId);
+        this.uiController.getUIManager().removeRadarTarget(target.id);
       }
     });
 
@@ -508,7 +536,7 @@ export class GameScene {
       const elevation = Math.atan2(dz, distance) * (180 / Math.PI);
 
       const radarTarget: RadarTarget = {
-        id: target.trackId,
+        id: target.id,
         position: target.position,
         velocity: target.velocity || new Vector3(0, 0, 0),
         type: target.type,
@@ -980,7 +1008,7 @@ export class GameScene {
       if (this.isAutoMode && !this.lockedTarget) {
         this.handleTargetLock();
         if (this.lockedTarget) {
-          console.log('Auto-locked on target:', this.lockedTarget.trackId);
+          console.log('Auto-locked on target:', this.lockedTarget?.id);
         }
       }
       // Unlock current target if already locked
@@ -1072,18 +1100,18 @@ export class GameScene {
     const dz = target.position.z - this.artilleryPosition.z;
 
     // Calculate azimuth angle from artillery to target (統一: XY平面)
-    const azimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+    this.radarAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
 
     // Calculate horizontal distance (radar range)
     const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
 
     // Calculate elevation angle from artillery to target (T046)
-    const elevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
+    this.radarElevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
 
     // Update UIController's radar state to track target
     this.uiController.setRadarState({
-      azimuth,
-      elevation,
+      azimuth: this.radarAzimuth,
+      elevation: this.radarElevation,
       range: horizontalDistance,
     });
   }
@@ -1160,6 +1188,14 @@ export class GameScene {
       )
     ) {
       event.preventDefault();
+    }
+
+    // Cancel auto-rotation on manual azimuth input
+    if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      if (this.isRadarAutoRotating) {
+        this.isRadarAutoRotating = false;
+        console.log('Radar auto-rotation cancelled by manual input');
+      }
     }
 
     switch (event.key) {
@@ -1254,6 +1290,16 @@ export class GameScene {
    * Calculate vertical trajectory projection (T049)
    */
   // REMOVED: calculateVerticalTrajectory() - now handled by UIManager
+
+  /**
+   * Toggle radar auto-rotation
+   */
+  private toggleRadarAutoRotation(): void {
+    this.isRadarAutoRotating = !this.isRadarAutoRotating;
+    console.log(
+      `Radar auto-rotation: ${this.isRadarAutoRotating ? 'ON' : 'OFF'}`
+    );
+  }
 
   /**
    * Update lead angle calculation using TargetTracker (GS-07)

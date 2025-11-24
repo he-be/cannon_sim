@@ -51,23 +51,19 @@ export class Target {
 
   constructor(
     position: Vector3,
-    type: TargetType,
+    type: TargetType = TargetType.STATIC,
     velocity?: Vector3,
     spawnTime: number = 0
   ) {
     this._trackId = Target.nextTrackId++;
-    if (Target.nextTrackId > 99) Target.nextTrackId = 1;
-
     this._position = position.copy();
     this._type = type;
+    this._velocity = velocity ? velocity.copy() : new Vector3(0, 0, 0);
     this.spawnTime = spawnTime;
+  }
 
-    // Set velocity based on type (UI-02)
-    if (velocity) {
-      this._velocity = velocity.copy();
-    } else {
-      this._velocity = new Vector3(0, 0, 0); // Static by default
-    }
+  get id(): string {
+    return this._trackId.toString();
   }
 
   get position(): Vector3 {

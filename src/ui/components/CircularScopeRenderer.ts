@@ -12,7 +12,7 @@ export interface CircularScopeTarget {
   id: string;
   azimuth: number; // Azimuth in degrees (0 = North)
   distance: number; // Distance in meters
-  // No elevation information - only shows on horizontal plane
+  elevation: number;
 }
 
 export interface CircularScopeBounds {
@@ -43,18 +43,30 @@ export class CircularScopeRenderer {
   /**
    * Render the circular scope
    */
+  private targetHistory: Map<
+    string,
+    { azimuth: number; distance: number; timestamp: number }
+  > = new Map();
+  private readonly BEAM_WIDTH = 10; // degrees (wider for better visibility)
+  private readonly PERSISTENCE_DURATION = 2500; // ms
+
+  /**
+   * Render the circular scope
+   */
   render(
     targets: CircularScopeTarget[],
     radarAzimuth: number,
+    radarElevation: number,
     maxRange: number,
-    trajectoryPath?: Vector2[],
-    projectiles?: Array<{ position: Vector3; isActive: boolean }>
+    trajectoryPath: Vector2[],
+    projectiles: Array<{ position: Vector3; isActive: boolean }>,
+    currentTime: number = Date.now()
   ): void {
     const ctx = this.canvasManager.context;
 
     ctx.save();
 
-    // Clear background
+    // Clear scope background
     ctx.fillStyle = CRT_COLORS.BACKGROUND;
     ctx.fillRect(
       this.bounds.x,
@@ -63,11 +75,21 @@ export class CircularScopeRenderer {
       this.bounds.height
     );
 
+    // Render radar beam
+    this.renderRadarBeam(radarAzimuth);
+
+    // Render targets (dots)
+    this.renderTargets(
+      targets,
+      radarAzimuth,
+      radarElevation,
+      maxRange,
+      currentTime
+    );
+
     // Render components
     this.renderDistanceRings(maxRange);
     this.renderCompassMarkers();
-    this.renderRadarBeam(radarAzimuth);
-    this.renderTargets(targets, maxRange);
 
     if (trajectoryPath && trajectoryPath.length > 0) {
       this.renderTrajectory(trajectoryPath, maxRange);
@@ -166,39 +188,88 @@ export class CircularScopeRenderer {
 
   /**
    * Render targets as green dots (azimuth and distance only)
+   * Only shows targets within beam width or recently scanned (afterimage)
    */
   private renderTargets(
     targets: CircularScopeTarget[],
-    maxRange: number
+    radarAzimuth: number,
+    radarElevation: number,
+    maxRange: number,
+    currentTime: number
   ): void {
     const ctx = this.canvasManager.context;
     const center = this.bounds.center;
     const radius = this.bounds.radius;
 
-    ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+    // Normalize radar azimuth to 0-360
+    let normalizedRadarAz = radarAzimuth % 360;
+    if (normalizedRadarAz < 0) normalizedRadarAz += 360;
 
-    for (const target of targets) {
+    // Update history for targets in beam
+    targets.forEach(target => {
+      // Normalize target azimuth to 0-360
+      let targetAz = target.azimuth % 360;
+      if (targetAz < 0) targetAz += 360;
+
+      // Calculate angular difference (Azimuth)
+      let angleDiff = Math.abs(targetAz - normalizedRadarAz);
+      if (angleDiff > 180) angleDiff = 360 - angleDiff;
+
+      // Calculate elevation difference
+      const elevationDiff = Math.abs(target.elevation - radarElevation);
+
+      // If within beam (Azimuth AND Elevation), update history
+      if (
+        angleDiff <= this.BEAM_WIDTH / 2 &&
+        elevationDiff <= this.BEAM_WIDTH / 2
+      ) {
+        this.targetHistory.set(target.id, {
+          azimuth: targetAz,
+          distance: target.distance,
+          timestamp: currentTime,
+        });
+      }
+    });
+
+    // Render targets from history
+    this.targetHistory.forEach((data, id) => {
+      const age = currentTime - data.timestamp;
+
+      // Remove old history
+      if (age > this.PERSISTENCE_DURATION) {
+        this.targetHistory.delete(id);
+        return;
+      }
+
+      // Calculate opacity based on age
+      const alpha = 1.0 - age / this.PERSISTENCE_DURATION;
+
       // Convert azimuth to radians
-      const angleRad = ((target.azimuth - 90) * Math.PI) / 180;
+      const angleRad = ((data.azimuth - 90) * Math.PI) / 180;
 
       // Calculate position on scope
-      const r = Math.min((target.distance / maxRange) * radius, radius);
+      const r = Math.min((data.distance / maxRange) * radius, radius);
       const x = center.x + r * Math.cos(angleRad);
       const y = center.y + r * Math.sin(angleRad);
 
       // Draw target dot
+      ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
+      ctx.globalAlpha = alpha;
+
       ctx.beginPath();
       ctx.arc(x, y, 4, 0, Math.PI * 2);
       ctx.fill();
 
       // Add glow effect
       ctx.save();
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = alpha * 0.5;
       ctx.beginPath();
       ctx.arc(x, y, 8, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-    }
+    });
+
+    ctx.globalAlpha = 1.0; // Reset alpha
   }
 
   /**

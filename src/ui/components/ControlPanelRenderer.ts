@@ -24,6 +24,7 @@ export interface ControlPanelEvents {
   onFireClick: () => void;
   onLockToggle: () => void;
   onAutoToggle: () => void;
+  onRadarRotateToggle: () => void;
   onMenuClick: () => void;
 }
 
@@ -77,6 +78,7 @@ export class ControlPanelRenderer {
   private fireButton!: ButtonComponent;
   private lockButton!: ButtonComponent;
   private autoButton!: ButtonComponent;
+  private rotateButton!: ButtonComponent;
   private menuButton!: ButtonComponent;
   private timeDisplay!: TimeDisplayComponent;
 
@@ -230,7 +232,12 @@ export class ControlPanelRenderer {
     this.autoButton = new ButtonComponent('auto', 'AUTO', () =>
       this.events.onAutoToggle()
     );
-    this.autoButton.setVisible(false); // Initially hidden until target is locked
+    // Initially disabled until target is locked
+    this.autoButton.setDisabled(true);
+
+    this.rotateButton = new ButtonComponent('rotate', 'ROTATE', () =>
+      this.events.onRadarRotateToggle()
+    );
 
     this.menuButton = new ButtonComponent('menu', 'BACK TO MENU', () =>
       this.events.onMenuClick()
@@ -252,6 +259,7 @@ export class ControlPanelRenderer {
 
     // Radar Section
     this.rootContainer.addChild(this.radarGroup);
+    this.rootContainer.addChild(this.rotateButton); // Added above targeting
     this.rootContainer.addChild(this.targetingGroup); // Targeting is related to Radar/Lead
 
     // Calculated Lead Section
@@ -349,8 +357,7 @@ export class ControlPanelRenderer {
     ) {
       this.lockButton.setText(newState.isLocked ? 'UNLOCK' : 'LOCK ON');
       // Enable AUTO button only when locked
-      this.autoButton.setVisible(newState.isLocked);
-      layoutChanged = true;
+      this.autoButton.setDisabled(!newState.isLocked);
     }
 
     if (

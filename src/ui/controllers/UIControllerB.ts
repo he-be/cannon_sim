@@ -18,6 +18,7 @@ import { GAME_CONSTANTS } from '../../data/Constants';
  */
 export class UIControllerB implements UIController {
   private uiManager: UIManagerB;
+  private events: UIEvents;
 
   // Radar state
   private radarAzimuth: number = 0;
@@ -49,6 +50,9 @@ export class UIControllerB implements UIController {
   private readonly RANGE_GATE_SPEED = 2000; // meters per second
 
   constructor(canvasManager: CanvasManager, events: UIEvents) {
+    // Store events for firing
+    this.events = events;
+
     // Create UIManagerB instance
     this.uiManager = new UIManagerB(canvasManager, events);
 
@@ -102,26 +106,26 @@ export class UIControllerB implements UIController {
   /**
    * Update radar controls based on current key states
    * @param deltaTime - Time elapsed since last frame in seconds
-   * @param isLocked - Whether targeting is locked (radar should not move when locked)
    */
-  updateControls(deltaTime: number, isLocked: boolean = false): void {
-    // When locked on target, radar should not move
-    if (isLocked) {
-      return;
-    }
+  updateControls(deltaTime: number): void {
+    // NOTE: Radar can move even when locked (independent from artillery)
 
     let directionChanged = false;
+    let azimuthChanged = false;
+    let elevationChanged = false;
 
     // Update radar azimuth based on arrow left/right
     if (this.keyState.ArrowLeft) {
       this.radarAzimuth =
         (this.radarAzimuth - this.RADAR_ROTATION_SPEED * deltaTime + 360) % 360;
       directionChanged = true;
+      azimuthChanged = true;
     }
     if (this.keyState.ArrowRight) {
       this.radarAzimuth =
         (this.radarAzimuth + this.RADAR_ROTATION_SPEED * deltaTime) % 360;
       directionChanged = true;
+      azimuthChanged = true;
     }
 
     // Update radar elevation based on arrow up/down (DIFFERENT FROM UI A!)
@@ -131,6 +135,7 @@ export class UIControllerB implements UIController {
         90
       );
       directionChanged = true;
+      elevationChanged = true;
     }
     if (this.keyState.ArrowDown) {
       this.radarElevation = Math.max(
@@ -138,10 +143,19 @@ export class UIControllerB implements UIController {
         0
       );
       directionChanged = true;
+      elevationChanged = true;
     }
 
     if (directionChanged) {
       this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
+
+      // Fire events to update GameScene's radar state
+      if (azimuthChanged) {
+        this.events.onAzimuthChange(this.radarAzimuth);
+      }
+      if (elevationChanged) {
+        this.events.onElevationChange(this.radarElevation);
+      }
     }
 
     // Update distance gate based on O/I keys
