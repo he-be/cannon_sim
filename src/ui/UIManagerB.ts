@@ -9,6 +9,7 @@ import { Vector2 } from '../math/Vector2';
 import { Vector3 } from '../math/Vector3';
 import { ControlPanelRenderer } from './components/ControlPanelRenderer';
 import { RadarTarget } from './components/RadarRenderer';
+import { Target } from '../game/entities/Target';
 import {
   CircularScopeRenderer,
   CircularScopeTarget,
@@ -365,6 +366,57 @@ export class UIManagerB {
 
   setTargetInfo(info: ControlPanelState['targetInfo']): void {
     this.controlPanel.setTargetInfo(info);
+  }
+
+  /**
+   * Update lead angle display
+   */
+  updateLeadAngle(
+    azimuth: number,
+    elevation: number,
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+  ): void {
+    this.controlPanel.setLeadAngle({
+      azimuth,
+      elevation,
+      confidence,
+    });
+  }
+
+  /**
+   * Update targeting info display
+   */
+  updateTargetingInfo(
+    state: string,
+    _trackedTarget: Target | null,
+    lockedTarget: Target | null
+  ): void {
+    // Convert target info for display
+    const targetInfo: {
+      status: 'NO_TARGET' | 'TRACKING' | 'LOCKED_ON';
+      type?: string;
+      range?: number;
+      speed?: number;
+    } | null = lockedTarget
+      ? {
+          status: state === 'LOCKED_ON' ? 'LOCKED_ON' : 'TRACKING',
+          type: lockedTarget.type ? lockedTarget.type.toString() : 'UNKNOWN',
+          range: 0, // TODO: Calculate range
+          speed: lockedTarget.velocity ? lockedTarget.velocity.magnitude() : 0,
+        }
+      : { status: 'NO_TARGET' };
+
+    this.controlPanel.setTargetInfo(targetInfo);
+    this.controlPanel.setLockState(state === 'LOCKED_ON');
+  }
+
+  /**
+   * Update radar azimuth display
+   */
+  updateRadarAzimuth(_azimuth: number): void {
+    // Circular scope always shows 360 degrees, but we can update a cursor or similar
+    // For now, just update the control panel if needed
+    // Or maybe CircularScopeRenderer has a method to set current azimuth
   }
 
   setTargetList(data: TargetListData[]): void {

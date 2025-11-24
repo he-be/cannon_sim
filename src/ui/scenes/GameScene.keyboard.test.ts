@@ -48,17 +48,13 @@ describe('GameScene Keyboard Controls', () => {
     };
 
     gameScene = new GameScene(mockCanvasManager, onSceneTransition, config);
-    // Access private method to simulate key press
-    (gameScene as any).handleKeyDown = (gameScene as any).handleKeyDown.bind(
-      gameScene
-    );
   });
 
   it('should fire projectile on Space key when playing', () => {
     const fireSpy = vi.spyOn(gameScene as any, 'fireProjectile');
     const event = new KeyboardEvent('keydown', { key: ' ' });
 
-    (gameScene as any).handleKeyDown(event);
+    window.dispatchEvent(event);
 
     expect(fireSpy).toHaveBeenCalled();
   });
@@ -67,7 +63,7 @@ describe('GameScene Keyboard Controls', () => {
     const fireSpy = vi.spyOn(gameScene as any, 'fireProjectile');
     const event = new KeyboardEvent('keydown', { key: 'f' });
 
-    (gameScene as any).handleKeyDown(event);
+    window.dispatchEvent(event);
 
     expect(fireSpy).toHaveBeenCalled();
   });
@@ -76,7 +72,7 @@ describe('GameScene Keyboard Controls', () => {
     const lockSpy = vi.spyOn(gameScene as any, 'handleTargetLock');
     const event = new KeyboardEvent('keydown', { key: 'l' });
 
-    (gameScene as any).handleKeyDown(event);
+    window.dispatchEvent(event);
 
     expect(lockSpy).toHaveBeenCalled();
   });
@@ -85,7 +81,7 @@ describe('GameScene Keyboard Controls', () => {
     const autoSpy = vi.spyOn(gameScene as any, 'handleAutoToggle');
     const event = new KeyboardEvent('keydown', { key: 'k' });
 
-    (gameScene as any).handleKeyDown(event);
+    window.dispatchEvent(event);
 
     expect(autoSpy).toHaveBeenCalled();
   });
@@ -99,9 +95,7 @@ describe('GameScene Keyboard Controls', () => {
     // Initial azimuth is 0
 
     // Press Arrow Right
-    (gameScene as any).handleKeyDown(
-      new KeyboardEvent('keydown', { key: 'ArrowRight' })
-    );
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
 
     // Simulate 1 second of game time
     gameScene.update(1.0);
@@ -112,9 +106,7 @@ describe('GameScene Keyboard Controls', () => {
     expect(setRadarDirectionSpy).toHaveBeenCalledWith(60, expect.any(Number));
 
     // Release Arrow Right
-    (gameScene as any).handleKeyUp(
-      new KeyboardEvent('keyup', { key: 'ArrowRight' })
-    );
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight' }));
 
     // Simulate another second
     gameScene.update(1.0);
@@ -124,9 +116,7 @@ describe('GameScene Keyboard Controls', () => {
     expect(radarState2.azimuth).toBe(60);
 
     // Press Arrow Left
-    (gameScene as any).handleKeyDown(
-      new KeyboardEvent('keydown', { key: 'ArrowLeft' })
-    );
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
 
     // Simulate 0.5 seconds
     gameScene.update(0.5);
@@ -136,43 +126,70 @@ describe('GameScene Keyboard Controls', () => {
     expect(radarState3.azimuth).toBe(30);
   });
 
-  it('should adjust radar range continuously when Arrow Up/Down is held', () => {
-    const setRadarRangeSpy = vi.spyOn(
+  it('should adjust radar elevation continuously when Arrow Up/Down is held', () => {
+    const setRadarDirectionSpy = vi.spyOn(
       (gameScene as any).uiController.getUIManager(),
-      'setRadarRange'
+      'setRadarDirection'
     );
-    const initialRange = 5000;
-    (gameScene as any).uiController.setRadarState({ range: initialRange });
+
+    // Initial elevation is 0
 
     // Press Arrow Up
-    (gameScene as any).handleKeyDown(
-      new KeyboardEvent('keydown', { key: 'ArrowUp' })
-    );
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
 
     // Simulate 1 second
     gameScene.update(1.0);
 
-    // Should increase by RADAR_ZOOM_SPEED (5000 m/s)
+    // Should increase by RADAR_ELEVATION_SPEED (30 degrees/sec)
     const radarState = (gameScene as any).uiController.getRadarState();
-    expect(radarState.range).toBe(initialRange + 5000);
-    expect(setRadarRangeSpy).toHaveBeenCalledWith(initialRange + 5000);
+    expect(radarState.elevation).toBe(30);
+    expect(setRadarDirectionSpy).toHaveBeenCalledWith(expect.any(Number), 30);
 
     // Release Arrow Up
-    (gameScene as any).handleKeyUp(
-      new KeyboardEvent('keyup', { key: 'ArrowUp' })
-    );
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp' }));
 
     // Press Arrow Down
-    (gameScene as any).handleKeyDown(
-      new KeyboardEvent('keydown', { key: 'ArrowDown' })
-    );
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
 
     // Simulate 0.5 seconds
     gameScene.update(0.5);
 
-    // Should decrease by 2500 (5000 * 0.5)
+    // Should decrease by 15 (30 * 0.5) -> 15
     const radarState2 = (gameScene as any).uiController.getRadarState();
-    expect(radarState2.range).toBe(initialRange + 2500);
+    expect(radarState2.elevation).toBe(15);
+  });
+
+  it('should adjust radar range continuously when O/I is held', () => {
+    const setRangeGateSpy = vi.spyOn(
+      (gameScene as any).uiController.getUIManager(),
+      'setRangeGate'
+    );
+    const initialRange = 5000;
+    (gameScene as any).uiController.setRadarState({ range: initialRange });
+
+    // Press O (Increase range)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o' }));
+
+    // Simulate 1 second
+    gameScene.update(1.0);
+
+    // Should increase by RANGE_GATE_SPEED (2000 m/s)
+    const radarState = (gameScene as any).uiController.getRadarState();
+    expect(radarState.range).toBe(initialRange + 2000);
+    expect(setRangeGateSpy).toHaveBeenCalledWith(initialRange + 2000);
+
+    // Release O
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'o' }));
+
+    // Press I (Decrease range)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'i' }));
+
+    // Simulate 0.5 seconds
+    gameScene.update(0.5);
+
+    // Should decrease by 1000 (2000 * 0.5)
+    const radarState2 = (gameScene as any).uiController.getRadarState();
+    expect(radarState2.range).toBe(initialRange + 1000);
   });
 
   it('should delegate O and I keys to UIController', () => {
@@ -187,20 +204,20 @@ describe('GameScene Keyboard Controls', () => {
 
     // Test O key
     const eventO = new KeyboardEvent('keydown', { key: 'o' });
-    (gameScene as any).handleKeyDown(eventO);
-    expect(handleKeyDownSpy).toHaveBeenCalledWith(eventO);
+    window.dispatchEvent(eventO);
+    expect(handleKeyDownSpy).toHaveBeenCalledWith(expect.any(KeyboardEvent));
 
     const eventOUp = new KeyboardEvent('keyup', { key: 'o' });
-    (gameScene as any).handleKeyUp(eventOUp);
-    expect(handleKeyUpSpy).toHaveBeenCalledWith(eventOUp);
+    window.dispatchEvent(eventOUp);
+    expect(handleKeyUpSpy).toHaveBeenCalledWith(expect.any(KeyboardEvent));
 
     // Test I key
     const eventI = new KeyboardEvent('keydown', { key: 'i' });
-    (gameScene as any).handleKeyDown(eventI);
-    expect(handleKeyDownSpy).toHaveBeenCalledWith(eventI);
+    window.dispatchEvent(eventI);
+    expect(handleKeyDownSpy).toHaveBeenCalledWith(expect.any(KeyboardEvent));
 
     const eventIUp = new KeyboardEvent('keyup', { key: 'i' });
-    (gameScene as any).handleKeyUp(eventIUp);
-    expect(handleKeyUpSpy).toHaveBeenCalledWith(eventIUp);
+    window.dispatchEvent(eventIUp);
+    expect(handleKeyUpSpy).toHaveBeenCalledWith(expect.any(KeyboardEvent));
   });
 });

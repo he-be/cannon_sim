@@ -60,7 +60,7 @@ describe('GameScene Target Initialization', () => {
     });
 
     // Access private targets array (using any cast for testing)
-    const targets = (gameScene as any).targets;
+    const targets = (gameScene as any).entityManager.getTargets();
 
     expect(targets.length).toBe(2);
 

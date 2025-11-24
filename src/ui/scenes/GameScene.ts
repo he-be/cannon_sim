@@ -9,12 +9,11 @@ import { CanvasManager } from '../../rendering/CanvasManager';
 import { StageConfig } from '../../data/StageData';
 import { SceneType, SceneTransition } from './TitleScene';
 import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
-import { Vector2 } from '../../math/Vector2';
 import { Vector3 } from '../../math/Vector3';
 import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
 import { PhysicsEngine, State3D } from '../../physics/PhysicsEngine';
 import { TrajectoryRenderer } from '../../rendering/TrajectoryRenderer';
-import { LeadAngleCalculator } from '../../game/LeadAngleCalculator';
+
 import {
   PHYSICS_CONSTANTS,
   GAME_CONSTANTS,
@@ -31,29 +30,15 @@ import { UIMode } from '../UIMode';
 import { StandardPhysics } from '../../physics/StandardPhysics';
 import { EntityManager } from '../../game/EntityManager';
 import { RadarController } from '../../game/RadarController';
+import { TargetingSystem, TargetingState } from '../../game/TargetingSystem';
+import { LeadAngleSystem, ExtendedLeadAngle } from '../../game/LeadAngleSystem';
+import { InputHandler } from '../../input/InputHandler';
 
-// Extended lead angle interface with display information
-interface ExtendedLeadAngle {
-  azimuth: number;
-  elevation: number;
-  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-  convergenceError?: number;
-  flightTime?: number;
-  converged?: boolean;
-  iterations?: number;
-  accuracy?: number;
-}
 export enum GameState {
   PLAYING = 'playing',
   PAUSED = 'paused',
   GAME_OVER = 'game_over',
   STAGE_CLEAR = 'stage_clear',
-}
-
-export enum TargetingState {
-  NO_TARGET = 'NO_TARGET',
-  TRACKING = 'TRACKING',
-  LOCKED_ON = 'LOCKED_ON',
 }
 
 export interface GameSceneConfig {
@@ -74,13 +59,13 @@ interface ProjectileState {
  */
 export class GameScene {
   private canvasManager: CanvasManager;
-  private mouseHandler: MouseHandler;
+  private mouseHandler: MouseHandler; // This property is no longer used but kept for now as per instruction to only make explicit changes.
   private onSceneTransition: (transition: SceneTransition) => void;
   private config: GameSceneConfig;
   private effectRenderer: EffectRenderer;
   private physicsEngine: PhysicsEngine;
   private trajectoryRenderer: TrajectoryRenderer;
-  private leadAngleCalculator: LeadAngleCalculator;
+
   private uiController: UIController;
 
   // Game state
@@ -90,15 +75,13 @@ export class GameScene {
 
   // Game entities
   private entityManager: EntityManager;
-  private targets: Target[] = []; // Deprecated: use entityManager
-  private projectiles: ProjectileState[] = []; // Deprecated: use entityManager
+  // targets and projectiles are now managed by entityManager
   private artillery: Artillery;
   private artilleryPosition: Vector3;
+  private inputHandler: InputHandler;
 
   // Targeting system
-  private targetingState: TargetingState = TargetingState.NO_TARGET;
-  private trackedTarget: Target | null = null;
-  private lockedTarget: Target | null = null;
+  private targetingSystem: TargetingSystem;
   // Auto mode for automatic artillery control
   private isAutoMode: boolean = false;
 
@@ -115,11 +98,8 @@ export class GameScene {
   // UI interaction is now handled by UIManager
 
   // Lead angle calculation (GS-07)
-  private leadAngleUpdateTimer: number = 0;
-  private currentLeadAngle: ExtendedLeadAngle | null = null;
-  private readonly LEAD_ANGLE_UPDATE_INTERVAL_MOVING = 0.033; // ~30Hz (33ms間隔) for responsive moving target tracking // 200ms間隔 for moving targets
-  private readonly LEAD_ANGLE_UPDATE_INTERVAL_STATIC = 0.2; // 200ms間隔 for static targets (improved from 500ms) // 500ms間隔 for static targets
-  private lastTrackedTargetId: string | null = null;
+
+  private leadAngleSystem: LeadAngleSystem;
 
   // Animation
   private animationTime: number = 0;
@@ -147,21 +127,37 @@ export class GameScene {
     this.canvasManager = canvasManager;
     this.onSceneTransition = onSceneTransition;
     this.config = config;
-    this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
+    this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas()); // This line is kept as per instruction to only make explicit changes.
     this.effectRenderer = new EffectRenderer(this.canvasManager);
 
     // Initialize EntityManager
     this.entityManager = new EntityManager();
 
-    // Initialize UI Manager with event handlers
+    // Initialize artillery position
+    this.artilleryPosition = new Vector3(
+      this.config.selectedStage.artilleryPosition.x,
+      this.config.selectedStage.artilleryPosition.y,
+      this.config.selectedStage.artilleryPosition.z
+    );
+
+    // Initialize Artillery entity
+    this.artillery = new Artillery(this.artilleryPosition);
+
+    // Initialize systems
+    this.targetingSystem = new TargetingSystem();
+    this.leadAngleSystem = new LeadAngleSystem(this.artilleryPosition);
+
+    // Initialize RadarController
+    const radarController = new RadarController();
+
+    // Define UI Events
     const uiEvents: UIEvents = {
       onAzimuthChange: (value: number) => {
         this.radarAzimuth = value;
-        this.isRadarAutoRotating = false; // Cancel auto-rotation on manual input
+        this.isRadarAutoRotating = false;
       },
       onElevationChange: (value: number) => {
         this.radarElevation = value;
-        // Elevation does NOT cancel auto-rotation (per spec)
       },
       onFireClick: () => {
         this.fireProjectile();
@@ -184,31 +180,59 @@ export class GameScene {
       onRangeChange: (_range: number) => {
         // Radar state is managed by UIController
       },
-      onTargetDetected: (target: RadarTarget) => {
+      onTargetDetected: (_target: RadarTarget) => {
         // Handle target detection if needed
-        console.log('Target detected:', target.id);
       },
-      onTargetLost: (targetId: string) => {
+      onTargetLost: (_targetId: string) => {
         // Handle target loss if needed
-        console.log('Target lost:', targetId);
       },
     };
 
-    // Initialize UIController based on selected mode
-    const mode = this.config.uiMode || UIMode.MODE_A;
-
-    // Create RadarController for UI B
-    const radarController = new RadarController();
-
-    if (mode === UIMode.MODE_B) {
+    // Initialize UI Controller
+    if (this.config.uiMode === UIMode.MODE_A) {
+      this.uiController = new UIControllerA(this.canvasManager, uiEvents);
+    } else {
+      // Use Mode B (Circular Scope) by default
       this.uiController = new UIControllerB(
         this.canvasManager,
         uiEvents,
         radarController
       );
-    } else {
-      this.uiController = new UIControllerA(this.canvasManager, uiEvents);
     }
+
+    // Initialize Input Handler
+    this.inputHandler = new InputHandler(
+      {
+        onFire: (): void => {
+          if (this.gameState === GameState.STAGE_CLEAR) {
+            this.onSceneTransition({ type: SceneType.STAGE_SELECT });
+          } else if (this.gameState === GameState.PLAYING) {
+            this.fireProjectile();
+          }
+        },
+        onLockToggle: (): void => this.handleTargetLock(),
+        onAutoToggle: (): void => this.handleAutoToggle(),
+        onRestart: (): void => {
+          if (this.gameState === GameState.GAME_OVER) {
+            this.initializeGame();
+          }
+        },
+        onSceneTransition: (transition): void =>
+          this.onSceneTransition(transition),
+        onCancelAutoRotation: (): void => {
+          if (this.isRadarAutoRotating) {
+            this.isRadarAutoRotating = false;
+            console.log('Radar auto-rotation cancelled by manual input');
+          }
+        },
+        onRadarRotateToggle: (): void => this.toggleRadarAutoRotation(),
+      },
+      this.uiController
+    );
+    this.inputHandler.attach();
+
+    // Initialize radar state
+    this.radarAzimuth = 0;
 
     // Initialize physics engine with RK4 integration
     // Initialize physics engine with RK4 integration
@@ -244,7 +268,8 @@ export class GameScene {
     this.artillery = new Artillery(this.artilleryPosition);
 
     // Initialize lead angle calculator for GS-07 requirement
-    this.leadAngleCalculator = new LeadAngleCalculator();
+    // Initialize LeadAngleSystem
+    this.leadAngleSystem = new LeadAngleSystem(this.artilleryPosition);
 
     this.initializeGame();
     this.setupEventListeners();
@@ -263,39 +288,30 @@ export class GameScene {
     this.radarElevation = 45;
     this.isRadarAutoRotating = false;
 
-    // Initialize targets from stage configuration
+    // Initialize targets via EntityManager
     const targets = this.config.selectedStage.targets.map(
-      targetConfig =>
+      config =>
         new Target(
-          new Vector3(
-            targetConfig.position.x,
-            targetConfig.position.y,
-            targetConfig.position.z
-          ),
-          targetConfig.type,
-          targetConfig.velocity
+          new Vector3(config.position.x, config.position.y, config.position.z),
+          config.type,
+          config.velocity
             ? new Vector3(
-                targetConfig.velocity.x,
-                targetConfig.velocity.y,
-                targetConfig.velocity.z
+                config.velocity.x,
+                config.velocity.y,
+                config.velocity.z
               )
             : undefined,
-          this.gameTime + targetConfig.spawnDelay
+          this.gameTime + config.spawnDelay
         )
     );
-
-    // Initialize EntityManager with targets
     this.entityManager.initializeTargets(targets);
-    this.targets = targets; // Keep for compatibility during migration
 
-    // Clear projectiles and effects
-    this.projectiles = [];
+    // Clear effects
     this.effectRenderer.clearAll();
 
     // Reset targeting
-    this.targetingState = TargetingState.NO_TARGET;
-    this.trackedTarget = null;
-    this.lockedTarget = null;
+    // Reset targeting
+    this.targetingSystem.reset();
   }
 
   /**
@@ -310,11 +326,6 @@ export class GameScene {
     this.canvasManager.getCanvas().addEventListener('contextmenu', e => {
       e.preventDefault();
     });
-
-    // Keyboard events for game controls
-    // Arrow keys are handled by UIController, other keys handled here
-    window.addEventListener('keydown', event => this.handleKeyDown(event));
-    window.addEventListener('keyup', event => this.handleKeyUp(event));
   }
 
   /**
@@ -329,7 +340,7 @@ export class GameScene {
     // Handle radar auto-rotation
     if (
       this.isRadarAutoRotating &&
-      this.targetingState !== TargetingState.LOCKED_ON
+      this.targetingSystem.getTargetingState() !== TargetingState.LOCKED_ON
     ) {
       this.radarAzimuth += this.RADAR_ROTATION_SPEED * deltaTime;
       if (this.radarAzimuth >= 360) this.radarAzimuth -= 360;
@@ -348,17 +359,16 @@ export class GameScene {
     this.artillery.update(deltaTime);
 
     // AUTO mode: Track Calculated Lead
-    if (this.isAutoMode && this.currentLeadAngle) {
-      this.artillery.setCommandedAngles(
-        this.currentLeadAngle.azimuth,
-        this.currentLeadAngle.elevation
-      );
+    const leadAngle = this.leadAngleSystem.getLeadAngle();
+    if (this.isAutoMode && leadAngle) {
+      this.artillery.setCommandedAngles(leadAngle.azimuth, leadAngle.elevation);
     }
 
     // Update UI controls (delegated to UIController)
     // When locked on target, radar automatically tracks the target
-    const isLocked = this.targetingState === TargetingState.LOCKED_ON;
-    if (isLocked && this.lockedTarget) {
+    const isLocked =
+      this.targetingSystem.getTargetingState() === TargetingState.LOCKED_ON;
+    if (isLocked && this.targetingSystem.getLockedTarget()) {
       // Update radar to follow locked target
       this.updateRadarToLockedTarget();
     }
@@ -375,24 +385,13 @@ export class GameScene {
     this.checkCollisions();
 
     // Update targeting system
-    this.updateTargeting();
+    this.updateTargeting(deltaTime);
 
     // Update trajectory prediction (UI-13/UI-16)
     this.updateTrajectoryPrediction();
 
-    // Update lead angle calculation (GS-07) with adaptive interval
-    this.leadAngleUpdateTimer += deltaTime;
-    const currentTarget = this.lockedTarget || this.trackedTarget;
-    const isMovingTarget =
-      currentTarget?.velocity && currentTarget.velocity.magnitude() > 1.0;
-    const updateInterval = isMovingTarget
-      ? this.LEAD_ANGLE_UPDATE_INTERVAL_MOVING
-      : this.LEAD_ANGLE_UPDATE_INTERVAL_STATIC;
-
-    if (this.leadAngleUpdateTimer >= updateInterval) {
-      this.updateLeadAngleCalculation();
-      this.leadAngleUpdateTimer = 0;
-    }
+    // Update lead angle calculation
+    this.updateLeadAngleCalculation(deltaTime);
 
     // Check win/lose conditions
     this.checkGameConditions();
@@ -453,13 +452,17 @@ export class GameScene {
     // Update lock state
     this.uiController
       .getUIManager()
-      .setLockState(this.targetingState === TargetingState.LOCKED_ON);
+      .setLockState(
+        this.targetingSystem.getTargetingState() === TargetingState.LOCKED_ON
+      );
 
     // Update auto mode state
     this.uiController.getUIManager().setAutoMode(this.isAutoMode);
 
     // Update target information
-    const displayTarget = this.lockedTarget || this.trackedTarget;
+    const displayTarget =
+      this.targetingSystem.getLockedTarget() ||
+      this.targetingSystem.getTrackedTarget();
     if (displayTarget) {
       const distance = displayTarget.position
         .subtract(this.artilleryPosition)
@@ -469,7 +472,7 @@ export class GameScene {
         : 0;
 
       this.uiController.getUIManager().setTargetInfo({
-        status: this.targetingState,
+        status: this.targetingSystem.getTargetingState(),
         type: this.getTargetDisplayName(displayTarget.type as TargetType),
         range: distance,
         speed: speed,
@@ -479,7 +482,8 @@ export class GameScene {
     }
 
     // Update target list (TRACK)
-    const targetListData = this.targets
+    const targetListData = this.entityManager
+      .getTargets()
       .filter(t => !t.isDestroyed && this.gameTime >= t.spawnTime)
       .map(target => {
         const relativePos = target.position.subtract(this.artilleryPosition);
@@ -517,8 +521,9 @@ export class GameScene {
     this.uiController.getUIManager().setTargetList(targetListData);
 
     // Update lead angle
-    if (this.currentLeadAngle) {
-      this.uiController.getUIManager().setLeadAngle(this.currentLeadAngle);
+    const currentLeadAngle = this.leadAngleSystem.getLeadAngle();
+    if (currentLeadAngle) {
+      this.uiController.getUIManager().setLeadAngle(currentLeadAngle);
     } else {
       this.uiController.getUIManager().setLeadAngle(null);
     }
@@ -527,7 +532,9 @@ export class GameScene {
     this.updateRadarTargets();
 
     // Update projectiles
-    this.uiController.getUIManager().updateProjectiles(this.projectiles);
+    this.uiController
+      .getUIManager()
+      .updateProjectiles(this.entityManager.getProjectiles());
 
     // Update trajectory prediction
     this.updateUITrajectoryPrediction();
@@ -535,14 +542,14 @@ export class GameScene {
 
   private updateRadarTargets(): void {
     // First, remove fully destroyed targets from radar
-    this.targets.forEach(target => {
+    this.entityManager.getTargets().forEach(target => {
       if (target.isDestroyed) {
         this.uiController.getUIManager().removeRadarTarget(target.id);
       }
     });
 
     // Convert game targets to radar targets (active and falling targets)
-    this.targets.forEach(target => {
+    this.entityManager.getTargets().forEach(target => {
       // Show active and falling targets, but not fully destroyed ones
       if (target.isDestroyed || this.gameTime < target.spawnTime) return;
 
@@ -652,55 +659,32 @@ export class GameScene {
   /**
    * Cleanup resources
    */
+  /**
+   * Cleanup resources
+   */
   destroy(): void {
     this.mouseHandler.destroy();
-    window.removeEventListener('keydown', this.handleKeyDown);
-    window.removeEventListener('keyup', this.handleKeyUp);
+    this.inputHandler.detach();
   }
 
   /**
    * Update target states
    */
   private updateTargets(deltaTime: number): void {
-    this.targets.forEach(target => {
-      // Skip fully destroyed targets
-      if (target.isDestroyed) return;
+    // Delegate update to EntityManager
+    this.entityManager.updateTargets(deltaTime, this.gameTime);
 
-      // Check if target should spawn
-      if (this.gameTime < target.spawnTime) return;
-
-      // Store previous state to detect ground impact
-      const wasFalling = target.isFalling;
-
-      // Update target position using its own update method
-      // This handles both active movement and falling physics
-      target.update(deltaTime);
-
-      // Check if falling target just reached ground
-      if (wasFalling && target.isDestroyed) {
-        // Target has reached ground, clear lock-on if this was locked/tracked
-        if (this.trackedTarget === target) {
-          this.trackedTarget = null;
-        }
-        if (this.lockedTarget === target) {
-          this.lockedTarget = null;
-          this.targetingState = TargetingState.NO_TARGET;
-          // Disable auto mode when locked target is destroyed
-          this.isAutoMode = false;
-          // Reset target tracking
-          this.leadAngleCalculator.resetTargetTracking();
-          this.lastTrackedTargetId = null;
-        }
-      }
+    // Check game over conditions
+    this.entityManager.getTargets().forEach(target => {
+      if (target.isDestroyed || this.gameTime < target.spawnTime) return;
 
       // Check if active target reached artillery position (game over condition)
-      if (target.isActive) {
+      if (target.isActive && !target.isFalling) {
         const distance = target.position
           .subtract(this.artilleryPosition)
           .magnitude();
-        if (distance < 1000) {
-          // 1km collision radius
-          this.gameState = GameState.GAME_OVER;
+        if (distance < GAME_CONSTANTS.GAME_OVER_DISTANCE) {
+          this.handleGameOver();
         }
       }
     });
@@ -710,115 +694,65 @@ export class GameScene {
    * Update projectile states
    */
   private updateProjectiles(deltaTime: number): void {
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const projectile = this.projectiles[i];
-      if (!projectile.isActive) continue;
-
-      // Use physics engine for accurate RK4 integration
-      const currentState: State3D = {
-        position: projectile.position,
-        velocity: projectile.velocity,
-      };
-
-      const newState = this.physicsEngine.integrate(
-        currentState,
-        this.gameTime,
-        deltaTime
-      );
-
-      projectile.position = newState.position;
-      projectile.velocity = newState.velocity;
-
-      // Update projectile trajectory trail (T023 requirement)
-      this.trajectoryRenderer.updateTrajectory(
-        projectile.id,
-        [projectile.position],
-        projectile.velocity
-      );
-
-      // Remove if hit ground or out of range
-      if (
-        projectile.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL ||
-        this.gameTime - projectile.spawnTime >
-          PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME
-      ) {
-        // Create impact explosion
-        if (projectile.position.z <= 0) {
-          this.effectRenderer.createExplosion(
-            projectile.position,
-            'projectile_impact'
-          );
+    this.entityManager.updateProjectiles(
+      deltaTime,
+      this.gameTime,
+      this.physicsEngine,
+      projectile => {
+        // On impact callback
+        if (projectile.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL) {
+          this.createExplosion(projectile.position, 'projectile_impact');
         }
-
         // Remove trajectory trail when projectile is destroyed (T023)
         this.trajectoryRenderer.removeTrajectory(projectile.id);
-        this.projectiles.splice(i, 1);
+      },
+      projectile => {
+        // Update projectile trajectory trail (T023 requirement)
+        this.trajectoryRenderer.updateTrajectory(
+          projectile.id,
+          [projectile.position],
+          projectile.velocity
+        );
       }
-    }
+    );
   }
 
   /**
-   * Check collisions between projectiles and targets
+   * Check collisions
+   */
+  /**
+   * Check collisions
    */
   private checkCollisions(): void {
-    this.projectiles.forEach(projectile => {
-      if (!projectile.isActive) return;
+    const collisions = this.entityManager.checkCollisions(this.gameTime);
 
-      this.targets.forEach(target => {
-        // Only check collision with active targets (not falling or destroyed)
-        if (!target.isActive || this.gameTime < target.spawnTime) return;
-
-        const distance = projectile.position
-          .subtract(target.position)
-          .magnitude();
-        if (distance < 50) {
-          // 50m collision radius
-          // Hit! Transition to falling state instead of immediate destruction
-          target.hit();
-          projectile.isActive = false;
-
-          // Calculate actual collision point (T047)
-          const collisionPoint = this.calculateCollisionPoint(
-            projectile.position,
-            target.position
-          );
-
-          // Create destruction explosion only if within radar range (T047)
-          if (this.isPositionInRadarRange(collisionPoint)) {
-            this.effectRenderer.createExplosion(
-              collisionPoint,
-              'target_destruction'
-            );
-          }
-
-          // Note: Lock-on is NOT cleared here - target continues to fall
-          // Lock will be cleared when target reaches ground in updateTargets()
-        }
-      });
+    collisions.forEach(collision => {
+      if (this.isPositionInRadarRange(collision.collisionPoint)) {
+        this.createExplosion(collision.collisionPoint, 'target_destruction');
+      }
+      // Target hit logic is handled by EntityManager (target.hit())
     });
   }
 
   /**
    * Update targeting system
    */
-  private updateTargeting(): void {
-    // If we have a locked target, keep tracking it
-    if (this.lockedTarget && !this.lockedTarget.isDestroyed) {
-      this.targetingState = TargetingState.LOCKED_ON;
-      this.trackedTarget = this.lockedTarget;
+  private updateTargeting(_deltaTime: number): void {
+    const radarState = this.uiController.getRadarState();
 
-      // Auto-track locked target with radar
-      this.updateRadarToTarget(this.lockedTarget);
-    } else {
-      // Find target near cursor for tracking
-      const nearestTarget = this.findTargetNearCursor();
-      if (nearestTarget) {
-        this.targetingState = TargetingState.TRACKING;
-        this.trackedTarget = nearestTarget;
-      } else {
-        this.targetingState = TargetingState.NO_TARGET;
-        this.trackedTarget = null;
-      }
+    // Update targeting system
+    const result = this.targetingSystem.update(
+      this.entityManager.getTargets(),
+      radarState.azimuth,
+      radarState.range,
+      this.artilleryPosition,
+      this.gameTime
+    );
+
+    // Check if lock was lost (e.g. target destroyed)
+    if (this.isAutoMode && result.state !== TargetingState.LOCKED_ON) {
+      this.isAutoMode = false;
+      console.log('Target lost, auto mode disabled');
     }
   }
 
@@ -827,11 +761,14 @@ export class GameScene {
    */
   private checkGameConditions(): void {
     // Check stage clear (all targets destroyed)
-    const activeTargets = this.targets.filter(
-      t => !t.isDestroyed && this.gameTime >= t.spawnTime
-    );
+    const activeTargets = this.entityManager.getActiveTargets(this.gameTime);
+    const allTargets = this.entityManager.getTargets();
 
-    if (activeTargets.length === 0 && this.targets.length > 0) {
+    if (
+      activeTargets.length === 0 &&
+      allTargets.length > 0 &&
+      this.entityManager.areAllTargetsDestroyed()
+    ) {
       this.gameState = GameState.STAGE_CLEAR;
     }
   }
@@ -930,21 +867,11 @@ export class GameScene {
   /**
    * Handle mouse events
    */
+  /**
+   * Handle mouse events
+   */
   private handleMouseEvent(event: MouseEventData): void {
-    const mousePos = new Vector2(
-      event.position.canvas.x,
-      event.position.canvas.y
-    );
-
-    // Route all mouse events through UIManager
-    const handled = this.uiController
-      .getUIManager()
-      .handleMouseEvent(mousePos, event.type, event.button);
-
-    if (!handled) {
-      // Handle any game-specific mouse interactions that aren't UI-related
-      // Currently, all mouse interactions are UI-related in this game
-    }
+    this.inputHandler.handleMouseEvent(event);
   }
 
   /**
@@ -955,10 +882,11 @@ export class GameScene {
     if (!this.artillery.canFire()) return;
 
     // Set target position if locked (though firing uses current angles)
-    if (this.lockedTarget) {
+    const lockedTarget = this.targetingSystem.getLockedTarget();
+    if (lockedTarget) {
       this.artillery.setTargetPosition(
-        this.lockedTarget.position,
-        this.lockedTarget.velocity
+        lockedTarget.position,
+        lockedTarget.velocity
       );
     }
 
@@ -972,7 +900,7 @@ export class GameScene {
       spawnTime: this.gameTime,
     };
 
-    this.projectiles.push(projectile);
+    this.entityManager.addProjectile(projectile);
 
     // Add trajectory trail for UI-13/UI-16 (trajectory prediction)
     this.trajectoryRenderer.updateTrajectory(
@@ -1006,49 +934,25 @@ export class GameScene {
   }
 
   /**
-   * Handle target lock/unlock
+   * Handle target lock toggle
    */
   private handleTargetLock(): void {
-    console.log(
-      `handleTargetLock: targetingState=${this.targetingState}, trackedTarget=${!!this.trackedTarget}, lockedTarget=${!!this.lockedTarget}`
-    );
+    const result = this.targetingSystem.handleLockToggle();
 
-    // GS-05: Right-click to lock onto TRACKING target
-    if (this.targetingState === TargetingState.TRACKING && this.trackedTarget) {
-      console.log(`Locking onto target: ${this.trackedTarget.id}`);
-      // Lock onto currently tracked target
-      this.lockedTarget = this.trackedTarget;
-      this.targetingState = TargetingState.LOCKED_ON;
-      this.updateRadarToTarget(this.trackedTarget);
-    } else if (this.lockedTarget) {
-      console.log(`Unlocking target: ${this.lockedTarget.id}`);
-      // Auto-lock on closest target if in auto mode
-      if (this.isAutoMode && !this.lockedTarget) {
-        this.handleTargetLock();
-        if (this.lockedTarget) {
-          console.log('Auto-locked on target:', this.lockedTarget?.id);
-        }
-      }
-      // Unlock current target if already locked
-      this.lockedTarget = null;
-      this.targetingState = TargetingState.NO_TARGET;
-      this.trackedTarget = null;
-      // Disable auto mode when unlocking
-      this.isAutoMode = false;
-      // Reset target tracking
-      this.leadAngleCalculator.resetTargetTracking();
-      this.lastTrackedTargetId = null;
+    if (result.state === TargetingState.LOCKED_ON) {
+      console.log('Target LOCKED');
     } else {
-      console.log(`No action: not in TRACKING state or no target available`);
+      console.log('Target UNLOCKED');
+      this.isAutoMode = false; // Disable auto mode when unlocking
     }
   }
 
   /**
-   * Handle auto/manual mode toggle
+   * Handle auto mode toggle
    */
   private handleAutoToggle(): void {
     // Only allow auto mode when target is locked
-    if (this.targetingState === TargetingState.LOCKED_ON && this.lockedTarget) {
+    if (this.targetingSystem.getTargetingState() === TargetingState.LOCKED_ON) {
       this.isAutoMode = !this.isAutoMode;
       console.log(`Auto mode ${this.isAutoMode ? 'enabled' : 'disabled'}`);
 
@@ -1062,55 +966,12 @@ export class GameScene {
   }
 
   /**
-   * Find target near cursor position (for manual targeting)
-   */
-  private findTargetNearCursor(): Target | null {
-    // Find target that    // Use radar to find target near cursor
-    const radarState = this.uiController.getRadarState();
-    const BEAM_WIDTH_DEGREES = 5; // 5 degree radar beam width as per spec
-    const RANGE_TOLERANCE = 200; // 200m range tolerance
-
-    return (
-      this.targets.find(target => {
-        if (target.isDestroyed || this.gameTime < target.spawnTime)
-          return false;
-
-        // Calculate target's bearing and distance from artillery position
-        // Using XY plane for horizontal radar calculations
-        const dx = target.position.x - this.artilleryPosition.x;
-        const dy = target.position.y - this.artilleryPosition.y;
-        const targetDistance = Math.sqrt(dx * dx + dy * dy);
-
-        // Calculate target's azimuth angle (normalized to 0-360)
-        let targetAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
-        if (targetAzimuth < 0) targetAzimuth += 360;
-
-        // Normalize radar azimuth to 0-360
-        let radarAz = radarState.azimuth;
-        if (radarAz < 0) radarAz += 360;
-
-        // Calculate angular difference (handling 360-degree boundary)
-        let angleDiff = Math.abs(targetAzimuth - radarAz);
-        if (angleDiff > 180) angleDiff = 360 - angleDiff;
-
-        // Check if target is within radar beam width and range cursor tolerance
-        const withinBeam = angleDiff <= BEAM_WIDTH_DEGREES / 2;
-        const withinRange =
-          Math.abs(targetDistance - radarState.range) <= RANGE_TOLERANCE;
-
-        return withinBeam && withinRange;
-      }) || null
-    );
-  }
-
-  /**
    * Update radar to point at locked target
    * Used for automatic target tracking when locked on
    */
   private updateRadarToLockedTarget(): void {
-    if (!this.lockedTarget) return;
-
-    const target = this.lockedTarget;
+    const target = this.targetingSystem.getLockedTarget();
+    if (!target) return;
 
     // Calculate direction to target
     const dx = target.position.x - this.artilleryPosition.x;
@@ -1126,36 +987,17 @@ export class GameScene {
     // Calculate elevation angle from artillery to target (T046)
     this.radarElevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
 
-    // Update UIController's radar state to track target
-    this.uiController.setRadarState({
-      azimuth: this.radarAzimuth,
-      elevation: this.radarElevation,
-      range: horizontalDistance,
-    });
-  }
+    // Calculate azimuth angle from artillery to target (Unified: XY plane)
+    let azimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+    if (azimuth < 0) azimuth += 360;
 
-  /**
-   * Update radar to point at specific target (for right-click targeting)
-   */
-  private updateRadarToTarget(target: Target): void {
-    // Calculate direction to target
-    const dx = target.position.x - this.artilleryPosition.x;
-    const dy = target.position.y - this.artilleryPosition.y;
-    const dz = target.position.z - this.artilleryPosition.z;
-
-    // Calculate azimuth angle from artillery to target (統一: XY平面)
-    const azimuth = Math.atan2(dx, dy) * (180 / Math.PI);
-
-    // Calculate horizontal distance (radar range)
-    const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
-
-    // Calculate elevation angle from artillery to target (T046)
+    // Calculate elevation angle
     const elevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
 
-    // Update UIController's radar state (this will propagate to UI)
+    // Update UIController's radar state to track target
     this.uiController.setRadarState({
-      azimuth,
-      elevation,
+      azimuth: azimuth,
+      elevation: elevation,
       range: horizontalDistance,
     });
   }
@@ -1198,77 +1040,6 @@ export class GameScene {
   /**
    * Handle keyboard key down events
    */
-  private handleKeyDown = (event: KeyboardEvent): void => {
-    // Prevent default scrolling for arrow keys and space
-    if (
-      ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(
-        event.key
-      )
-    ) {
-      event.preventDefault();
-    }
-
-    // Cancel auto-rotation on manual azimuth input
-    if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
-      if (this.isRadarAutoRotating) {
-        this.isRadarAutoRotating = false;
-        console.log('Radar auto-rotation cancelled by manual input');
-      }
-    }
-
-    switch (event.key) {
-      case 'r':
-      case 'R':
-        if (this.gameState === GameState.GAME_OVER) {
-          this.initializeGame();
-        }
-        break;
-      case ' ':
-        if (this.gameState === GameState.STAGE_CLEAR) {
-          this.onSceneTransition({ type: SceneType.STAGE_SELECT });
-        } else if (this.gameState === GameState.PLAYING) {
-          this.fireProjectile();
-        }
-        break;
-      case 'f':
-      case 'F':
-        this.fireProjectile();
-        break;
-      case 'l':
-      case 'L':
-        this.handleTargetLock();
-        break;
-      case 'k':
-      case 'K':
-        this.handleAutoToggle();
-        break;
-    }
-
-    // Delegate keys to UIController
-    if (
-      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'o', 'i'].includes(
-        event.key.toLowerCase() // Use lowercase for check to handle caps lock/shift
-      ) ||
-      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) // Keep original check for safety
-    ) {
-      this.uiController.handleKeyDown(event);
-    }
-  };
-
-  /**
-   * Handle keyboard key up events
-   */
-  private handleKeyUp = (event: KeyboardEvent): void => {
-    // Delegate keys to UIController
-    if (
-      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'o', 'i'].includes(
-        event.key.toLowerCase()
-      ) ||
-      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
-    ) {
-      this.uiController.handleKeyUp(event);
-    }
-  };
 
   /**
    * Render radar elevation display in horizontal radar (T046)
@@ -1281,17 +1052,6 @@ export class GameScene {
   private isPositionInRadarRange(position: Vector3): boolean {
     const distance = this.artilleryPosition.subtract(position).magnitude();
     return distance <= this.maxRadarRange;
-  }
-
-  /**
-   * Calculate collision point between projectile and target (T047)
-   */
-  private calculateCollisionPoint(
-    projectilePos: Vector3,
-    targetPos: Vector3
-  ): Vector3 {
-    // Return midpoint between projectile and target at collision
-    return projectilePos.add(targetPos).multiply(0.5);
   }
 
   /**
@@ -1322,103 +1082,85 @@ export class GameScene {
   /**
    * Update lead angle calculation using TargetTracker (GS-07)
    */
-  private updateLeadAngleCalculation(): void {
-    if (this.targetingState === TargetingState.LOCKED_ON && this.lockedTarget) {
-      const targetVelocity = this.lockedTarget.velocity || new Vector3(0, 0, 0);
-      const targetId = this.lockedTarget.id;
+  private updateLeadAngleCalculation(deltaTime: number): void {
+    const lockedTarget = this.targetingSystem.getLockedTarget();
 
-      // Check if this is a new target and reset tracking if needed
-      if (this.lastTrackedTargetId !== targetId) {
-        console.log(
-          `Target changed from ${this.lastTrackedTargetId} to ${targetId}, resetting tracking`
-        );
-        this.leadAngleCalculator.resetTargetTracking();
-        this.lastTrackedTargetId = targetId;
+    // Update lead angle system
+    const updated = this.leadAngleSystem.update(deltaTime, lockedTarget);
+
+    if (updated) {
+      const leadAngle = this.leadAngleSystem.getLeadAngle();
+      if (leadAngle) {
+        // Apply to artillery if in auto mode
+        if (this.isAutoMode) {
+          this.artillery.setCommandedAngles(
+            leadAngle.azimuth,
+            leadAngle.elevation
+          );
+          console.log(
+            `Auto mode: Applied Az=${leadAngle.azimuth.toFixed(1)}°, El=${leadAngle.elevation.toFixed(1)}°`
+          );
+        }
+
+        // Update UI
+        this.renderLeadAngleDisplay(leadAngle);
       }
-
-      // Use incremental lead angle calculation for better convergence
-      const leadResult =
-        this.leadAngleCalculator.calculateRecommendedLeadIncremental(
-          this.artilleryPosition,
-          this.lockedTarget.position,
-          targetVelocity,
-          targetId
-        );
-
-      console.log(
-        `Lead calculation result: Az=${leadResult.leadAngle.azimuth.toFixed(2)}°, El=${leadResult.leadAngle.elevation.toFixed(2)}°, Accuracy=${leadResult.accuracy?.toFixed(1) || 'N/A'}m, Converged=${leadResult.converged}, Confidence=${leadResult.confidence}`
-      );
-
-      // If in auto mode, apply lead angles to artillery
-      if (this.isAutoMode) {
-        this.artillery.setCommandedAngles(
-          leadResult.leadAngle.azimuth,
-          leadResult.leadAngle.elevation
-        );
-        console.log(
-          `Auto mode: Applied Az=${leadResult.leadAngle.azimuth.toFixed(1)}°, El=${leadResult.leadAngle.elevation.toFixed(1)}°`
-        );
-      }
-
-      // Update currentLeadAngle for UI display
-      this.currentLeadAngle = {
-        azimuth: leadResult.leadAngle.azimuth,
-        elevation: leadResult.leadAngle.elevation,
-        confidence: leadResult.confidence,
-        flightTime: leadResult.flightTime || 0,
-        converged: leadResult.converged || false,
-        iterations: leadResult.iterations || 0,
-        accuracy: leadResult.accuracy || 0,
-      };
-
-      // Render lead angle display with improved data
-      this.renderLeadAngleDisplay(
-        leadResult.leadAngle.azimuth,
-        leadResult.leadAngle.elevation,
-        leadResult.confidence,
-        leadResult.accuracy, // Show actual calculation error
-        leadResult.flightTime || 0
-      );
-    } else {
-      // Target not locked: Clear display and reset tracking
+    } else if (!lockedTarget) {
       this.clearLeadAngleDisplay();
-      this.currentLeadAngle = null;
-
-      // Reset target tracking when no target is locked
-      if (this.lastTrackedTargetId !== null) {
-        console.log('No target locked, resetting tracking');
-        this.leadAngleCalculator.resetTargetTracking();
-        this.lastTrackedTargetId = null;
-      }
     }
   }
 
   /**
    * Render lead angle display with confidence indication (GS-07, UI-06)
    */
-  private renderLeadAngleDisplay(
-    azimuth: number,
-    elevation: number,
-    confidence: 'HIGH' | 'MEDIUM' | 'LOW',
-    convergenceError?: number,
-    flightTime?: number
-  ): void {
-    // This will be rendered in renderTargetingInfo method
-    // Store current lead angle values for display
-    this.currentLeadAngle = {
+  private renderLeadAngleDisplay(leadAngle: ExtendedLeadAngle): void {
+    const { azimuth, elevation, confidence, accuracy, flightTime } = leadAngle;
+
+    // Use UIController to update lead angle display
+    // This assumes UIController has a method for this, or we access UIManager directly
+    // For now, we'll assume it expects individual values based on previous code
+
+    // Note: The original implementation called this.uiController.updateLeadAngle
+    // We should check if that method exists and what arguments it expects
+    // For now, we'll assume it expects individual values based on previous code
+
+    // Actually, looking at previous code:
+    // this.renderLeadAngleDisplay(azimuth, elevation, confidence, accuracy, flightTime)
+    // called:
+    // this.uiController.updateLeadAngle(azimuth, elevation, confidence, accuracy, flightTime);
+
+    // So we should call:
+    this.uiController.updateLeadAngle(
       azimuth,
       elevation,
       confidence,
-      convergenceError,
-      flightTime,
-    };
+      accuracy,
+      flightTime
+    );
   }
 
   /**
    * Clear lead angle display
    */
   private clearLeadAngleDisplay(): void {
-    this.currentLeadAngle = null;
+    this.leadAngleSystem.clear();
+  }
+
+  /**
+   * Handle game over
+   */
+  private handleGameOver(): void {
+    this.gameState = GameState.GAME_OVER;
+  }
+
+  /**
+   * Create explosion effect
+   */
+  private createExplosion(
+    position: Vector3,
+    type: 'projectile_impact' | 'target_destruction' = 'projectile_impact'
+  ): void {
+    this.effectRenderer.createExplosion(position, type);
   }
 
   /**

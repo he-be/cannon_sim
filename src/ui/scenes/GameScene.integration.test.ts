@@ -52,13 +52,13 @@ describe('GameScene UI Integration', () => {
     };
   });
 
-  it('should initialize UIControllerA by default (backward compatibility)', () => {
+  it('should initialize UIControllerB by default', () => {
     new GameScene(mockCanvasManager, mockOnSceneTransition, {
       selectedStage: mockStageConfig,
     });
 
-    expect(UIControllerA).toHaveBeenCalled();
-    expect(UIControllerB).not.toHaveBeenCalled();
+    expect(UIControllerB).toHaveBeenCalled();
+    expect(UIControllerA).not.toHaveBeenCalled();
   });
 
   it('should initialize UIControllerA when MODE_A is explicitly selected', () => {

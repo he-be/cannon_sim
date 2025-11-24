@@ -38,6 +38,7 @@ export const GAME_CONSTANTS = {
   // Performance
   MAX_ACTIVE_PROJECTILES: 10,
   MAX_TRAIL_POINTS: 200,
+  GAME_OVER_DISTANCE: 1000, // 1km
 } as const;
 
 export const CRT_COLORS = {

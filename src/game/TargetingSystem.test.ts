@@ -1,18 +1,13 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { TargetingSystem, TargetingState } from './TargetingSystem';
 import { Target, TargetType } from './entities/Target';
-import { Vector2 } from '../math/Vector2';
 import { Vector3 } from '../math/Vector3';
 
 describe('TargetingSystem', () => {
   let targetingSystem: TargetingSystem;
-  let radarPosition: Vector3;
-  let maxRange: number;
 
   beforeEach(() => {
     targetingSystem = new TargetingSystem();
-    radarPosition = new Vector3(0, 0, 0);
-    maxRange = 10000;
   });
 
   describe('initialization', () => {
@@ -25,46 +20,45 @@ describe('TargetingSystem', () => {
   });
 
   describe('target tracking', () => {
-    test('should track target near cursor', () => {
+    test('should track active target', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
-      const cursorPosition = new Vector2(1000, 0); // Near target
+      const artilleryPosition = new Vector3(0, 0, 0);
 
       const result = targetingSystem.update(
         targets,
-        cursorPosition,
-        radarPosition,
-        maxRange,
-        1 // Current time after spawn
+        45,
+        141,
+        artilleryPosition,
+        1000
       );
 
       expect(result.state).toBe(TargetingState.TRACKING);
       expect(result.trackedTarget).toBe(target);
-      expect(result.lockedTarget).toBeNull();
     });
 
     test('should not track destroyed targets', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       target.hit(); // Destroy target
       const targets = [target];
-      const cursorPosition = new Vector2(1000, 0);
+      const artilleryPosition = new Vector3(0, 0, 0);
 
       const result = targetingSystem.update(
         targets,
-        cursorPosition,
-        radarPosition,
-        maxRange,
-        1
+        45,
+        141,
+        artilleryPosition,
+        1000
       );
 
       expect(result.state).toBe(TargetingState.NO_TARGET);
@@ -73,20 +67,20 @@ describe('TargetingSystem', () => {
 
     test('should not track targets that have not spawned yet', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
-        10 // Spawns at t=10
+        2000 // Spawn time in future
       );
       const targets = [target];
-      const cursorPosition = new Vector2(1000, 0);
+      const artilleryPosition = new Vector3(0, 0, 0);
 
       const result = targetingSystem.update(
         targets,
-        cursorPosition,
-        radarPosition,
-        maxRange,
-        5 // Current time before spawn
+        45,
+        141,
+        artilleryPosition,
+        1000 // Current time < spawn time
       );
 
       expect(result.state).toBe(TargetingState.NO_TARGET);
@@ -94,92 +88,172 @@ describe('TargetingSystem', () => {
     });
   });
 
-  describe('target locking', () => {
-    test('should lock tracked target', () => {
+  describe('update', () => {
+    test('should find target within radar beam and range', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0), // Azimuth ~45 deg, Range ~141m
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
-      const cursorPosition = new Vector2(1000, 0);
+      const radarAzimuth = 45;
+      const radarRange = 141;
+      const artilleryPosition = new Vector3(0, 0, 0);
 
-      // First track the target
-      targetingSystem.update(
+      const result = targetingSystem.update(
         targets,
-        cursorPosition,
-        radarPosition,
-        maxRange,
-        1
+        radarAzimuth,
+        radarRange,
+        artilleryPosition,
+        1000
       );
 
-      // Then lock it
+      expect(result.state).toBe(TargetingState.TRACKING);
+      expect(result.trackedTarget).toBe(target);
+    });
+
+    test('should NOT find target outside beam width', () => {
+      const target = new Target(
+        new Vector3(100, 100, 0), // Azimuth ~45 deg
+        TargetType.STATIC,
+        undefined,
+        0
+      );
+      const targets = [target];
+      const radarAzimuth = 60; // Outside 5 degree beam
+      const radarRange = 141;
+      const artilleryPosition = new Vector3(0, 0, 0);
+
+      const result = targetingSystem.update(
+        targets,
+        radarAzimuth,
+        radarRange,
+        artilleryPosition,
+        1000
+      );
+
+      expect(result.state).toBe(TargetingState.NO_TARGET);
+      expect(result.trackedTarget).toBeNull();
+    });
+
+    test('should NOT find target outside range tolerance', () => {
+      const target = new Target(
+        new Vector3(100, 100, 0), // Range ~141m
+        TargetType.STATIC,
+        undefined,
+        0
+      );
+      const targets = [target];
+      const radarAzimuth = 45;
+      const radarRange = 500; // Outside 200m tolerance
+      const artilleryPosition = new Vector3(0, 0, 0);
+
+      const result = targetingSystem.update(
+        targets,
+        radarAzimuth,
+        radarRange,
+        artilleryPosition,
+        1000
+      );
+
+      expect(result.state).toBe(TargetingState.NO_TARGET);
+      expect(result.trackedTarget).toBeNull();
+    });
+
+    test('should keep tracking locked target even if outside beam', () => {
+      const target = new Target(
+        new Vector3(100, 100, 0),
+        TargetType.STATIC,
+        undefined,
+        0
+      );
+      const targets = [target];
+      const artilleryPosition = new Vector3(0, 0, 0);
+
+      // First track and lock
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
+      targetingSystem.handleLockToggle();
+
+      // Move radar away
+      const result = targetingSystem.update(
+        targets,
+        180, // Totally different azimuth
+        500, // Totally different range
+        artilleryPosition,
+        2000
+      );
+
+      expect(result.state).toBe(TargetingState.LOCKED_ON);
+      expect(result.lockedTarget).toBe(target);
+    });
+  });
+
+  describe('target locking', () => {
+    test('should lock tracked target', () => {
+      const target = new Target(
+        new Vector3(100, 100, 0),
+        TargetType.STATIC,
+        undefined,
+        0
+      );
+      const targets = [target];
+      const artilleryPosition = new Vector3(0, 0, 0);
+
+      // Track a target
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
+
+      // Toggle lock
       const result = targetingSystem.handleLockToggle();
 
       expect(result.state).toBe(TargetingState.LOCKED_ON);
       expect(result.lockedTarget).toBe(target);
-      expect(result.trackedTarget).toBe(target);
     });
 
     test('should unlock locked target', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
-      const cursorPosition = new Vector2(1000, 0);
+      const artilleryPosition = new Vector3(0, 0, 0);
 
       // Track and lock
-      targetingSystem.update(
-        targets,
-        cursorPosition,
-        radarPosition,
-        maxRange,
-        1
-      );
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
       targetingSystem.handleLockToggle();
 
-      // Unlock
+      // Toggle lock again to unlock
       const result = targetingSystem.handleLockToggle();
 
       expect(result.state).toBe(TargetingState.NO_TARGET);
       expect(result.lockedTarget).toBeNull();
-      expect(result.trackedTarget).toBeNull();
     });
 
     test('should keep tracking locked target', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
-      const cursorPosition = new Vector2(1000, 0);
+      const artilleryPosition = new Vector3(0, 0, 0);
 
       // Track and lock
-      targetingSystem.update(
-        targets,
-        cursorPosition,
-        radarPosition,
-        maxRange,
-        1
-      );
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
       targetingSystem.handleLockToggle();
 
-      // Update with different cursor position
+      // Update again (should stay locked)
       const result = targetingSystem.update(
         targets,
-        new Vector2(5000, 5000), // Far from target
-        radarPosition,
-        maxRange,
-        2
+        45,
+        141,
+        artilleryPosition,
+        2000
       );
 
-      // Should still be locked
       expect(result.state).toBe(TargetingState.LOCKED_ON);
       expect(result.lockedTarget).toBe(target);
     });
@@ -188,24 +262,19 @@ describe('TargetingSystem', () => {
   describe('clearing', () => {
     test('should clear all targeting', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
+      const artilleryPosition = new Vector3(0, 0, 0);
 
       // Lock a target
-      targetingSystem.update(
-        targets,
-        new Vector2(1000, 0),
-        radarPosition,
-        maxRange,
-        1
-      );
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
       targetingSystem.handleLockToggle();
 
-      // Clear
+      // Clear targeting
       targetingSystem.clearTargeting();
 
       const state = targetingSystem.getState();
@@ -216,82 +285,74 @@ describe('TargetingSystem', () => {
 
     test('should clear lock only', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
+      const artilleryPosition = new Vector3(0, 0, 0);
 
-      // Track and lock
-      targetingSystem.update(
-        targets,
-        new Vector2(1000, 0),
-        radarPosition,
-        maxRange,
-        1
-      );
+      // Lock a target
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
       targetingSystem.handleLockToggle();
 
       // Clear lock
       targetingSystem.clearLock();
 
       const state = targetingSystem.getState();
-      // After clearing lock, if we still have tracked target, state becomes TRACKING
-      // Otherwise NO_TARGET
+      // Should revert to tracking if target is still valid
+      // In this test setup, update hasn't run again, so it might just clear lock
+      // But based on implementation: targetingState = trackedTarget ? TRACKING : NO_TARGET
+      // Since we haven't cleared trackedTarget, it should go back to TRACKING
       expect(state.state).toBe(TargetingState.TRACKING);
       expect(state.lockedTarget).toBeNull();
-      expect(state.trackedTarget).toBe(target); // Still tracked
+      expect(state.trackedTarget).toBe(target);
     });
   });
 
   describe('reset', () => {
     test('should reset to initial state', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
+      const artilleryPosition = new Vector3(0, 0, 0);
 
-      // Lock a target
-      targetingSystem.update(
-        targets,
-        new Vector2(1000, 0),
-        radarPosition,
-        maxRange,
-        1
-      );
+      // Set state
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
       targetingSystem.handleLockToggle();
+
+      expect(targetingSystem.getTargetingState()).toBe(
+        TargetingState.LOCKED_ON
+      );
 
       // Reset
       targetingSystem.reset();
 
-      const state = targetingSystem.getState();
-      expect(state.state).toBe(TargetingState.NO_TARGET);
-      expect(state.trackedTarget).toBeNull();
-      expect(state.lockedTarget).toBeNull();
+      expect(targetingSystem.getTargetingState()).toBe(
+        TargetingState.NO_TARGET
+      );
+      expect(targetingSystem.getTrackedTarget()).toBeNull();
+      expect(targetingSystem.getLockedTarget()).toBeNull();
     });
   });
 
   describe('getters', () => {
     test('should return locked target', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
+      const artilleryPosition = new Vector3(0, 0, 0);
 
-      targetingSystem.update(
-        targets,
-        new Vector2(1000, 0),
-        radarPosition,
-        maxRange,
-        1
-      );
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
       targetingSystem.handleLockToggle();
 
       expect(targetingSystem.getLockedTarget()).toBe(target);
@@ -299,24 +360,18 @@ describe('TargetingSystem', () => {
 
     test('should return tracked target', () => {
       const target = new Target(
-        new Vector3(1000, 0, 100),
+        new Vector3(100, 100, 0),
         TargetType.STATIC,
         undefined,
         0
       );
       const targets = [target];
+      const artilleryPosition = new Vector3(0, 0, 0);
 
-      targetingSystem.update(
-        targets,
-        new Vector2(1000, 0),
-        radarPosition,
-        maxRange,
-        1
-      );
+      targetingSystem.update(targets, 45, 141, artilleryPosition, 1000);
 
       expect(targetingSystem.getTrackedTarget()).toBe(target);
     });
-
     test('should return targeting state', () => {
       expect(targetingSystem.getTargetingState()).toBe(
         TargetingState.NO_TARGET

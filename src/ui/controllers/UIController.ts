@@ -4,6 +4,7 @@
  */
 
 import { UIManager } from '../UIManager';
+import { Target } from '../../game/entities/Target';
 
 export interface RadarState {
   azimuth: number; // degrees
@@ -48,6 +49,31 @@ export interface UIController {
    * Used when radar should track a locked target
    */
   setRadarState(state: Partial<RadarState>): void;
+
+  /**
+   * Update lead angle display
+   */
+  updateLeadAngle(
+    azimuth: number,
+    elevation: number,
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW',
+    accuracy?: number,
+    flightTime?: number
+  ): void;
+
+  /**
+   * Update targeting info display
+   */
+  updateTargetingInfo(
+    state: string,
+    trackedTarget: Target | null,
+    lockedTarget: Target | null
+  ): void;
+
+  /**
+   * Update radar azimuth display
+   */
+  updateRadarAzimuth(azimuth: number): void;
 
   /**
    * Get range gate setting (UI B only, optional)

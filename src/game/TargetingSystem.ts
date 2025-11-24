@@ -4,7 +4,7 @@
  */
 
 import { Target } from './entities/Target';
-import { Vector2 } from '../math/Vector2';
+
 import { Vector3 } from '../math/Vector3';
 
 export enum TargetingState {
@@ -59,13 +59,13 @@ export class TargetingSystem {
   /**
    * Update targeting system
    * - If locked, keep tracking locked target
-   * - Otherwise, find target near cursor
+   * - Otherwise, find target based on radar parameters
    */
   update(
     targets: Target[],
-    cursorPosition: Vector2,
-    radarPosition: Vector3,
-    maxRange: number,
+    radarAzimuth: number,
+    radarRange: number,
+    artilleryPosition: Vector3,
     currentTime: number
   ): TargetingResult {
     // If we have a locked target, keep tracking it
@@ -73,12 +73,12 @@ export class TargetingSystem {
       this.targetingState = TargetingState.LOCKED_ON;
       this.trackedTarget = this.lockedTarget;
     } else {
-      // Find target near cursor for tracking
-      const nearestTarget = this.findTargetNearCursor(
+      // Find target based on radar parameters
+      const nearestTarget = this.findTargetByRadar(
         targets,
-        cursorPosition,
-        radarPosition,
-        maxRange,
+        radarAzimuth,
+        radarRange,
+        artilleryPosition,
         currentTime
       );
 
@@ -136,53 +136,49 @@ export class TargetingSystem {
   }
 
   /**
-   * Find the target nearest to the cursor position
+   * Find target based on radar azimuth and range
    */
-  private findTargetNearCursor(
+  private findTargetByRadar(
     targets: Target[],
-    cursorPosition: Vector2,
-    radarPosition: Vector3,
-    maxRange: number,
+    radarAzimuth: number,
+    radarRange: number,
+    artilleryPosition: Vector3,
     currentTime: number
   ): Target | null {
-    const CURSOR_THRESHOLD = 50; // pixels
+    const BEAM_WIDTH_DEGREES = 5; // 5 degree radar beam width
+    const RANGE_TOLERANCE = 200; // 200m range tolerance
 
-    let nearestTarget: Target | null = null;
-    let minDistance = CURSOR_THRESHOLD;
+    return (
+      targets.find(target => {
+        if (!target.isActive || currentTime < target.spawnTime) return false;
 
-    targets.forEach(target => {
-      // Only consider active targets that have spawned
-      if (!target.isActive || currentTime < target.spawnTime) return;
+        // Calculate target's bearing and distance from artillery position
+        // Using XY plane for horizontal radar calculations
+        const dx = target.position.x - artilleryPosition.x;
+        const dy = target.position.y - artilleryPosition.y;
+        const targetDistance = Math.sqrt(dx * dx + dy * dy);
 
-      // Check if target is within radar range
-      const distanceFromRadar = target.position
-        .subtract(radarPosition)
-        .magnitude();
-      if (distanceFromRadar > maxRange) return;
+        // Calculate target's azimuth angle (normalized to 0-360)
+        let targetAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
+        if (targetAzimuth < 0) targetAzimuth += 360;
 
-      // Calculate screen position (simplified 2D projection)
-      // This would typically use RadarCoordinateConverter in full implementation
-      const relativePos = target.position.subtract(radarPosition);
-      const azimuth = Math.atan2(relativePos.y, relativePos.x);
-      const range = Math.sqrt(
-        relativePos.x * relativePos.x + relativePos.y * relativePos.y
-      );
+        // Normalize radar azimuth to 0-360
+        let radarAz = radarAzimuth;
+        while (radarAz < 0) radarAz += 360;
+        while (radarAz >= 360) radarAz -= 360;
 
-      // Convert to screen coordinates (for cursor comparison)
-      // This is a simplified version - real implementation uses canvas coordinates
-      const screenX = range * Math.cos(azimuth);
-      const screenY = range * Math.sin(azimuth);
-      const screenPos = new Vector2(screenX, screenY);
+        // Calculate angular difference (handling 360-degree boundary)
+        let angleDiff = Math.abs(targetAzimuth - radarAz);
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
 
-      const distanceToCursor = screenPos.subtract(cursorPosition).magnitude();
+        // Check if target is within radar beam width and range cursor tolerance
+        const withinBeam = angleDiff <= BEAM_WIDTH_DEGREES / 2;
+        const withinRange =
+          Math.abs(targetDistance - radarRange) <= RANGE_TOLERANCE;
 
-      if (distanceToCursor < minDistance) {
-        minDistance = distanceToCursor;
-        nearestTarget = target;
-      }
-    });
-
-    return nearestTarget;
+        return withinBeam && withinRange;
+      }) || null
+    );
   }
 
   /**

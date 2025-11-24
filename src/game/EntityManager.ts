@@ -81,10 +81,12 @@ export class EntityManager {
     physicsEngine: {
       integrate: (
         state: { position: Vector3; velocity: Vector3 },
+        time: number,
         deltaTime: number
       ) => { position: Vector3; velocity: Vector3 };
     },
-    onImpact: (projectile: ProjectileState) => void
+    onImpact: (projectile: ProjectileState) => void,
+    onUpdate?: (projectile: ProjectileState) => void
   ): void {
     this.projectiles.forEach(projectile => {
       if (!projectile.isActive) return;
@@ -95,9 +97,13 @@ export class EntityManager {
         velocity: projectile.velocity,
       };
 
-      const newState = physicsEngine.integrate(state, deltaTime);
+      const newState = physicsEngine.integrate(state, currentTime, deltaTime);
       projectile.position = newState.position;
       projectile.velocity = newState.velocity;
+
+      if (onUpdate) {
+        onUpdate(projectile);
+      }
 
       // Check for ground impact or timeout
       if (

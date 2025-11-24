@@ -9,6 +9,7 @@ import { UIManagerB } from '../UIManagerB';
 import { UIController, RadarState } from './UIController';
 import { GAME_CONSTANTS } from '../../data/Constants';
 import { RadarController } from '../../game/RadarController';
+import { Target } from '../../game/entities/Target';
 
 /**
  * UIControllerB implements the new UI behavior (UI B)
@@ -189,6 +190,37 @@ export class UIControllerB implements UIController {
       elevation: radarState.elevation,
       range: this.rangeGate, // Return rangeGate for locking logic (GameScene expects cursor distance)
     };
+  }
+
+  /**
+   * Update lead angle display
+   */
+  updateLeadAngle(
+    azimuth: number,
+    elevation: number,
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW',
+    _accuracy?: number,
+    _flightTime?: number
+  ): void {
+    this.uiManager.updateLeadAngle(azimuth, elevation, confidence);
+  }
+
+  /**
+   * Update targeting info display
+   */
+  updateTargetingInfo(
+    state: string,
+    trackedTarget: Target | null,
+    lockedTarget: Target | null
+  ): void {
+    this.uiManager.updateTargetingInfo(state, trackedTarget, lockedTarget);
+  }
+
+  /**
+   * Update radar azimuth display
+   */
+  updateRadarAzimuth(azimuth: number): void {
+    this.uiManager.updateRadarAzimuth(azimuth);
   }
 
   /**

@@ -7,6 +7,7 @@ import { CanvasManager } from '../../rendering/CanvasManager';
 import { UIManager, UIEvents } from '../UIManager';
 import { UIController, RadarState } from './UIController';
 import { GAME_CONSTANTS } from '../../data/Constants';
+import { Target } from '../../game/entities/Target';
 
 /**
  * UIControllerA implements the existing UI behavior (UI A)
@@ -146,6 +147,38 @@ export class UIControllerA implements UIController {
       elevation: this.radarElevation,
       range: this.radarRange,
     };
+  }
+
+  /**
+   * Update lead angle display
+   */
+  updateLeadAngle(
+    azimuth: number,
+    elevation: number,
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW',
+    _accuracy?: number,
+    _flightTime?: number
+  ): void {
+    // UI A might not display all details
+    this.uiManager.updateLeadAngle(azimuth, elevation, confidence);
+  }
+
+  /**
+   * Update targeting info display
+   */
+  updateTargetingInfo(
+    state: string,
+    trackedTarget: Target | null,
+    lockedTarget: Target | null
+  ): void {
+    this.uiManager.updateTargetingInfo(state, trackedTarget, lockedTarget);
+  }
+
+  /**
+   * Update radar azimuth display
+   */
+  updateRadarAzimuth(azimuth: number): void {
+    this.uiManager.updateRadarAzimuth(azimuth);
   }
 
   /**

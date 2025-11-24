@@ -78,6 +78,7 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
       moveTo: vi.fn(),
       lineTo: vi.fn(),
       stroke: vi.fn(),
+      closePath: vi.fn(),
       arc: vi.fn(),
       fill: vi.fn(),
       rect: vi.fn(),
