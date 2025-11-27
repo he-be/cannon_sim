@@ -7,11 +7,11 @@
 
 import { CanvasManager } from '../../rendering/CanvasManager';
 import { StageConfig } from '../../data/StageData';
-import { SceneType, SceneTransition } from './TitleScene';
-import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
+import { SceneTransition } from './TitleScene';
+
 import { Vector3 } from '../../math/Vector3';
 import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
-import { PhysicsEngine, State3D } from '../../physics/PhysicsEngine';
+import { PhysicsEngine } from '../../physics/PhysicsEngine';
 import { TrajectoryRenderer } from '../../rendering/TrajectoryRenderer';
 
 import {
@@ -19,10 +19,14 @@ import {
   GAME_CONSTANTS,
   CRT_COLORS,
 } from '../../data/Constants';
-import { Target, TargetType } from '../../game/entities/Target';
+import {
+  GameInputController,
+  GameActions,
+} from '../../input/GameInputController';
+import { UIStateMapper } from '../UIStateMapper';
+import { Target } from '../../game/entities/Target';
 import { Artillery } from '../../game/entities/Artillery';
-import { UIEvents } from '../UIManager';
-import { RadarTarget } from '../components/RadarRenderer';
+
 import { UIController } from '../controllers/UIController';
 import { UIControllerA } from '../controllers/UIControllerA';
 import { UIControllerB } from '../controllers/UIControllerB';
@@ -32,7 +36,6 @@ import { EntityManager } from '../../game/EntityManager';
 import { RadarController } from '../../game/RadarController';
 import { TargetingSystem, TargetingState } from '../../game/TargetingSystem';
 import { LeadAngleSystem, ExtendedLeadAngle } from '../../game/LeadAngleSystem';
-import { InputHandler } from '../../input/InputHandler';
 
 export enum GameState {
   PLAYING = 'playing',
@@ -59,10 +62,10 @@ interface ProjectileState {
  */
 export class GameScene {
   private canvasManager: CanvasManager;
-  private mouseHandler: MouseHandler; // This property is no longer used but kept for now as per instruction to only make explicit changes.
   private onSceneTransition: (transition: SceneTransition) => void;
   private config: GameSceneConfig;
   private effectRenderer: EffectRenderer;
+  private inputController: GameInputController;
   private physicsEngine: PhysicsEngine;
   private trajectoryRenderer: TrajectoryRenderer;
 
@@ -78,7 +81,6 @@ export class GameScene {
   // targets and projectiles are now managed by entityManager
   private artillery: Artillery;
   private artilleryPosition: Vector3;
-  private inputHandler: InputHandler;
 
   // Targeting system
   private targetingSystem: TargetingSystem;
@@ -127,7 +129,6 @@ export class GameScene {
     this.canvasManager = canvasManager;
     this.onSceneTransition = onSceneTransition;
     this.config = config;
-    this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas()); // This line is kept as per instruction to only make explicit changes.
     this.effectRenderer = new EffectRenderer(this.canvasManager);
 
     // Initialize EntityManager
@@ -150,43 +151,32 @@ export class GameScene {
     // Initialize RadarController
     this.radarController = new RadarController();
 
-    // Define UI Events
-    const uiEvents: UIEvents = {
-      onAzimuthChange: (value: number) => {
-        this.radarController.setAzimuth(value);
+    // Initialize GameInputController
+    const gameActions: GameActions = {
+      fireProjectile: () => this.fireProjectile(),
+      toggleLock: () => this.handleTargetLock(),
+      toggleAuto: () => this.handleAutoToggle(),
+      toggleRadarRotation: () => this.toggleRadarAutoRotation(),
+      transitionScene: type => this.onSceneTransition({ type }),
+      restartGame: () => {
+        if (this.gameState === GameState.GAME_OVER) {
+          this.initializeGame();
+        }
+      },
+      setRadarAzimuth: az => {
+        this.radarController.setAzimuth(az);
         this.radarController.setAutoRotating(false);
       },
-      onElevationChange: (value: number) => {
-        this.radarController.setElevation(value);
-      },
-      onFireClick: () => {
-        this.fireProjectile();
-      },
-      onLockToggle: () => {
-        this.handleTargetLock();
-      },
-      onAutoToggle: () => {
-        this.handleAutoToggle();
-      },
-      onRadarRotateToggle: () => {
-        this.toggleRadarAutoRotation();
-      },
-      onMenuClick: () => {
-        this.onSceneTransition({ type: SceneType.TITLE });
-      },
-      onDirectionChange: (_azimuth: number, _elevation: number) => {
-        // Radar state is managed by UIController
-      },
-      onRangeChange: (_range: number) => {
-        // Radar state is managed by UIController
-      },
-      onTargetDetected: (_target: RadarTarget) => {
-        // Handle target detection if needed
-      },
-      onTargetLost: (_targetId: string) => {
-        // Handle target loss if needed
-      },
+      setRadarElevation: el => this.radarController.setElevation(el),
+      setRadarAutoRotating: rot => this.radarController.setAutoRotating(rot),
+      isRadarRotating: () => this.radarController.isRotating(),
+      getGameState: () => this.gameState,
     };
+
+    this.inputController = new GameInputController(gameActions);
+
+    // Define UI Events
+    const uiEvents = this.inputController.getUIEvents();
 
     // Initialize UI Controller
     if (this.config.uiMode === UIMode.MODE_A) {
@@ -201,35 +191,8 @@ export class GameScene {
     }
 
     // Initialize Input Handler
-    this.inputHandler = new InputHandler(
-      {
-        onFire: (): void => {
-          if (this.gameState === GameState.STAGE_CLEAR) {
-            this.onSceneTransition({ type: SceneType.STAGE_SELECT });
-          } else if (this.gameState === GameState.PLAYING) {
-            this.fireProjectile();
-          }
-        },
-        onLockToggle: (): void => this.handleTargetLock(),
-        onAutoToggle: (): void => this.handleAutoToggle(),
-        onRestart: (): void => {
-          if (this.gameState === GameState.GAME_OVER) {
-            this.initializeGame();
-          }
-        },
-        onSceneTransition: (transition): void =>
-          this.onSceneTransition(transition),
-        onCancelAutoRotation: (): void => {
-          if (this.radarController.isRotating()) {
-            this.radarController.setAutoRotating(false);
-            console.log('Radar auto-rotation cancelled by manual input');
-          }
-        },
-        onRadarRotateToggle: (): void => this.toggleRadarAutoRotation(),
-      },
-      this.uiController
-    );
-    this.inputHandler.attach();
+    this.inputController.initialize(this.uiController);
+    this.inputController.attach();
 
     // Initialize radar state
     this.radarController.reset();
@@ -317,10 +280,6 @@ export class GameScene {
    * Setup event listeners
    */
   private setupEventListeners(): void {
-    this.mouseHandler.addEventListener((event: MouseEventData) => {
-      this.handleMouseEvent(event);
-    });
-
     // Disable right-click context menu to enable right-click targeting
     this.canvasManager.getCanvas().addEventListener('contextmenu', e => {
       e.preventDefault();
@@ -397,247 +356,23 @@ export class GameScene {
   private updateUIState(): void {
     // Update artillery angles (display both current and commanded)
     // Note: UIManager needs update to support displaying both
-    // For now, we pass current angles as the main display
-    this.uiController
-      .getUIManager()
-      .setArtilleryAngles(
-        this.artillery.currentAzimuth,
-        this.artillery.currentElevation
-      );
-
-    // Update artillery reload state
-    this.uiController
-      .getUIManager()
-      .setArtilleryState(
-        this.artillery.canFire(),
-        this.artillery.reloadProgress
-      );
-
-    // Update radar state
-    const radarState = this.uiController.getRadarState();
-    this.uiController
-      .getUIManager()
-      .setRadarDirection(radarState.azimuth, radarState.elevation);
-
-    // For UI B, radarState.range is the rangeGate (cursor position)
-    // For UI A, radarState.range is the display range
-    // Check if UIManager has setRangeGate method (UI B specific)
-    const uiManager = this.uiController.getUIManager();
-    if ('setRangeGate' in uiManager) {
-      // UI B: Set range gate only, display range is always 15km
-      (
-        uiManager as typeof uiManager & {
-          setRangeGate: (range: number) => void;
-        }
-      ).setRangeGate(radarState.range);
-    } else {
-      // UI A: Set display range (zoom functionality)
-      uiManager.setRadarRange(radarState.range);
-    }
-
-    // Update radar info display in left panel (moved from center pane)
-    this.uiController
-      .getUIManager()
-      .setRadarInfo(radarState.azimuth, radarState.elevation, radarState.range);
-
-    // Update game time
-    this.uiController.getUIManager().setGameTime(this.gameTime);
-
-    // Update lock state
-    this.uiController
-      .getUIManager()
-      .setLockState(
-        this.targetingSystem.getTargetingState() === TargetingState.LOCKED_ON
-      );
-
-    // Update auto mode state
-    this.uiController.getUIManager().setAutoMode(this.isAutoMode);
-
-    // Update target information
-    const displayTarget =
-      this.targetingSystem.getLockedTarget() ||
-      this.targetingSystem.getTrackedTarget();
-    if (displayTarget) {
-      const distance = displayTarget.position
-        .subtract(this.artilleryPosition)
-        .magnitude();
-      const speed = displayTarget.velocity
-        ? displayTarget.velocity.magnitude()
-        : 0;
-
-      this.uiController.getUIManager().setTargetInfo({
-        status: this.targetingSystem.getTargetingState(),
-        type: this.getTargetDisplayName(displayTarget.type as TargetType),
-        range: distance,
-        speed: speed,
-      });
-    } else {
-      this.uiController.getUIManager().setTargetInfo(null);
-    }
-
-    // Update target list (TRACK)
-    const targetListData = this.entityManager
-      .getTargets()
-      .filter(t => !t.isDestroyed && this.gameTime >= t.spawnTime)
-      .map(target => {
-        const relativePos = target.position.subtract(this.artilleryPosition);
-        const distance = relativePos.magnitude();
-
-        // Calculate bearing (azimuth)
-        // Math.atan2(y, x) gives angle from East (0) CCW
-        // Navigation bearing is from North (0) CW
-        // Bearing = 90 - Math.atan2(y, x)
-        const mathAngle =
-          Math.atan2(relativePos.y, relativePos.x) * (180 / Math.PI);
-        let bearing = 90 - mathAngle;
-        if (bearing < 0) bearing += 360;
-        bearing = bearing % 360;
-
-        // Calculate if approaching or receding
-        // Dot product of velocity and relative position vector
-        // If negative, they are opposing (approaching)
-        // If positive, they are aligned (receding)
-        let isApproaching = false;
-        if (target.velocity) {
-          const dot = target.velocity.dot(relativePos);
-          isApproaching = dot < 0;
-        }
-
-        return {
-          id: target.id, // Use formatted Txx ID
-          bearing: bearing,
-          distance: distance,
-          altitude: target.position.z,
-          isApproaching: isApproaching,
-        };
-      });
-
-    this.uiController.getUIManager().setTargetList(targetListData);
-
-    // Update lead angle
-    const currentLeadAngle = this.leadAngleSystem.getLeadAngle();
-    if (currentLeadAngle) {
-      this.uiController.getUIManager().setLeadAngle(currentLeadAngle);
-    } else {
-      this.uiController.getUIManager().setLeadAngle(null);
-    }
-
-    // Update radar targets
-    this.updateRadarTargets();
-
-    // Update projectiles
-    this.uiController
-      .getUIManager()
-      .updateProjectiles(this.entityManager.getProjectiles());
-
-    // Update trajectory prediction
-    this.updateUITrajectoryPrediction();
-  }
-
-  private updateRadarTargets(): void {
-    // First, remove fully destroyed targets from radar
-    this.entityManager.getTargets().forEach(target => {
-      if (target.isDestroyed) {
-        this.uiController.getUIManager().removeRadarTarget(target.id);
-      }
+    UIStateMapper.update(this.uiController, {
+      artillery: this.artillery,
+      targetingSystem: this.targetingSystem,
+      entityManager: this.entityManager,
+      leadAngleSystem: this.leadAngleSystem,
+      gameTime: this.gameTime,
+      isAutoMode: this.isAutoMode,
+      artilleryPosition: this.artilleryPosition,
+      physicsEngine: this.physicsEngine,
     });
-
-    // Convert game targets to radar targets (active and falling targets)
-    this.entityManager.getTargets().forEach(target => {
-      // Show active and falling targets, but not fully destroyed ones
-      if (target.isDestroyed || this.gameTime < target.spawnTime) return;
-
-      const dx = target.position.x - this.artilleryPosition.x;
-      const dy = target.position.y - this.artilleryPosition.y;
-      const dz = target.position.z - this.artilleryPosition.z;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      const bearing = Math.atan2(dx, dy) * (180 / Math.PI);
-      const elevation = Math.atan2(dz, distance) * (180 / Math.PI);
-
-      const radarTarget: RadarTarget = {
-        id: target.id,
-        position: target.position,
-        velocity: target.velocity || new Vector3(0, 0, 0),
-        type: target.type,
-        bearing: bearing,
-        distance: distance,
-        elevation: elevation,
-        strength: 1.0, // Full strength
-      };
-
-      this.uiController.getUIManager().updateRadarTarget(radarTarget);
-    });
-  }
-
-  private updateUITrajectoryPrediction(): void {
-    // Calculate trajectory prediction using the same method as before
-    const trajectory = this.calculateTrajectoryPrediction();
-    this.uiController.getUIManager().updateTrajectoryPrediction(trajectory);
-  }
-
-  private calculateTrajectoryPrediction(): Vector3[] {
-    const trajectory: Vector3[] = [];
-
-    const azimuthRad = (this.artillery.currentAzimuth * Math.PI) / 180;
-    const elevationRad = (this.artillery.currentElevation * Math.PI) / 180;
-
-    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
-    const initialVelocity = new Vector3(
-      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.sin(elevationRad)
-    );
-
-    // Use same physics setup as projectiles via centralized StandardPhysics
-    const physicsEngine = new PhysicsEngine(
-      StandardPhysics.accelerationFunction
-    );
-
-    let state: State3D = {
-      position: new Vector3(
-        this.artilleryPosition.x,
-        this.artilleryPosition.y,
-        this.artilleryPosition.z
-      ),
-      velocity: initialVelocity,
-    };
-
-    const dt = PHYSICS_CONSTANTS.PHYSICS_TIMESTEP;
-    const maxTime = PHYSICS_CONSTANTS.MAX_PROJECTILE_LIFETIME;
-    let time = 0;
-    let stepCounter = 0;
-
-    // Sample every 10th step to reduce trajectory points while maintaining accuracy
-    const SAMPLING_INTERVAL = 10;
-
-    while (time < maxTime && trajectory.length < 1000) {
-      if (stepCounter % SAMPLING_INTERVAL === 0) {
-        trajectory.push(
-          new Vector3(state.position.x, state.position.y, state.position.z)
-        );
-      }
-
-      state = physicsEngine.integrate(state, time, dt);
-      time += dt;
-      stepCounter++;
-
-      if (state.position.z <= PHYSICS_CONSTANTS.GROUND_LEVEL) {
-        // Add the final ground impact point
-        trajectory.push(
-          new Vector3(state.position.x, state.position.y, state.position.z)
-        );
-        break;
-      }
-    }
-
-    return trajectory;
   }
 
   /**
    * Render the game scene
    */
   render(): void {
-    // Update UI Manager with current game state
+    // Update UI Manager with current game data
     this.updateUIState();
 
     // Render UI (replaces all the individual render methods)
@@ -657,8 +392,7 @@ export class GameScene {
    * Cleanup resources
    */
   destroy(): void {
-    this.mouseHandler.destroy();
-    this.inputHandler.detach();
+    this.inputController.detach();
   }
 
   /**
@@ -856,16 +590,6 @@ export class GameScene {
   // REMOVED: renderScanLines() - now handled by UIManager
 
   /**
-   * Handle mouse events
-   */
-  /**
-   * Handle mouse events
-   */
-  private handleMouseEvent(event: MouseEventData): void {
-    this.inputHandler.handleMouseEvent(event);
-  }
-
-  /**
    * Fire a projectile
    */
   private fireProjectile(): void {
@@ -991,24 +715,6 @@ export class GameScene {
   }
 
   /**
-   * Get target display name for UI
-   */
-  private getTargetDisplayName(targetType: TargetType): string {
-    switch (targetType) {
-      case TargetType.BALLOON:
-        return '気球';
-      case TargetType.FRIGATE:
-        return 'フリゲート';
-      case TargetType.CRUISER:
-        return '巡洋艦';
-      case TargetType.STATIC:
-        return 'Static Target';
-      case TargetType.MOVING_SLOW:
-        return 'Slow Target';
-      case TargetType.MOVING_FAST:
-        return 'Fast Target';
-      default:
-        return 'Unknown Target';
     }
   }
 

@@ -189,6 +189,21 @@ export class Artillery {
   }
 
   /**
+   * Get current muzzle velocity vector based on current angles
+   */
+  getMuzzleVelocityVector(): Vector3 {
+    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
+    const azimuthRad = this._currentAzimuth * (Math.PI / 180);
+    const elevationRad = this._currentElevation * (Math.PI / 180);
+
+    return new Vector3(
+      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
+      muzzleVelocity * Math.sin(elevationRad)
+    );
+  }
+
+  /**
    * Fire projectile towards target (GS-03)
    */
   fire(): ProjectileData {
@@ -197,16 +212,7 @@ export class Artillery {
     }
 
     // Use current actual angles for firing
-    // Calculate velocity vector based on current azimuth and elevation
-    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
-    const azimuthRad = this._currentAzimuth * (Math.PI / 180);
-    const elevationRad = this._currentElevation * (Math.PI / 180);
-
-    const velocity = new Vector3(
-      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.sin(elevationRad)
-    );
+    const velocity = this.getMuzzleVelocityVector();
 
     this._state = ArtilleryState.FIRED;
 

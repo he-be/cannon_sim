@@ -2,13 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { GameScene } from './GameScene';
 import {} from './TitleScene';
 import { CanvasManager } from '../../rendering/CanvasManager';
-import { MouseHandler } from '../../input/MouseHandler';
 import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
 import { Vector3 } from '../../math/Vector3';
 import { TargetType } from '../../game/entities/Target';
 
-// Mock MouseHandler
-vi.mock('../../input/MouseHandler');
+import { GameInputController } from '../../input/GameInputController';
+
+// Mock GameInputController
+vi.mock('../../input/GameInputController');
 
 // Mock EffectRenderer
 vi.mock('../../rendering/renderers/EffectRenderer');
@@ -43,6 +44,7 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
   let mockContext: CanvasRenderingContext2D;
   let mockCanvas: HTMLCanvasElement;
   let mockOnSceneTransition: vi.MockedFunction<any>;
+  let mockInputController: any;
 
   beforeEach(() => {
     // Mock canvas and context
@@ -108,6 +110,27 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     mockEffectRenderer.prototype.clearAll = vi.fn();
     mockEffectRenderer.prototype.createExplosion = vi.fn();
 
+    // Mock GameInputController methods
+    mockInputController = {
+      initialize: vi.fn(),
+      attach: vi.fn(),
+      detach: vi.fn(),
+      getUIEvents: vi.fn(() => ({
+        onAzimuthChange: vi.fn(),
+        onElevationChange: vi.fn(),
+        onFireClick: vi.fn(),
+        onLockToggle: vi.fn(),
+        onAutoToggle: vi.fn(),
+        onRadarRotateToggle: vi.fn(),
+        onMenuClick: vi.fn(),
+        onDirectionChange: vi.fn(),
+        onRangeChange: vi.fn(),
+        onTargetDetected: vi.fn(),
+        onTargetLost: vi.fn(),
+      })),
+    };
+    (GameInputController as any).mockImplementation(() => mockInputController);
+
     gameScene = new GameScene(mockCanvasManager, mockOnSceneTransition, {
       selectedStage: mockStageConfig,
     });
@@ -123,13 +146,13 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
   describe('initialization', () => {
     it('should initialize with CanvasManager and configuration', () => {
       expect(gameScene).toBeDefined();
-      expect(MouseHandler).toHaveBeenCalledWith(mockCanvas);
+      expect(GameInputController).toHaveBeenCalled();
       expect(EffectRenderer).toHaveBeenCalledWith(mockCanvasManager);
     });
 
-    it('should setup mouse event listeners', () => {
-      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
-      expect(mockMouseHandler.addEventListener).toHaveBeenCalled();
+    it('should setup input controller', () => {
+      expect(mockInputController.initialize).toHaveBeenCalled();
+      expect(mockInputController.attach).toHaveBeenCalled();
     });
 
     it('should start with PLAYING game state', () => {
@@ -267,79 +290,42 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
   });
 
   describe('mouse interaction', () => {
-    it('should handle mouse events through MouseHandler', () => {
-      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
-      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
-        .calls[0][0];
-
-      expect(eventCallback).toBeDefined();
-      expect(typeof eventCallback).toBe('function');
+    it('should initialize GameInputController with actions', () => {
+      expect(GameInputController).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fireProjectile: expect.any(Function),
+          toggleLock: expect.any(Function),
+          toggleAuto: expect.any(Function),
+        })
+      );
     });
 
-    it('should handle left click for firing projectiles', () => {
-      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
-      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
-        .calls[0][0];
+    it('should handle fire action', () => {
+      const actions = vi.mocked(GameInputController).mock.calls[0][0] as any;
 
-      const clickEvent = {
-        type: 'click',
-        position: { canvas: { x: 600, y: 400 } },
-        button: 0, // Left click
-        state: 'pressed',
-      } as any;
+      // Spy on entityManager.addProjectile
+      const addProjectileSpy = vi.spyOn(
+        gameScene['entityManager'],
+        'addProjectile'
+      );
 
-      expect(() => {
-        eventCallback(clickEvent);
-      }).not.toThrow();
+      actions.fireProjectile();
+
+      expect(addProjectileSpy).toHaveBeenCalled();
     });
 
-    it('should handle right click for target locking', () => {
-      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
-      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
-        .calls[0][0];
+    it('should handle lock toggle action', () => {
+      const actions = vi.mocked(GameInputController).mock.calls[0][0] as any;
 
-      const clickEvent = {
-        type: 'click',
-        position: { canvas: { x: 600, y: 400 } },
-        button: 2, // Right click
-        state: 'pressed',
-      } as any;
+      // Spy on targetingSystem.handleLockToggle
+      const toggleLockSpy = vi.spyOn(
+        gameScene['targetingSystem'],
+        'handleLockToggle'
+      );
 
-      expect(() => {
-        eventCallback(clickEvent);
-      }).not.toThrow();
-    });
+      actions.toggleLock();
 
-    it('should handle mouse drag for radar control', () => {
-      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
-      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
-        .calls[0][0];
-
-      // Mouse down
-      eventCallback({
-        type: 'mousedown',
-        position: { canvas: { x: 600, y: 400 } },
-        button: 0,
-        state: 'pressed',
-      } as any);
-
-      // Mouse move
-      eventCallback({
-        type: 'mousemove',
-        position: { canvas: { x: 650, y: 450 } },
-        button: 0,
-        state: 'pressed',
-      } as any);
-
-      // Mouse up
-      eventCallback({
-        type: 'mouseup',
-        position: { canvas: { x: 650, y: 450 } },
-        button: 0,
-        state: 'released',
-      } as any);
-
-      expect(true).toBe(true); // Should complete without errors
+      expect(toggleLockSpy).toHaveBeenCalled();
     });
   });
 
@@ -423,20 +409,16 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
       expect(true).toBe(true);
     });
 
-    it('should lock onto targets with right click', () => {
-      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
-      const eventCallback = vi.mocked(mockMouseHandler.addEventListener).mock
-        .calls[0][0];
+    it('should lock onto targets via action', () => {
+      const actions = vi.mocked(GameInputController).mock.calls[0][0] as any;
+      const toggleLockSpy = vi.spyOn(
+        gameScene['targetingSystem'],
+        'handleLockToggle'
+      );
 
-      // Right click to lock target
-      eventCallback({
-        type: 'click',
-        position: { canvas: { x: 600, y: 400 } },
-        button: 2,
-        state: 'pressed',
-      } as any);
+      actions.toggleLock();
 
-      expect(true).toBe(true); // Should handle target locking
+      expect(toggleLockSpy).toHaveBeenCalled();
     });
   });
 
@@ -536,12 +518,10 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
   });
 
   describe('resource cleanup', () => {
-    it('should cleanup MouseHandler on destroy', () => {
-      const mockMouseHandler = vi.mocked(MouseHandler).mock.instances[0];
-
+    it('should cleanup GameInputController on destroy', () => {
       gameScene.destroy();
 
-      expect(mockMouseHandler.destroy).toHaveBeenCalled();
+      expect(mockInputController.detach).toHaveBeenCalled();
     });
 
     it('should handle multiple destroy calls', () => {
