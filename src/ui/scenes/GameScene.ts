@@ -105,12 +105,12 @@ export class GameScene {
   private animationTime: number = 0;
 
   // Radar state (independent from artillery)
-  private radarAzimuth: number = 0;
-  private radarElevation: number = 45;
-
-  // Radar auto-rotation state
-  private isRadarAutoRotating: boolean = false;
-  private readonly RADAR_ROTATION_SPEED = 30; // degrees per second
+  // Radar state is now managed by RadarController
+  private radarController: RadarController;
+  // private radarAzimuth: number = 0;
+  // private radarElevation: number = 45;
+  // private isRadarAutoRotating: boolean = false;
+  // private readonly RADAR_ROTATION_SPEED = 30;
 
   // Keyboard state for game controls (arrow keys handled by UIController)
   // Removed: ArrowLeft, ArrowRight, ArrowUp, ArrowDown - now in UIController
@@ -148,16 +148,16 @@ export class GameScene {
     this.leadAngleSystem = new LeadAngleSystem(this.artilleryPosition);
 
     // Initialize RadarController
-    const radarController = new RadarController();
+    this.radarController = new RadarController();
 
     // Define UI Events
     const uiEvents: UIEvents = {
       onAzimuthChange: (value: number) => {
-        this.radarAzimuth = value;
-        this.isRadarAutoRotating = false;
+        this.radarController.setAzimuth(value);
+        this.radarController.setAutoRotating(false);
       },
       onElevationChange: (value: number) => {
-        this.radarElevation = value;
+        this.radarController.setElevation(value);
       },
       onFireClick: () => {
         this.fireProjectile();
@@ -196,7 +196,7 @@ export class GameScene {
       this.uiController = new UIControllerB(
         this.canvasManager,
         uiEvents,
-        radarController
+        this.radarController
       );
     }
 
@@ -220,8 +220,8 @@ export class GameScene {
         onSceneTransition: (transition): void =>
           this.onSceneTransition(transition),
         onCancelAutoRotation: (): void => {
-          if (this.isRadarAutoRotating) {
-            this.isRadarAutoRotating = false;
+          if (this.radarController.isRotating()) {
+            this.radarController.setAutoRotating(false);
             console.log('Radar auto-rotation cancelled by manual input');
           }
         },
@@ -232,7 +232,7 @@ export class GameScene {
     this.inputHandler.attach();
 
     // Initialize radar state
-    this.radarAzimuth = 0;
+    this.radarController.reset();
 
     // Initialize physics engine with RK4 integration
     // Initialize physics engine with RK4 integration
@@ -284,9 +284,8 @@ export class GameScene {
     this.gameState = GameState.PLAYING;
 
     // Initialize radar state
-    this.radarAzimuth = 0;
-    this.radarElevation = 45;
-    this.isRadarAutoRotating = false;
+    // Initialize radar state
+    this.radarController.reset();
 
     // Initialize targets via EntityManager
     const targets = this.config.selectedStage.targets.map(
@@ -338,18 +337,13 @@ export class GameScene {
     if (this.gameState !== GameState.PLAYING) return;
 
     // Handle radar auto-rotation
-    if (
-      this.isRadarAutoRotating &&
-      this.targetingSystem.getTargetingState() !== TargetingState.LOCKED_ON
-    ) {
-      this.radarAzimuth += this.RADAR_ROTATION_SPEED * deltaTime;
-      if (this.radarAzimuth >= 360) this.radarAzimuth -= 360;
-
-      // Sync with UIController so manual control continues from current position
-      this.uiController.setRadarState({
-        azimuth: this.radarAzimuth,
-        elevation: this.radarElevation,
-      });
+    // Handle radar auto-rotation
+    if (this.targetingSystem.getTargetingState() !== TargetingState.LOCKED_ON) {
+      const newState = this.radarController.updateAutoRotation(deltaTime);
+      if (newState) {
+        // Sync with UIController so manual control continues from current position
+        this.uiController.setRadarState(newState);
+      }
     }
 
     // Update targets
@@ -423,7 +417,7 @@ export class GameScene {
     const radarState = this.uiController.getRadarState();
     this.uiController
       .getUIManager()
-      .setRadarDirection(this.radarAzimuth, this.radarElevation);
+      .setRadarDirection(radarState.azimuth, radarState.elevation);
 
     // For UI B, radarState.range is the rangeGate (cursor position)
     // For UI A, radarState.range is the display range
@@ -444,7 +438,7 @@ export class GameScene {
     // Update radar info display in left panel (moved from center pane)
     this.uiController
       .getUIManager()
-      .setRadarInfo(this.radarAzimuth, this.radarElevation, radarState.range);
+      .setRadarInfo(radarState.azimuth, radarState.elevation, radarState.range);
 
     // Update game time
     this.uiController.getUIManager().setGameTime(this.gameTime);
@@ -975,14 +969,8 @@ export class GameScene {
     const dy = target.position.y - this.artilleryPosition.y;
     const dz = target.position.z - this.artilleryPosition.z;
 
-    // Calculate azimuth angle from artillery to target (統一: XY平面)
-    this.radarAzimuth = Math.atan2(dx, dy) * (180 / Math.PI);
-
     // Calculate horizontal distance (radar range)
     const horizontalDistance = Math.sqrt(dx * dx + dy * dy);
-
-    // Calculate elevation angle from artillery to target (T046)
-    this.radarElevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
 
     // Calculate azimuth angle from artillery to target (Unified: XY plane)
     let azimuth = Math.atan2(dx, dy) * (180 / Math.PI);
@@ -990,6 +978,9 @@ export class GameScene {
 
     // Calculate elevation angle
     const elevation = Math.atan2(dz, horizontalDistance) * (180 / Math.PI);
+
+    // Update radar controller
+    this.radarController.trackPosition(azimuth, elevation);
 
     // Update UIController's radar state to track target
     this.uiController.setRadarState({
@@ -1070,10 +1061,8 @@ export class GameScene {
    * Toggle radar auto-rotation
    */
   private toggleRadarAutoRotation(): void {
-    this.isRadarAutoRotating = !this.isRadarAutoRotating;
-    console.log(
-      `Radar auto-rotation: ${this.isRadarAutoRotating ? 'ON' : 'OFF'}`
-    );
+    const isRotating = this.radarController.toggleAutoRotation();
+    console.log(`Radar auto-rotation: ${isRotating ? 'ON' : 'OFF'}`);
   }
 
   /**

@@ -141,9 +141,10 @@ describe('GameScene Keyboard Controls', () => {
     gameScene.update(1.0);
 
     // Should increase by RADAR_ELEVATION_SPEED (30 degrees/sec)
+    // Initial elevation is 45, so 45 + 30 = 75
     const radarState = (gameScene as any).uiController.getRadarState();
-    expect(radarState.elevation).toBe(30);
-    expect(setRadarDirectionSpy).toHaveBeenCalledWith(expect.any(Number), 30);
+    expect(radarState.elevation).toBe(75);
+    expect(setRadarDirectionSpy).toHaveBeenCalledWith(expect.any(Number), 75);
 
     // Release Arrow Up
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp' }));
@@ -154,9 +155,9 @@ describe('GameScene Keyboard Controls', () => {
     // Simulate 0.5 seconds
     gameScene.update(0.5);
 
-    // Should decrease by 15 (30 * 0.5) -> 15
+    // Should decrease by 15 (30 * 0.5) -> 60
     const radarState2 = (gameScene as any).uiController.getRadarState();
-    expect(radarState2.elevation).toBe(15);
+    expect(radarState2.elevation).toBe(60);
   });
 
   it('should adjust radar range continuously when O/I is held', () => {

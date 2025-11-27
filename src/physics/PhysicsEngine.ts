@@ -70,4 +70,58 @@ export class PhysicsEngine {
       velocity: state.velocity.add(dvel),
     };
   }
+
+  /**
+   * Calculate trajectory points for a projectile
+   * @param startPosition Initial position
+   * @param startVelocity Initial velocity
+   * @param duration Maximum duration to simulate
+   * @param stepSize Time step for integration
+   * @param samplingInterval Number of steps between saved points
+   * @param groundLevel Y coordinate of ground (default 0)
+   */
+  calculateTrajectory(
+    startPosition: Vector3,
+    startVelocity: Vector3,
+    duration: number,
+    stepSize: number,
+    samplingInterval: number = 10,
+    groundLevel: number = 0
+  ): Vector3[] {
+    const trajectory: Vector3[] = [];
+    let state: State3D = {
+      position: startPosition,
+      velocity: startVelocity,
+    };
+
+    let time = 0;
+    let stepCounter = 0;
+
+    // Add initial point
+    trajectory.push(
+      new Vector3(state.position.x, state.position.y, state.position.z)
+    );
+
+    while (time < duration && trajectory.length < 1000) {
+      if (stepCounter % samplingInterval === 0 && stepCounter > 0) {
+        trajectory.push(
+          new Vector3(state.position.x, state.position.y, state.position.z)
+        );
+      }
+
+      state = this.integrate(state, time, stepSize);
+      time += stepSize;
+      stepCounter++;
+
+      if (state.position.z <= groundLevel) {
+        // Add the final ground impact point
+        trajectory.push(
+          new Vector3(state.position.x, state.position.y, state.position.z)
+        );
+        break;
+      }
+    }
+
+    return trajectory;
+  }
 }
