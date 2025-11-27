@@ -5,6 +5,7 @@
 
 import { UIManager } from '../UIManager';
 import { Target } from '../../game/entities/Target';
+import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
 
 export interface RadarState {
   azimuth: number; // degrees
@@ -53,13 +54,7 @@ export interface UIController {
   /**
    * Update lead angle display
    */
-  updateLeadAngle(
-    azimuth: number,
-    elevation: number,
-    confidence: 'HIGH' | 'MEDIUM' | 'LOW',
-    accuracy?: number,
-    flightTime?: number
-  ): void;
+  updateLeadAngle(leadAngle: ExtendedLeadAngle): void;
 
   /**
    * Update targeting info display

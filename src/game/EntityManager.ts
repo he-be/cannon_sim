@@ -182,6 +182,29 @@ export class EntityManager {
   }
 
   /**
+   * Check if any active target has reached the game over distance
+   */
+  checkGameOverCondition(
+    artilleryPosition: Vector3,
+    threshold: number,
+    currentTime: number
+  ): boolean {
+    return this.targets.some(target => {
+      if (
+        target.isDestroyed ||
+        currentTime < target.spawnTime ||
+        !target.isActive ||
+        target.isFalling
+      ) {
+        return false;
+      }
+
+      const distance = target.position.subtract(artilleryPosition).magnitude();
+      return distance < threshold;
+    });
+  }
+
+  /**
    * Check if all targets are destroyed
    */
   areAllTargetsDestroyed(): boolean {

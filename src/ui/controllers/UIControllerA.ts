@@ -8,6 +8,7 @@ import { UIManager, UIEvents } from '../UIManager';
 import { UIController, RadarState } from './UIController';
 import { GAME_CONSTANTS } from '../../data/Constants';
 import { Target } from '../../game/entities/Target';
+import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
 
 /**
  * UIControllerA implements the existing UI behavior (UI A)
@@ -152,15 +153,12 @@ export class UIControllerA implements UIController {
   /**
    * Update lead angle display
    */
-  updateLeadAngle(
-    azimuth: number,
-    elevation: number,
-    confidence: 'HIGH' | 'MEDIUM' | 'LOW',
-    _accuracy?: number,
-    _flightTime?: number
-  ): void {
-    // UI A might not display all details
-    this.uiManager.updateLeadAngle(azimuth, elevation, confidence);
+  updateLeadAngle(leadAngle: ExtendedLeadAngle): void {
+    this.uiManager.updateLeadAngle(
+      leadAngle.azimuth,
+      leadAngle.elevation,
+      leadAngle.confidence
+    );
   }
 
   /**

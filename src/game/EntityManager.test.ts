@@ -102,6 +102,82 @@ describe('EntityManager', () => {
     });
   });
 
+  describe('game over condition', () => {
+    test('should return true if active target is within threshold', () => {
+      const artilleryPos = new Vector3(0, 0, 0);
+      const target = new Target(
+        new Vector3(10, 0, 0), // 10m away
+        TargetType.STATIC,
+        undefined,
+        0
+      );
+      entityManager.initializeTargets([target]);
+
+      const isGameOver = entityManager.checkGameOverCondition(
+        artilleryPos,
+        50, // 50m threshold
+        10 // current time
+      );
+      expect(isGameOver).toBe(true);
+    });
+
+    test('should return false if target is outside threshold', () => {
+      const artilleryPos = new Vector3(0, 0, 0);
+      const target = new Target(
+        new Vector3(100, 0, 0), // 100m away
+        TargetType.STATIC,
+        undefined,
+        0
+      );
+      entityManager.initializeTargets([target]);
+
+      const isGameOver = entityManager.checkGameOverCondition(
+        artilleryPos,
+        50, // 50m threshold
+        10
+      );
+      expect(isGameOver).toBe(false);
+    });
+
+    test('should return false if target is destroyed or inactive', () => {
+      const artilleryPos = new Vector3(0, 0, 0);
+      const target = new Target(
+        new Vector3(10, 0, 0),
+        TargetType.STATIC,
+        undefined,
+        0
+      );
+      target.hit(); // Destroyed
+
+      entityManager.initializeTargets([target]);
+
+      const isGameOver = entityManager.checkGameOverCondition(
+        artilleryPos,
+        50,
+        10
+      );
+      expect(isGameOver).toBe(false);
+    });
+
+    test('should return false if target has not spawned yet', () => {
+      const artilleryPos = new Vector3(0, 0, 0);
+      const target = new Target(
+        new Vector3(10, 0, 0),
+        TargetType.STATIC,
+        undefined,
+        20 // Spawns at t=20
+      );
+      entityManager.initializeTargets([target]);
+
+      const isGameOver = entityManager.checkGameOverCondition(
+        artilleryPos,
+        50,
+        10 // Current time t=10
+      );
+      expect(isGameOver).toBe(false);
+    });
+  });
+
   describe('collision detection', () => {
     test('should detect collision when projectile is near target', () => {
       const target = new Target(

@@ -675,19 +675,16 @@ export class GameScene {
     this.entityManager.updateTargets(deltaTime, this.gameTime);
 
     // Check game over conditions
-    this.entityManager.getTargets().forEach(target => {
-      if (target.isDestroyed || this.gameTime < target.spawnTime) return;
-
-      // Check if active target reached artillery position (game over condition)
-      if (target.isActive && !target.isFalling) {
-        const distance = target.position
-          .subtract(this.artilleryPosition)
-          .magnitude();
-        if (distance < GAME_CONSTANTS.GAME_OVER_DISTANCE) {
-          this.handleGameOver();
-        }
-      }
-    });
+    // Check game over conditions
+    if (
+      this.entityManager.checkGameOverCondition(
+        this.artilleryPosition,
+        GAME_CONSTANTS.GAME_OVER_DISTANCE,
+        this.gameTime
+      )
+    ) {
+      this.handleGameOver();
+    }
   }
 
   /**
@@ -1114,29 +1111,8 @@ export class GameScene {
    * Render lead angle display with confidence indication (GS-07, UI-06)
    */
   private renderLeadAngleDisplay(leadAngle: ExtendedLeadAngle): void {
-    const { azimuth, elevation, confidence, accuracy, flightTime } = leadAngle;
-
     // Use UIController to update lead angle display
-    // This assumes UIController has a method for this, or we access UIManager directly
-    // For now, we'll assume it expects individual values based on previous code
-
-    // Note: The original implementation called this.uiController.updateLeadAngle
-    // We should check if that method exists and what arguments it expects
-    // For now, we'll assume it expects individual values based on previous code
-
-    // Actually, looking at previous code:
-    // this.renderLeadAngleDisplay(azimuth, elevation, confidence, accuracy, flightTime)
-    // called:
-    // this.uiController.updateLeadAngle(azimuth, elevation, confidence, accuracy, flightTime);
-
-    // So we should call:
-    this.uiController.updateLeadAngle(
-      azimuth,
-      elevation,
-      confidence,
-      accuracy,
-      flightTime
-    );
+    this.uiController.updateLeadAngle(leadAngle);
   }
 
   /**
