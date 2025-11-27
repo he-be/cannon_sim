@@ -48,6 +48,7 @@ describe('UIManagerB Filtering', () => {
       onRangeChange: vi.fn(),
       onTargetDetected: vi.fn(),
       onTargetLost: vi.fn(),
+      onRadarRotateToggle: vi.fn(),
     };
 
     uiManager = new UIManagerB(mockCanvasManager, mockEvents);
@@ -78,7 +79,7 @@ describe('UIManagerB Filtering', () => {
 
     uiManager.updateRadarTarget(radarTarget);
 
-    const aScopeTargets = (uiManager as any).aScopeTargets;
+    const aScopeTargets = (uiManager as any).stateManager.aScopeTargets;
     expect(aScopeTargets).toHaveLength(1);
   });
 
@@ -103,7 +104,7 @@ describe('UIManagerB Filtering', () => {
 
     uiManager.updateRadarTarget(radarTarget);
 
-    const aScopeTargets = (uiManager as any).aScopeTargets;
+    const aScopeTargets = (uiManager as any).stateManager.aScopeTargets;
     expect(aScopeTargets).toHaveLength(0);
   });
 
@@ -125,7 +126,7 @@ describe('UIManagerB Filtering', () => {
 
     uiManager.updateRadarTarget(radarTarget);
 
-    const aScopeTargets = (uiManager as any).aScopeTargets;
+    const aScopeTargets = (uiManager as any).stateManager.aScopeTargets;
     expect(aScopeTargets).toHaveLength(0);
   });
 
@@ -148,7 +149,7 @@ describe('UIManagerB Filtering', () => {
 
     uiManager.updateRadarTarget(radarTarget);
 
-    const aScopeTargets = (uiManager as any).aScopeTargets;
+    const aScopeTargets = (uiManager as any).stateManager.aScopeTargets;
     expect(aScopeTargets).toHaveLength(0);
   });
 });

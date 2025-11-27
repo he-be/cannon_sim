@@ -48,6 +48,7 @@ describe('UIManagerB', () => {
       onRangeChange: vi.fn(),
       onTargetDetected: vi.fn(),
       onTargetLost: vi.fn(),
+      onRadarRotateToggle: vi.fn(),
     };
 
     uiManager = new UIManagerB(mockCanvasManager, mockEvents);
@@ -68,8 +69,8 @@ describe('UIManagerB', () => {
 
       uiManager.updateRadarTarget(radarTarget);
 
-      // Access private property for testing
-      const circularTargets = (uiManager as any).circularTargets;
+      // Access private property for testing via stateManager
+      const circularTargets = (uiManager as any).stateManager.circularTargets;
       expect(circularTargets).toHaveLength(1);
       expect(circularTargets[0]).toEqual(
         expect.objectContaining({
@@ -97,7 +98,7 @@ describe('UIManagerB', () => {
 
       uiManager.updateRadarTarget(radarTarget);
 
-      const aScopeTargets = (uiManager as any).aScopeTargets;
+      const aScopeTargets = (uiManager as any).stateManager.aScopeTargets;
       expect(aScopeTargets).toHaveLength(1);
       expect(aScopeTargets[0]).toEqual(
         expect.objectContaining({
@@ -125,7 +126,7 @@ describe('UIManagerB', () => {
 
       uiManager.updateRadarTarget(radarTarget);
 
-      const aScopeTargets = (uiManager as any).aScopeTargets;
+      const aScopeTargets = (uiManager as any).stateManager.aScopeTargets;
       expect(aScopeTargets).toHaveLength(0);
     });
 
@@ -146,7 +147,7 @@ describe('UIManagerB', () => {
       };
       uiManager.updateRadarTarget(targetInside);
 
-      expect((uiManager as any).aScopeTargets).toHaveLength(1);
+      expect((uiManager as any).stateManager.aScopeTargets).toHaveLength(1);
 
       // Second update: outside beam
       const targetOutside: RadarTarget = {
@@ -155,7 +156,7 @@ describe('UIManagerB', () => {
       };
       uiManager.updateRadarTarget(targetOutside);
 
-      expect((uiManager as any).aScopeTargets).toHaveLength(0);
+      expect((uiManager as any).stateManager.aScopeTargets).toHaveLength(0);
     });
   });
 });

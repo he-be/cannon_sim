@@ -27,6 +27,8 @@ import {
 import { ControlPanelState } from './components/ControlPanelRenderer';
 import { CRT_COLORS } from '../data/Constants';
 import { UIEvents } from './UIManager';
+import { RadarTargetFilter } from './utils/RadarTargetFilter';
+import { UIStateManager } from './state/UIStateManager';
 
 export interface UIManagerBLayoutConfig {
   controlPanelWidth: number;
@@ -58,15 +60,10 @@ export class UIManagerB {
     targetList: { x: number; y: number; width: number; height: number };
   };
 
-  // Radar state for rendering
-  private radarAzimuth: number = 0;
-  private radarElevation: number = 0;
-  private radarRange: number = 15000;
-  private rangeGate: number = 5000;
+  // State Management
+  private targetFilter: RadarTargetFilter;
+  private stateManager: UIStateManager;
 
-  // Target data
-  private circularTargets: CircularScopeTarget[] = [];
-  private aScopeTargets: AScopeTarget[] = [];
   private trajectoryPath: Vector2[] = [];
   private projectiles: Array<{ position: Vector3; isActive: boolean }> = [];
 
@@ -83,6 +80,11 @@ export class UIManagerB {
     this.layout = layoutConfig;
 
     this.calculateBounds();
+
+    // Initialize helpers
+    this.targetFilter = new RadarTargetFilter();
+    this.stateManager = new UIStateManager();
+
     this.initializeComponents();
   }
 
@@ -243,13 +245,12 @@ export class UIManagerB {
     );
     ctx.clip();
 
-    // Render circular scope (PPI)
-    // Pass current time for afterimage effect
+    // Render Circular Scope
     this.circularScope.render(
-      this.circularTargets,
-      this.radarAzimuth,
-      this.radarElevation,
-      this.radarRange,
+      this.stateManager.circularTargets,
+      this.stateManager.radarAzimuth,
+      this.stateManager.radarElevation,
+      this.stateManager.radarRange,
       this.trajectoryPath,
       this.projectiles,
       time * 1000 // Convert seconds to ms
@@ -257,7 +258,7 @@ export class UIManagerB {
 
     ctx.restore();
 
-    // Render A-scope
+    // Render A-Scope
     ctx.save();
     ctx.beginPath();
     ctx.rect(
@@ -268,13 +269,14 @@ export class UIManagerB {
     );
     ctx.clip();
 
+    // Render A-Scope
     this.aScope.render(
-      this.aScopeTargets,
-      this.rangeGate,
-      this.radarRange,
+      this.stateManager.aScopeTargets,
+      this.stateManager.rangeGate,
+      this.stateManager.radarRange,
       this.projectiles,
-      this.radarAzimuth,
-      this.radarElevation
+      this.stateManager.radarAzimuth,
+      this.stateManager.radarElevation
     );
 
     ctx.restore();
@@ -321,16 +323,15 @@ export class UIManagerB {
   // ===== State Update Methods =====
 
   setRadarDirection(azimuth: number, elevation: number): void {
-    this.radarAzimuth = azimuth;
-    this.radarElevation = elevation;
+    this.stateManager.setRadarDirection(azimuth, elevation);
   }
 
   setRadarRange(range: number): void {
-    this.radarRange = range;
+    this.stateManager.setRadarRange(range);
   }
 
   setRangeGate(gate: number): void {
-    this.rangeGate = gate;
+    this.stateManager.setRangeGate(gate);
   }
 
   setArtilleryAngles(azimuth: number, elevation: number): void {
@@ -345,11 +346,8 @@ export class UIManagerB {
   }
 
   setRadarInfo(azimuth: number, elevation: number, range: number): void {
-    this.controlPanel.setRadarInfo({
-      azimuth,
-      elevation,
-      range,
-    });
+    this.controlPanel.setRadarInfo({ azimuth, elevation, range });
+    // Also update internal state if needed, but usually setRadarDirection is called separately
   }
 
   setGameTime(time: number): void {
@@ -431,78 +429,43 @@ export class UIManagerB {
     // Handle RadarTarget (from GameScene)
     if ('bearing' in target) {
       // Update Circular Scope Target
-      const circularTarget: CircularScopeTarget = {
-        id: target.id,
-        azimuth: target.bearing,
-        distance: target.distance,
-        elevation: target.elevation,
-      };
-      this.updateCircularTarget(circularTarget);
+      const circularTarget = this.targetFilter.toCircularScopeTarget(target);
+      this.stateManager.updateCircularTarget(circularTarget);
 
       // Update A-Scope Target
-      // Only show on A-Scope if within beam width (simplified check)
-      // In a real radar, this would depend on antenna pattern
-      // For now, we'll show all targets on A-Scope but filter by azimuth in renderer if needed
-      // Or better: A-Scope shows what the radar is pointing at.
-      // But here we just update the list. AScopeRenderer might need to know radar azimuth to filter?
-      // Actually AScopeRenderer description says: "Targets only appear when radar azimuth AND elevation match"
-      // But AScopeRenderer.render just renders all targets passed to it.
-      // So filtering should happen here or in GameScene.
-      // GameScene sends all detected targets.
-      // We should filter based on radarAzimuth.
-
-      // Use elevation from RadarTarget (calculated in GameScene)
-      const elevationDiff = Math.abs(target.elevation - this.radarElevation);
-
-      // Calculate shortest azimuth difference (0-180)
-      const azDiff = Math.abs(target.bearing - this.radarAzimuth) % 360;
-      const shortestAzDiff = azDiff > 180 ? 360 - azDiff : azDiff;
-
-      // Beam width approx 5 degrees (both horizontal and vertical)
-      if (shortestAzDiff < 2.5 && elevationDiff < 2.5) {
-        const aScopeTarget: AScopeTarget = {
-          id: target.id,
-          distance: target.distance,
-          strength: target.strength,
-        };
-        this.updateAScopeTarget(aScopeTarget);
+      if (
+        this.targetFilter.shouldShowOnAScope(
+          target,
+          this.stateManager.radarAzimuth,
+          this.stateManager.radarElevation
+        )
+      ) {
+        const aScopeTarget = this.targetFilter.toAScopeTarget(target);
+        this.stateManager.updateAScopeTarget(aScopeTarget);
       } else {
-        // Remove from A-Scope if out of beam
-        this.removeAScopeTarget(target.id);
+        this.stateManager.removeAScopeTarget(target.id);
       }
     } else {
       // Handle direct CircularScopeTarget
-      this.updateCircularTarget(target);
+      this.stateManager.updateCircularTarget(target);
     }
   }
 
-  private updateCircularTarget(target: CircularScopeTarget): void {
-    const existingIndex = this.circularTargets.findIndex(
-      t => t.id === target.id
-    );
-    if (existingIndex >= 0) {
-      this.circularTargets[existingIndex] = target;
-    } else {
-      this.circularTargets.push(target);
-    }
+  updateCircularTarget(target: CircularScopeTarget): void {
+    this.stateManager.updateCircularTarget(target);
   }
 
-  private removeAScopeTarget(targetId: string): void {
-    this.aScopeTargets = this.aScopeTargets.filter(t => t.id !== targetId);
+  removeAScopeTarget(targetId: string): void {
+    this.stateManager.removeAScopeTarget(targetId);
   }
 
   removeRadarTarget(targetId: string): void {
-    this.circularTargets = this.circularTargets.filter(t => t.id !== targetId);
-    this.aScopeTargets = this.aScopeTargets.filter(t => t.id !== targetId);
+    this.stateManager.removeCircularTarget(targetId);
+    this.stateManager.removeAScopeTarget(targetId);
   }
 
   updateAScopeTarget(target: AScopeTarget): void {
-    const existingIndex = this.aScopeTargets.findIndex(t => t.id === target.id);
-    if (existingIndex >= 0) {
-      this.aScopeTargets[existingIndex] = target;
-    } else {
-      this.aScopeTargets.push(target);
-    }
+    this.stateManager.updateAScopeTarget(target);
   }
 
   updateProjectiles(
