@@ -11,12 +11,16 @@ import { CRT_COLORS, FONTS } from '../../data/Constants';
 // Import new component system
 import { VBoxContainer } from './layout/VBoxContainer';
 import { TextComponent } from './display/TextComponent';
-import { InfoGroupComponent } from './display/InfoGroupComponent';
 import { TimeDisplayComponent } from './display/TimeDisplayComponent';
 import { ButtonComponent } from './interactive/ButtonComponent';
 import { SliderWithButtonsComponent } from './composite/SliderWithButtonsComponent';
 import { UIEventUtils } from './core/UIEvent';
 import { PaddingUtils } from './core/Rectangle';
+import { LeadAngleGroup } from './groups/LeadAngleGroup';
+import { ArtilleryGroup } from './groups/ArtilleryGroup';
+import { RadarGroup } from './groups/RadarGroup';
+import { TargetingGroup, TargetInfo } from './groups/TargetingGroup';
+import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
 
 export interface ControlPanelEvents {
   onAzimuthChange: (value: number) => void;
@@ -68,12 +72,12 @@ export class ControlPanelRenderer {
   // Component tree
   private rootContainer!: VBoxContainer;
   private titleComponent!: TextComponent;
-  private artilleryGroup!: InfoGroupComponent;
+  private artilleryGroup!: ArtilleryGroup;
   private azimuthSlider!: SliderWithButtonsComponent;
   private elevationSlider!: SliderWithButtonsComponent;
-  private radarGroup!: InfoGroupComponent;
-  private targetingGroup!: InfoGroupComponent;
-  private leadAngleGroup!: InfoGroupComponent;
+  private radarGroup!: RadarGroup;
+  private targetingGroup!: TargetingGroup;
+  private leadAngleGroup!: LeadAngleGroup;
   private buttonsContainer!: VBoxContainer;
   private fireButton!: ButtonComponent;
   private lockButton!: ButtonComponent;
@@ -126,22 +130,10 @@ export class ControlPanelRenderer {
     );
 
     // Artillery section
-    this.artilleryGroup = new InfoGroupComponent('artillery', 'Artillery', [
-      {
-        label: 'Az',
-        value: this.state.azimuth,
-        type: 'counter',
-        digits: 3,
-        decimals: 1,
-      },
-      {
-        label: 'El',
-        value: this.state.elevation,
-        type: 'counter',
-        digits: 3,
-        decimals: 1,
-      },
-    ]);
+    // Artillery section
+    this.artilleryGroup = new ArtilleryGroup();
+    // Initialize with current state
+    this.artilleryGroup.update(this.state.azimuth, this.state.elevation);
 
     // Sliders
     this.azimuthSlider = new SliderWithButtonsComponent(
@@ -171,52 +163,10 @@ export class ControlPanelRenderer {
     );
 
     // Info groups
-    this.radarGroup = new InfoGroupComponent('radar', 'Radar', [
-      { label: 'Az', value: 0, type: 'counter', digits: 3, decimals: 1 },
-      { label: 'El', value: 0, type: 'counter', digits: 3, decimals: 1 },
-      { label: 'Range', value: 0, type: 'counter', digits: 2, decimals: 2 }, // km
-    ]);
+    this.radarGroup = new RadarGroup();
+    this.targetingGroup = new TargetingGroup();
 
-    this.targetingGroup = new InfoGroupComponent('targeting', 'Targeting', [
-      {
-        label: 'Status',
-        value: 'NO_TARGET',
-        type: 'indicator_group',
-        options: [
-          {
-            label: 'SEARCH',
-            value: 'NO_TARGET',
-            color: CRT_COLORS.SECONDARY_TEXT,
-          },
-          { label: 'TRACK', value: 'TRACKING', color: CRT_COLORS.WARNING_TEXT },
-          {
-            label: 'LOCK',
-            value: 'LOCKED_ON',
-            color: CRT_COLORS.TARGET_LOCKED,
-          },
-        ],
-      },
-    ]);
-
-    this.leadAngleGroup = new InfoGroupComponent(
-      'lead-angle',
-      'Calculated Lead',
-      [
-        { label: 'Az', value: 0, type: 'counter', digits: 3, decimals: 1 },
-        { label: 'El', value: 0, type: 'counter', digits: 3, decimals: 1 },
-        { label: 'Time', value: 0, type: 'counter', digits: 2, decimals: 2 },
-        {
-          label: 'Confidence',
-          value: 'LOW',
-          type: 'indicator_group',
-          options: [
-            { label: 'LOW', value: 'LOW', color: CRT_COLORS.CRITICAL_TEXT },
-            { label: 'MED', value: 'MEDIUM', color: CRT_COLORS.WARNING_TEXT },
-            { label: 'HIGH', value: 'HIGH', color: CRT_COLORS.TARGET_LOCKED },
-          ],
-        },
-      ]
-    );
+    this.leadAngleGroup = new LeadAngleGroup();
 
     // Buttons
     this.fireButton = new ButtonComponent('fire', 'FIRE', () =>
@@ -413,64 +363,21 @@ export class ControlPanelRenderer {
   }
 
   private updateArtilleryInfo(azimuth: number, elevation: number): void {
-    this.artilleryGroup.updateInfoItem('Az', azimuth);
-    this.artilleryGroup.updateInfoItem('El', elevation);
+    this.artilleryGroup.update(azimuth, elevation);
   }
 
   private updateRadarInfo(radarInfo: ControlPanelState['radarInfo']): void {
-    if (radarInfo) {
-      // Use standardized 0-360 azimuth
-      let normalizedAzimuth = radarInfo.azimuth;
-      while (normalizedAzimuth < 0) normalizedAzimuth += 360;
-      while (normalizedAzimuth >= 360) normalizedAzimuth -= 360;
-
-      this.radarGroup.updateAzimuth(normalizedAzimuth);
-      this.radarGroup.updateElevation(radarInfo.elevation);
-      this.radarGroup.updateRange(radarInfo.range);
-    } else {
-      this.radarGroup.updateAzimuth(null);
-      this.radarGroup.updateElevation(null);
-      this.radarGroup.updateRange(null);
-    }
+    this.radarGroup.update(radarInfo);
   }
 
   private updateTargetInfo(targetInfo: ControlPanelState['targetInfo']): void {
-    if (targetInfo) {
-      this.targetingGroup.updateStatus(targetInfo.status);
-
-      // Add extra info if needed, but we removed Type/Range/Speed from initial setup
-      // If we want them back, we should add them to initial setup or dynamically add them
-      // For now, let's assume we only want Status indicators as per request
-      // Or we can add them back as text below indicators?
-      // The request focused on "targeting status... lamp indicator".
-      // Let's keep it simple for now.
-
-      if (targetInfo.range) this.targetingGroup.updateRange(targetInfo.range);
-      if (targetInfo.speed) this.targetingGroup.updateSpeed(targetInfo.speed);
-      if (targetInfo.type) this.targetingGroup.updateType(targetInfo.type);
-    } else {
-      this.targetingGroup.updateStatus('NO_TARGET');
-    }
+    this.targetingGroup.update(targetInfo as TargetInfo);
   }
 
   private updateLeadAngle(leadAngle: ControlPanelState['leadAngle']): void {
-    if (leadAngle) {
-      // Use standardized 0-360 azimuth
-      this.leadAngleGroup.updateAzimuth(leadAngle.azimuth);
-      this.leadAngleGroup.updateElevation(leadAngle.elevation);
-      this.leadAngleGroup.updateConfidence(leadAngle.confidence);
-
-      if (leadAngle.flightTime) {
-        this.leadAngleGroup.updateInfoItem('Time', leadAngle.flightTime);
-      } else {
-        this.leadAngleGroup.updateInfoItem('Time', 0);
-      }
-    } else {
-      this.leadAngleGroup.updateAzimuth(0); // Reset to 0
-      this.leadAngleGroup.updateElevation(0);
-      this.leadAngleGroup.updateConfidence('LOW'); // Default to LOW or none?
-      this.leadAngleGroup.updateInfoItem('Time', 0);
-    }
+    // We need to cast the state leadAngle to ExtendedLeadAngle or compatible type
+    // Since ControlPanelState.leadAngle matches ExtendedLeadAngle structure mostly
+    this.leadAngleGroup.update(leadAngle as ExtendedLeadAngle);
   }
 
   private updateFireButton(canFire: boolean, reloadProgress: number): void {
