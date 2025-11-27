@@ -3,6 +3,7 @@ import { UIController } from '../ui/controllers/UIController';
 import { UIEvents } from '../ui/UIManager';
 import { SceneType } from '../ui/scenes/TitleScene';
 import { RadarTarget } from '../ui/components/RadarRenderer';
+import { GameState } from '../game/GameState';
 
 export interface GameActions {
   fireProjectile: () => void;
@@ -15,7 +16,7 @@ export interface GameActions {
   setRadarElevation: (el: number) => void;
   setRadarAutoRotating: (rotating: boolean) => void;
   isRadarRotating: () => boolean;
-  getGameState: () => string; // GameState enum string
+  getGameState: () => GameState;
 }
 
 export class GameInputController {
@@ -88,16 +89,16 @@ export class GameInputController {
     return {
       onFire: (): void => {
         const state = this.actions.getGameState();
-        if (state === 'stage_clear') {
+        if (state === GameState.STAGE_CLEAR) {
           this.actions.transitionScene(SceneType.STAGE_SELECT);
-        } else if (state === 'playing') {
+        } else if (state === GameState.PLAYING) {
           this.actions.fireProjectile();
         }
       },
       onLockToggle: (): void => this.actions.toggleLock(),
       onAutoToggle: (): void => this.actions.toggleAuto(),
       onRestart: (): void => {
-        if (this.actions.getGameState() === 'game_over') {
+        if (this.actions.getGameState() === GameState.GAME_OVER) {
           this.actions.restartGame();
         }
       },

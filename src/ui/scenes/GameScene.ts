@@ -34,13 +34,9 @@ import { EntityManager } from '../../game/EntityManager';
 import { RadarController } from '../../game/RadarController';
 import { TargetingSystem, TargetingState } from '../../game/TargetingSystem';
 import { LeadAngleSystem, ExtendedLeadAngle } from '../../game/LeadAngleSystem';
-
-export enum GameState {
-  PLAYING = 'playing',
-  PAUSED = 'paused',
-  GAME_OVER = 'game_over',
-  STAGE_CLEAR = 'stage_clear',
-}
+import { SceneInitializer } from '../../game/SceneInitializer';
+import { GameRules } from '../../game/GameRules';
+import { GameState } from '../../game/GameState';
 
 export interface GameSceneConfig {
   selectedStage: StageConfig;
@@ -58,8 +54,6 @@ interface ProjectileState {
 /**
  * Main game scene with clean Canvas 2D API compliant implementation
  */
-import { SceneInitializer } from '../../game/SceneInitializer';
-
 // ... (keep imports)
 
 export class GameScene {
@@ -393,14 +387,13 @@ export class GameScene {
    * Check collisions
    */
   private checkCollisions(): void {
-    const collisions = this.entityManager.checkCollisions(this.gameTime);
-
-    collisions.forEach(collision => {
-      if (this.isPositionInRadarRange(collision.collisionPoint)) {
-        this.createExplosion(collision.collisionPoint, 'target_destruction');
-      }
-      // Target hit logic is handled by EntityManager (target.hit())
-    });
+    GameRules.checkCollisions(
+      this.entityManager,
+      this.gameTime,
+      this.artilleryPosition,
+      this.maxRadarRange,
+      position => this.createExplosion(position, 'target_destruction')
+    );
   }
 
   /**
@@ -678,19 +671,6 @@ export class GameScene {
   /**
    * Handle keyboard key down events
    */
-
-  /**
-   * Render radar elevation display in horizontal radar (T046)
-   */
-  // REMOVED: renderRadarElevationDisplay() - now handled by UIManager
-
-  /**
-   * Check if position is within radar range for explosion effects (T047)
-   */
-  private isPositionInRadarRange(position: Vector3): boolean {
-    const distance = this.artilleryPosition.subtract(position).magnitude();
-    return distance <= this.maxRadarRange;
-  }
 
   /**
    * Render trajectory prediction on horizontal radar (T048)
