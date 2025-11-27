@@ -24,14 +24,12 @@ import {
   GameActions,
 } from '../../input/GameInputController';
 import { UIStateMapper } from '../UIStateMapper';
-import { Target } from '../../game/entities/Target';
 import { Artillery } from '../../game/entities/Artillery';
 
 import { UIController } from '../controllers/UIController';
 import { UIControllerA } from '../controllers/UIControllerA';
 import { UIControllerB } from '../controllers/UIControllerB';
 import { UIMode } from '../UIMode';
-import { StandardPhysics } from '../../physics/StandardPhysics';
 import { EntityManager } from '../../game/EntityManager';
 import { RadarController } from '../../game/RadarController';
 import { TargetingSystem, TargetingState } from '../../game/TargetingSystem';
@@ -60,6 +58,10 @@ interface ProjectileState {
 /**
  * Main game scene with clean Canvas 2D API compliant implementation
  */
+import { SceneInitializer } from '../../game/SceneInitializer';
+
+// ... (keep imports)
+
 export class GameScene {
   private canvasManager: CanvasManager;
   private onSceneTransition: (transition: SceneTransition) => void;
@@ -129,27 +131,22 @@ export class GameScene {
     this.canvasManager = canvasManager;
     this.onSceneTransition = onSceneTransition;
     this.config = config;
-    this.effectRenderer = new EffectRenderer(this.canvasManager);
 
-    // Initialize EntityManager
-    this.entityManager = new EntityManager();
-
-    // Initialize artillery position
-    this.artilleryPosition = new Vector3(
-      this.config.selectedStage.artilleryPosition.x,
-      this.config.selectedStage.artilleryPosition.y,
-      this.config.selectedStage.artilleryPosition.z
+    // Initialize systems using SceneInitializer
+    const systems = SceneInitializer.initializeSystems(
+      this.canvasManager,
+      this.config
     );
 
-    // Initialize Artillery entity
-    this.artillery = new Artillery(this.artilleryPosition);
-
-    // Initialize systems
-    this.targetingSystem = new TargetingSystem();
-    this.leadAngleSystem = new LeadAngleSystem(this.artilleryPosition);
-
-    // Initialize RadarController
-    this.radarController = new RadarController();
+    this.effectRenderer = systems.effectRenderer;
+    this.entityManager = systems.entityManager;
+    this.artilleryPosition = systems.artilleryPosition;
+    this.artillery = systems.artillery;
+    this.targetingSystem = systems.targetingSystem;
+    this.leadAngleSystem = systems.leadAngleSystem;
+    this.radarController = systems.radarController;
+    this.physicsEngine = systems.physicsEngine;
+    this.trajectoryRenderer = systems.trajectoryRenderer;
 
     // Initialize GameInputController
     const gameActions: GameActions = {
@@ -194,46 +191,6 @@ export class GameScene {
     this.inputController.initialize(this.uiController);
     this.inputController.attach();
 
-    // Initialize radar state
-    this.radarController.reset();
-
-    // Initialize physics engine with RK4 integration
-    // Initialize physics engine with RK4 integration
-    // Use centralized physics logic for consistency
-    this.physicsEngine = new PhysicsEngine(
-      StandardPhysics.accelerationFunction
-    );
-
-    // Initialize trajectory renderer
-    this.trajectoryRenderer = new TrajectoryRenderer({
-      maxTrailLength: 200,
-      trailFadeTime: 5000, // milliseconds
-      projectileSize: 2,
-      trailWidth: 1,
-      showVelocityVector: false,
-      showPredictedPath: true,
-      colors: {
-        active: CRT_COLORS.PRIMARY_TEXT,
-        fading: CRT_COLORS.SECONDARY_TEXT,
-        impact: CRT_COLORS.WARNING_TEXT,
-        predicted: CRT_COLORS.TARGET_TRACKED,
-      },
-    });
-
-    // Initialize artillery position
-    this.artilleryPosition = new Vector3(
-      this.config.selectedStage.artilleryPosition.x,
-      this.config.selectedStage.artilleryPosition.y,
-      this.config.selectedStage.artilleryPosition.z
-    );
-
-    // Initialize Artillery entity
-    this.artillery = new Artillery(this.artilleryPosition);
-
-    // Initialize lead angle calculator for GS-07 requirement
-    // Initialize LeadAngleSystem
-    this.leadAngleSystem = new LeadAngleSystem(this.artilleryPosition);
-
     this.initializeGame();
     this.setupEventListeners();
   }
@@ -246,34 +203,21 @@ export class GameScene {
     this.gameTime = 0;
     this.gameState = GameState.PLAYING;
 
-    // Initialize radar state
-    // Initialize radar state
-    this.radarController.reset();
-
-    // Initialize targets via EntityManager
-    const targets = this.config.selectedStage.targets.map(
-      config =>
-        new Target(
-          new Vector3(config.position.x, config.position.y, config.position.z),
-          config.type,
-          config.velocity
-            ? new Vector3(
-                config.velocity.x,
-                config.velocity.y,
-                config.velocity.z
-              )
-            : undefined,
-          this.gameTime + config.spawnDelay
-        )
+    SceneInitializer.resetGame(
+      {
+        entityManager: this.entityManager,
+        artillery: this.artillery,
+        radarController: this.radarController,
+        targetingSystem: this.targetingSystem,
+        leadAngleSystem: this.leadAngleSystem,
+        physicsEngine: this.physicsEngine,
+        trajectoryRenderer: this.trajectoryRenderer,
+        effectRenderer: this.effectRenderer,
+        artilleryPosition: this.artilleryPosition,
+      },
+      this.config,
+      this.gameTime
     );
-    this.entityManager.initializeTargets(targets);
-
-    // Clear effects
-    this.effectRenderer.clearAll();
-
-    // Reset targeting
-    // Reset targeting
-    this.targetingSystem.reset();
   }
 
   /**
