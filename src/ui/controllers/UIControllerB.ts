@@ -196,12 +196,14 @@ export class UIControllerB implements UIController {
   /**
    * Update lead angle display
    */
-  updateLeadAngle(leadAngle: ExtendedLeadAngle): void {
-    this.uiManager.updateLeadAngle(
-      leadAngle.azimuth,
-      leadAngle.elevation,
-      leadAngle.confidence
-    );
+  updateLeadAngle(leadAngle: ExtendedLeadAngle | null): void {
+    if (leadAngle) {
+      this.uiManager.updateLeadAngle(
+        leadAngle.azimuth,
+        leadAngle.elevation,
+        leadAngle.confidence
+      );
+    }
     this.uiManager.setLeadAngle(leadAngle);
   }
 

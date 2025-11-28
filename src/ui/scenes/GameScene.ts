@@ -693,6 +693,7 @@ export class GameScene {
    */
   private clearLeadAngleDisplay(): void {
     this.leadAngleSystem.clear();
+    this.uiController.updateLeadAngle(null);
   }
 
   /**

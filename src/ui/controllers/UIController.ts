@@ -54,7 +54,7 @@ export interface UIController {
   /**
    * Update lead angle display
    */
-  updateLeadAngle(leadAngle: ExtendedLeadAngle): void;
+  updateLeadAngle(leadAngle: ExtendedLeadAngle | null): void;
 
   /**
    * Update targeting info display
