@@ -4,6 +4,7 @@ import { UIEvents } from '../ui/UIManager';
 import { SceneType } from '../ui/scenes/TitleScene';
 import { RadarTarget } from '../ui/components/RadarRenderer';
 import { GameState } from '../game/GameState';
+import { MouseEventData } from './MouseHandler';
 
 export interface GameActions {
   fireProjectile: () => void;
@@ -43,6 +44,12 @@ export class GameInputController {
   detach(): void {
     if (this.inputHandler) {
       this.inputHandler.detach();
+    }
+  }
+
+  handleMouseEvent(event: MouseEventData): void {
+    if (this.inputHandler) {
+      this.inputHandler.handleMouseEvent(event);
     }
   }
 

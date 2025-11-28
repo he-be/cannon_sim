@@ -6,7 +6,6 @@
  */
 
 import { CanvasManager } from '../../rendering/CanvasManager';
-import { StageConfig } from '../../data/StageData';
 import { SceneTransition } from './TitleScene';
 
 import { Vector3 } from '../../math/Vector3';
@@ -23,25 +22,24 @@ import {
   GameInputController,
   GameActions,
 } from '../../input/GameInputController';
-import { UIStateMapper } from '../UIStateMapper';
-import { Artillery } from '../../game/entities/Artillery';
-
+import { GameConfig, DEFAULT_GAME_CONFIG } from '../../game/GameConfig';
+import { UIMode } from '../../ui/UIMode';
 import { UIController } from '../controllers/UIController';
 import { UIControllerA } from '../controllers/UIControllerA';
 import { UIControllerB } from '../controllers/UIControllerB';
-import { UIMode } from '../UIMode';
 import { EntityManager } from '../../game/EntityManager';
+import { Artillery } from '../../game/entities/Artillery';
 import { RadarController } from '../../game/RadarController';
 import { TargetingSystem, TargetingState } from '../../game/TargetingSystem';
-import { LeadAngleSystem, ExtendedLeadAngle } from '../../game/LeadAngleSystem';
+import { LeadAngleSystem } from '../../game/LeadAngleSystem';
 import { SceneInitializer } from '../../game/SceneInitializer';
 import { GameRules } from '../../game/GameRules';
 import { GameState } from '../../game/GameState';
+import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
+import { UIStateMapper } from '../UIStateMapper';
+import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
 
-export interface GameSceneConfig {
-  selectedStage: StageConfig;
-  uiMode?: UIMode;
-}
+export type GameSceneConfig = GameConfig;
 
 interface ProjectileState {
   id: string;
@@ -54,16 +52,15 @@ interface ProjectileState {
 /**
  * Main game scene with clean Canvas 2D API compliant implementation
  */
-// ... (keep imports)
-
 export class GameScene {
   private canvasManager: CanvasManager;
   private onSceneTransition: (transition: SceneTransition) => void;
-  private config: GameSceneConfig;
+  private config: GameConfig;
   private effectRenderer: EffectRenderer;
   private inputController: GameInputController;
   private physicsEngine: PhysicsEngine;
   private trajectoryRenderer: TrajectoryRenderer;
+  private mouseHandler: MouseHandler;
 
   private uiController: UIController;
 
@@ -120,11 +117,12 @@ export class GameScene {
   constructor(
     canvasManager: CanvasManager,
     onSceneTransition: (transition: SceneTransition) => void,
-    config: GameSceneConfig
+    config: GameConfig = DEFAULT_GAME_CONFIG
   ) {
     this.canvasManager = canvasManager;
     this.onSceneTransition = onSceneTransition;
     this.config = config;
+    this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
 
     // Initialize systems using SceneInitializer
     const systems = SceneInitializer.initializeSystems(
@@ -221,6 +219,11 @@ export class GameScene {
     // Disable right-click context menu to enable right-click targeting
     this.canvasManager.getCanvas().addEventListener('contextmenu', e => {
       e.preventDefault();
+    });
+
+    // Setup mouse event handling
+    this.mouseHandler.addEventListener((event: MouseEventData) => {
+      this.inputController.handleMouseEvent(event);
     });
   }
 
@@ -331,6 +334,7 @@ export class GameScene {
    */
   destroy(): void {
     this.inputController.detach();
+    this.mouseHandler.destroy();
   }
 
   /**
@@ -423,15 +427,13 @@ export class GameScene {
    */
   private checkGameConditions(): void {
     // Check stage clear (all targets destroyed)
-    const activeTargets = this.entityManager.getActiveTargets(this.gameTime);
-    const allTargets = this.entityManager.getTargets();
+    const newState = GameRules.checkWinCondition(
+      this.entityManager,
+      this.gameTime
+    );
 
-    if (
-      activeTargets.length === 0 &&
-      allTargets.length > 0 &&
-      this.entityManager.areAllTargetsDestroyed()
-    ) {
-      this.gameState = GameState.STAGE_CLEAR;
+    if (newState) {
+      this.gameState = newState;
     }
   }
 
