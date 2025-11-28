@@ -13,11 +13,7 @@ import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
 import { PhysicsEngine } from '../../physics/PhysicsEngine';
 import { TrajectoryRenderer } from '../../rendering/TrajectoryRenderer';
 
-import {
-  PHYSICS_CONSTANTS,
-  GAME_CONSTANTS,
-  CRT_COLORS,
-} from '../../data/Constants';
+import { PHYSICS_CONSTANTS, GAME_CONSTANTS } from '../../data/Constants';
 import {
   GameInputController,
   GameActions,
@@ -38,6 +34,8 @@ import { GameState } from '../../game/GameState';
 import { MouseHandler, MouseEventData } from '../../input/MouseHandler';
 import { UIStateMapper } from '../UIStateMapper';
 import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
+import { GameStateOverlay } from '../components/GameStateOverlay';
+import { TrajectoryPredictionSystem } from '../../game/TrajectoryPredictionSystem';
 
 export type GameSceneConfig = GameConfig;
 
@@ -61,6 +59,8 @@ export class GameScene {
   private physicsEngine: PhysicsEngine;
   private trajectoryRenderer: TrajectoryRenderer;
   private mouseHandler: MouseHandler;
+  private gameStateOverlay: GameStateOverlay;
+  private trajectoryPredictionSystem: TrajectoryPredictionSystem;
 
   private uiController: UIController;
 
@@ -123,6 +123,7 @@ export class GameScene {
     this.onSceneTransition = onSceneTransition;
     this.config = config;
     this.mouseHandler = new MouseHandler(this.canvasManager.getCanvas());
+    this.gameStateOverlay = new GameStateOverlay(this.canvasManager);
 
     // Initialize systems using SceneInitializer
     const systems = SceneInitializer.initializeSystems(
@@ -139,6 +140,10 @@ export class GameScene {
     this.radarController = systems.radarController;
     this.physicsEngine = systems.physicsEngine;
     this.trajectoryRenderer = systems.trajectoryRenderer;
+
+    this.trajectoryPredictionSystem = new TrajectoryPredictionSystem(
+      this.trajectoryRenderer
+    );
 
     // Initialize GameInputController
     const gameActions: GameActions = {
@@ -320,7 +325,7 @@ export class GameScene {
     this.uiController.getUIManager().render(this.animationTime);
 
     // Render game state overlays
-    this.renderGameStateOverlay();
+    this.gameStateOverlay.render(this.gameState);
 
     // Render effects on top
     this.effectRenderer.render();
@@ -483,47 +488,6 @@ export class GameScene {
   // REMOVED: worldToRadarScreen() - now handled by UIManager
 
   /**
-   * Render game state overlay
-   */
-  private renderGameStateOverlay(): void {
-    if (this.gameState === GameState.PLAYING) return;
-
-    const ctx = this.canvasManager.context;
-    const centerX = this.canvasManager.width / 2;
-    const centerY = this.canvasManager.height / 2;
-
-    ctx.save();
-
-    // Semi-transparent overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(0, 0, this.canvasManager.width, this.canvasManager.height);
-
-    // State text
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    if (this.gameState === GameState.GAME_OVER) {
-      ctx.fillStyle = CRT_COLORS.CRITICAL_TEXT;
-      ctx.font = 'bold 48px monospace';
-      ctx.fillText('MISSION FAILED', centerX, centerY - 30);
-
-      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
-      ctx.font = '20px monospace';
-      ctx.fillText('Press R to restart', centerX, centerY + 30);
-    } else if (this.gameState === GameState.STAGE_CLEAR) {
-      ctx.fillStyle = CRT_COLORS.PRIMARY_TEXT;
-      ctx.font = 'bold 48px monospace';
-      ctx.fillText('MISSION SUCCESS', centerX, centerY - 30);
-
-      ctx.fillStyle = CRT_COLORS.SECONDARY_TEXT;
-      ctx.font = '20px monospace';
-      ctx.fillText('Press SPACE to continue', centerX, centerY + 30);
-    }
-
-    ctx.restore();
-  }
-
-  /**
    * Render CRT scan lines effect (static only)
    */
   // REMOVED: renderScanLines() - now handled by UIManager
@@ -569,21 +533,9 @@ export class GameScene {
    * Implements UI-13/UI-16 requirements for real-time trajectory prediction
    */
   private updateTrajectoryPrediction(): void {
-    const muzzleVelocity = PHYSICS_CONSTANTS.MUZZLE_VELOCITY;
-    const azimuthRad = this.artillery.currentAzimuth * (Math.PI / 180);
-    const elevationRad = this.artillery.currentElevation * (Math.PI / 180);
-
-    const predictedVelocity = new Vector3(
-      muzzleVelocity * Math.sin(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.cos(azimuthRad) * Math.cos(elevationRad),
-      muzzleVelocity * Math.sin(elevationRad)
-    );
-
-    // Update trajectory prediction with ID "prediction"
-    this.trajectoryRenderer.updateTrajectory(
-      'prediction',
-      [this.artilleryPosition.copy()],
-      predictedVelocity
+    this.trajectoryPredictionSystem.update(
+      this.artillery,
+      this.artilleryPosition
     );
   }
 

@@ -13,13 +13,8 @@ import { Target } from '../game/entities/Target';
 import {
   CircularScopeRenderer,
   CircularScopeTarget,
-  CircularScopeBounds,
 } from './components/CircularScopeRenderer';
-import {
-  AScopeRenderer,
-  AScopeTarget,
-  AScopeBounds,
-} from './components/AScopeRenderer';
+import { AScopeRenderer, AScopeTarget } from './components/AScopeRenderer';
 import {
   TargetListRenderer,
   TargetListData,
@@ -29,11 +24,9 @@ import { CRT_COLORS } from '../data/Constants';
 import { UIEvents } from './UIManager';
 import { RadarTargetFilter } from './utils/RadarTargetFilter';
 import { UIStateManager } from './state/UIStateManager';
+import { UILayoutB, UIManagerBLayoutConfig } from './layout/UILayoutB';
 
-export interface UIManagerBLayoutConfig {
-  controlPanelWidth: number;
-  scopeColumnWidth: number;
-}
+export type { UIManagerBLayoutConfig };
 
 /**
  * UIManagerB implements UI Mode B layout:
@@ -51,14 +44,8 @@ export class UIManagerB {
   private aScope!: AScopeRenderer;
   private targetListRenderer!: TargetListRenderer;
 
-  // Layout configuration
-  private layout: UIManagerBLayoutConfig;
-  private bounds!: {
-    controlPanel: { x: number; y: number; width: number; height: number };
-    circularScope: CircularScopeBounds;
-    aScope: AScopeBounds;
-    targetList: { x: number; y: number; width: number; height: number };
-  };
+  // Layout Manager
+  private layoutManager: UILayoutB;
 
   // State Management
   private targetFilter: RadarTargetFilter;
@@ -77,9 +64,9 @@ export class UIManagerB {
   ) {
     this.canvasManager = canvasManager;
     this.events = events;
-    this.layout = layoutConfig;
 
-    this.calculateBounds();
+    // Initialize Layout Manager
+    this.layoutManager = new UILayoutB(canvasManager, layoutConfig);
 
     // Initialize helpers
     this.targetFilter = new RadarTargetFilter();
@@ -88,51 +75,9 @@ export class UIManagerB {
     this.initializeComponents();
   }
 
-  private calculateBounds(): void {
-    const canvasWidth = this.canvasManager.width;
-    const canvasHeight = this.canvasManager.height;
-
-    const rightColumnX = this.layout.controlPanelWidth;
-    const rightColumnWidth =
-      canvasWidth -
-      this.layout.controlPanelWidth -
-      this.layout.scopeColumnWidth;
-
-    // Calculate layout bounds for UI B
-    this.bounds = {
-      controlPanel: {
-        x: 0,
-        y: 0,
-        width: this.layout.controlPanelWidth,
-        height: canvasHeight,
-      },
-      circularScope: {
-        x: rightColumnX,
-        y: 0,
-        width: rightColumnWidth,
-        height: Math.floor(canvasHeight * 0.6), // 60% for circular scope
-        center: new Vector2(
-          rightColumnX + rightColumnWidth / 2,
-          Math.floor(canvasHeight * 0.3)
-        ),
-        radius: Math.min(rightColumnWidth, canvasHeight * 0.6) / 2 - 20,
-      },
-      aScope: {
-        x: rightColumnX,
-        y: Math.floor(canvasHeight * 0.6),
-        width: rightColumnWidth,
-        height: Math.floor(canvasHeight * 0.4), // 40% for A-scope
-      },
-      targetList: {
-        x: canvasWidth - this.layout.scopeColumnWidth,
-        y: 0,
-        width: this.layout.scopeColumnWidth,
-        height: canvasHeight,
-      },
-    };
-  }
-
   private initializeComponents(): void {
+    const bounds = this.layoutManager.getBounds();
+
     // Initialize control panel (same as UI A)
     this.controlPanel = new ControlPanelRenderer(
       this.canvasManager,
@@ -145,22 +90,22 @@ export class UIManagerB {
         onRadarRotateToggle: this.events.onRadarRotateToggle,
         onMenuClick: this.events.onMenuClick,
       },
-      this.layout.controlPanelWidth
+      bounds.controlPanel.width
     );
 
     // Initialize circular scope renderer
     this.circularScope = new CircularScopeRenderer(
       this.canvasManager,
-      this.bounds.circularScope
+      bounds.circularScope
     );
 
     // Initialize A-scope renderer
-    this.aScope = new AScopeRenderer(this.canvasManager, this.bounds.aScope);
+    this.aScope = new AScopeRenderer(this.canvasManager, bounds.aScope);
 
     // Initialize target list renderer
     this.targetListRenderer = new TargetListRenderer(
       this.canvasManager,
-      this.bounds.targetList
+      bounds.targetList
     );
   }
 
@@ -169,7 +114,7 @@ export class UIManagerB {
    */
   render(time: number = 0): void {
     this.clearCanvas();
-    this.renderLayout();
+    this.layoutManager.render(this.canvasManager.context);
     this.renderControlPanel();
     this.renderScopes(time);
     this.renderTargetList();
@@ -182,48 +127,13 @@ export class UIManagerB {
     ctx.fillRect(0, 0, this.canvasManager.width, this.canvasManager.height);
   }
 
-  private renderLayout(): void {
-    const ctx = this.canvasManager.context;
-
-    ctx.save();
-    ctx.strokeStyle = CRT_COLORS.GRID_LINE;
-    ctx.lineWidth = 2;
-
-    // Vertical divider between control panel and scopes
-    ctx.beginPath();
-    ctx.moveTo(this.bounds.controlPanel.width, 0);
-    ctx.lineTo(this.bounds.controlPanel.width, this.canvasManager.height);
-    ctx.stroke();
-
-    // Vertical divider between scopes and target list
-    ctx.beginPath();
-    ctx.moveTo(this.bounds.targetList.x, 0);
-    ctx.lineTo(this.bounds.targetList.x, this.canvasManager.height);
-    ctx.stroke();
-
-    // Horizontal divider between circular scope and A-scope
-    ctx.beginPath();
-    ctx.moveTo(this.bounds.circularScope.x, this.bounds.aScope.y);
-    ctx.lineTo(
-      this.bounds.circularScope.x + this.bounds.circularScope.width,
-      this.bounds.aScope.y
-    );
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
   private renderControlPanel(): void {
     const ctx = this.canvasManager.context;
+    const bounds = this.layoutManager.getBounds().controlPanel;
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(
-      this.bounds.controlPanel.x,
-      this.bounds.controlPanel.y,
-      this.bounds.controlPanel.width,
-      this.bounds.controlPanel.height
-    );
+    ctx.rect(bounds.x, bounds.y, bounds.width, bounds.height);
     ctx.clip();
 
     this.controlPanel.render();
@@ -233,15 +143,16 @@ export class UIManagerB {
 
   private renderScopes(time: number): void {
     const ctx = this.canvasManager.context;
+    const bounds = this.layoutManager.getBounds();
 
     // Render Circular Scope
     ctx.save();
     ctx.beginPath();
     ctx.rect(
-      this.bounds.circularScope.x,
-      this.bounds.circularScope.y,
-      this.bounds.circularScope.width,
-      this.bounds.circularScope.height
+      bounds.circularScope.x,
+      bounds.circularScope.y,
+      bounds.circularScope.width,
+      bounds.circularScope.height
     );
     ctx.clip();
 
@@ -262,10 +173,10 @@ export class UIManagerB {
     ctx.save();
     ctx.beginPath();
     ctx.rect(
-      this.bounds.aScope.x,
-      this.bounds.aScope.y,
-      this.bounds.aScope.width,
-      this.bounds.aScope.height
+      bounds.aScope.x,
+      bounds.aScope.y,
+      bounds.aScope.width,
+      bounds.aScope.height
     );
     ctx.clip();
 
@@ -284,15 +195,11 @@ export class UIManagerB {
 
   private renderTargetList(): void {
     const ctx = this.canvasManager.context;
+    const bounds = this.layoutManager.getBounds().targetList;
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(
-      this.bounds.targetList.x,
-      this.bounds.targetList.y,
-      this.bounds.targetList.width,
-      this.bounds.targetList.height
-    );
+    ctx.rect(bounds.x, bounds.y, bounds.width, bounds.height);
     ctx.clip();
 
     this.targetListRenderer.render();
@@ -504,9 +411,10 @@ export class UIManagerB {
 
     // Check control panel first
     if (this.isPointInControlPanel(mousePos)) {
+      const bounds = this.layoutManager.getBounds().controlPanel;
       const localPos = new Vector2(
-        mousePos.x - this.bounds.controlPanel.x,
-        mousePos.y - this.bounds.controlPanel.y
+        mousePos.x - bounds.x,
+        mousePos.y - bounds.y
       );
       return this.controlPanel.handleMouseEvent(localPos, eventType);
     }
@@ -519,11 +427,12 @@ export class UIManagerB {
    * Check if point is in control panel bounds
    */
   private isPointInControlPanel(pos: Vector2): boolean {
+    const bounds = this.layoutManager.getBounds().controlPanel;
     return (
-      pos.x >= this.bounds.controlPanel.x &&
-      pos.x <= this.bounds.controlPanel.x + this.bounds.controlPanel.width &&
-      pos.y >= this.bounds.controlPanel.y &&
-      pos.y <= this.bounds.controlPanel.y + this.bounds.controlPanel.height
+      pos.x >= bounds.x &&
+      pos.x <= bounds.x + bounds.width &&
+      pos.y >= bounds.y &&
+      pos.y <= bounds.y + bounds.height
     );
   }
 }
