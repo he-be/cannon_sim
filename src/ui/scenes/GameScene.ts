@@ -36,6 +36,7 @@ import { UIStateMapper } from '../UIStateMapper';
 import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
 import { GameStateOverlay } from '../components/GameStateOverlay';
 import { TrajectoryPredictionSystem } from '../../game/TrajectoryPredictionSystem';
+import { ScenarioManager } from '../../game/scenario/ScenarioManager';
 
 export type GameSceneConfig = GameConfig;
 
@@ -61,6 +62,7 @@ export class GameScene {
   private mouseHandler: MouseHandler;
   private gameStateOverlay: GameStateOverlay;
   private trajectoryPredictionSystem: TrajectoryPredictionSystem;
+  private scenarioManager: ScenarioManager;
 
   private uiController: UIController;
 
@@ -140,6 +142,7 @@ export class GameScene {
     this.radarController = systems.radarController;
     this.physicsEngine = systems.physicsEngine;
     this.trajectoryRenderer = systems.trajectoryRenderer;
+    this.scenarioManager = systems.scenarioManager;
 
     this.trajectoryPredictionSystem = new TrajectoryPredictionSystem(
       this.trajectoryRenderer
@@ -211,6 +214,7 @@ export class GameScene {
         trajectoryRenderer: this.trajectoryRenderer,
         effectRenderer: this.effectRenderer,
         artilleryPosition: this.artilleryPosition,
+        scenarioManager: this.scenarioManager,
       },
       this.config,
       this.gameTime
@@ -240,6 +244,9 @@ export class GameScene {
     this.gameTime = (Date.now() - this.startTime) / 1000;
 
     if (this.gameState !== GameState.PLAYING) return;
+
+    // Update scenario
+    this.scenarioManager.update(deltaTime);
 
     // Handle radar auto-rotation
     // Handle radar auto-rotation
@@ -431,14 +438,17 @@ export class GameScene {
    * Check game win/lose conditions
    */
   private checkGameConditions(): void {
-    // Check stage clear (all targets destroyed)
-    const newState = GameRules.checkWinCondition(
-      this.entityManager,
-      this.gameTime
-    );
+    // Check stage clear (all targets destroyed AND scenario finished)
+    // Note: We need to check if scenario is finished spawning everything
+    if (this.scenarioManager.isScenarioFinished()) {
+      const newState = GameRules.checkWinCondition(
+        this.entityManager,
+        this.gameTime
+      );
 
-    if (newState) {
-      this.gameState = newState;
+      if (newState) {
+        this.gameState = newState;
+      }
     }
   }
 
@@ -557,6 +567,9 @@ export class GameScene {
    * Handle auto mode toggle
    */
   private handleAutoToggle(): void {
+    if (this.gameState !== GameState.PLAYING) return;
+    this.uiController.getUIManager().setAutoMode(!this.isAutoMode);
+
     // Only allow auto mode when target is locked
     if (this.targetingSystem.getTargetingState() === TargetingState.LOCKED_ON) {
       this.isAutoMode = !this.isAutoMode;

@@ -39,6 +39,13 @@ export class EntityManager {
   }
 
   /**
+   * Add a target to the scene (for dynamic spawning)
+   */
+  addTarget(target: Target): void {
+    this.targets.push(target);
+  }
+
+  /**
    * Get all targets
    */
   getTargets(): Target[] {

@@ -14,7 +14,12 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
+    browser: {
+      enabled: true,
+      provider: 'playwright',
+      instances: [{ browser: 'chromium' }],
+      headless: true,
+    },
     globals: true,
     coverage: {
       provider: 'v8',

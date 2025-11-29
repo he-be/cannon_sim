@@ -64,27 +64,20 @@ describe('RadarController (T020 - Radar Operation System)', () => {
     };
 
     // Mock document.getElementById
-    Object.defineProperty(globalThis, 'document', {
-      value: {
-        getElementById: vi.fn((id: string) => mockCanvases[id] || null),
-      },
-      configurable: true,
-    });
+    vi.spyOn(document, 'getElementById').mockImplementation(
+      (id: string) => mockCanvases[id] || null
+    );
 
     // Mock requestAnimationFrame and cancelAnimationFrame
     let animationId = 1;
-    Object.defineProperty(globalThis, 'requestAnimationFrame', {
-      value: vi.fn((_callback: FrameRequestCallback) => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(
+      (_callback: FrameRequestCallback) => {
         // Don't actually schedule the callback to avoid test timing issues
         return animationId++;
-      }),
-      configurable: true,
-    });
+      }
+    );
 
-    Object.defineProperty(globalThis, 'cancelAnimationFrame', {
-      value: vi.fn(),
-      configurable: true,
-    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
 
     radarController = new RadarController(mockEvents);
   });
@@ -115,11 +108,7 @@ describe('RadarController (T020 - Radar Operation System)', () => {
     });
 
     it('should throw error for missing canvas elements', () => {
-      const mockGetElementById = vi.fn(() => null);
-      Object.defineProperty(globalThis, 'document', {
-        value: { getElementById: mockGetElementById },
-        configurable: true,
-      });
+      vi.mocked(document.getElementById).mockReturnValue(null);
 
       expect(() => new RadarController(mockEvents)).toThrow(
         "Radar canvas 'horizontal-radar' not found"

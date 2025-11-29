@@ -20,19 +20,12 @@ describe('LayoutManager', () => {
     });
 
     // Mock DOM
-    Object.defineProperty(globalThis, 'document', {
-      value: { getElementById: mockGetElementById },
-      configurable: true,
-    });
+    vi.spyOn(document, 'getElementById').mockImplementation(mockGetElementById);
 
-    Object.defineProperty(globalThis, 'window', {
-      value: {
-        innerWidth: 1200,
-        addEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      },
-      configurable: true,
-    });
+    // Mock window properties
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1200);
+    vi.spyOn(window, 'addEventListener');
+    vi.spyOn(window, 'dispatchEvent');
 
     layoutManager = new LayoutManager();
   });

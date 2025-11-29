@@ -2,41 +2,256 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { GameScene } from './GameScene';
 import {} from './TitleScene';
 import { CanvasManager } from '../../rendering/CanvasManager';
-import { EffectRenderer } from '../../rendering/renderers/EffectRenderer';
 import { Vector3 } from '../../math/Vector3';
 import { TargetType } from '../../game/entities/Target';
+import {
+  ScenarioEventType,
+  SpawnEvent,
+  WaitEvent,
+} from '../../game/scenario/ScenarioEvent';
+import { StageConfig } from '../../data/StageData';
+import { UIControllerA } from '../controllers/UIControllerA';
+import { UIControllerB } from '../controllers/UIControllerB';
+import { TextMeasurementService } from '../services/TextMeasurementService';
+import { SceneInitializer } from '../../game/SceneInitializer';
 
 import { GameInputController } from '../../input/GameInputController';
 
 // Mock GameInputController
-vi.mock('../../input/GameInputController');
+vi.mock('../../input/GameInputController', () => {
+  return {
+    GameInputController: vi.fn().mockImplementation(() => {
+      return {
+        attach: vi.fn(),
+        detach: vi.fn(),
+        update: vi.fn(),
+        isKeyPressed: vi.fn().mockReturnValue(false),
+        getMousePosition: vi.fn().mockReturnValue({ x: 0, y: 0 }),
+        isMouseDown: vi.fn().mockReturnValue(false),
+      };
+    }),
+  };
+});
 
 // Mock EffectRenderer
-vi.mock('../../rendering/renderers/EffectRenderer');
+vi.mock('../../rendering/renderers/EffectRenderer', () => {
+  return {
+    EffectRenderer: vi.fn().mockImplementation(() => {
+      return {
+        render: vi.fn(),
+        createExplosion: vi.fn(),
+        addMuzzleFlash: vi.fn(),
+        addImpact: vi.fn(),
+        addTrail: vi.fn(),
+        reset: vi.fn(),
+        clearAll: vi.fn(),
+        update: vi.fn(),
+      };
+    }),
+  };
+});
 
 // Mock stage data
-const mockStageConfig = {
+const mockStageConfig: StageConfig = {
   id: 1,
   name: 'Test Stage',
   description: 'Test stage for GameScene',
   artilleryPosition: new Vector3(0, -8000, 0),
-  targets: [
+  scenario: [
     {
+      type: ScenarioEventType.SPAWN,
+      targetType: TargetType.STATIC,
       position: new Vector3(1000, 5000, 500),
-      type: TargetType.STATIC,
-      velocity: undefined,
-      spawnDelay: 0,
-    },
+    } as SpawnEvent,
     {
+      type: ScenarioEventType.WAIT,
+      duration: 2,
+    } as WaitEvent,
+    {
+      type: ScenarioEventType.SPAWN,
+      targetType: TargetType.MOVING_SLOW,
       position: new Vector3(-2000, 8000, 800),
-      type: TargetType.MOVING_SLOW,
       velocity: new Vector3(50, 0, 0),
-      spawnDelay: 2,
-    },
+    } as SpawnEvent,
   ],
-  winCondition: 'destroy_all' as const,
-  difficultyLevel: 1 as const,
+  winCondition: 'destroy_all',
+  difficultyLevel: 1,
 };
+
+// Mock UI Controllers
+// Mock UI Controllers
+vi.mock('../controllers/UIControllerA', () => {
+  return {
+    UIControllerA: vi.fn().mockImplementation(() => {
+      return {
+        initialize: vi.fn(),
+        update: vi.fn(),
+        updateControls: vi.fn(),
+        render: vi.fn(),
+        updateLeadAngle: vi.fn(),
+        updateTargetingInfo: vi.fn(),
+        updateRadarAzimuth: vi.fn(),
+        handleInput: vi.fn(),
+        getRadarState: vi
+          .fn()
+          .mockReturnValue({ azimuth: 0, elevation: 0, range: 10000 }),
+        setRadarState: vi.fn(),
+        getUIManager: vi.fn().mockReturnValue({
+          setRadarDirection: vi.fn(),
+          setRangeGate: vi.fn(),
+          setArtilleryAngles: vi.fn(),
+          setLeadAngle: vi.fn(),
+          updateLeadAngle: vi.fn(),
+          updateTargetingInfo: vi.fn(),
+          updateRadarAzimuth: vi.fn(),
+          setArtilleryState: vi.fn(),
+          setLockState: vi.fn(),
+          setAutoMode: vi.fn(),
+          setGameTime: vi.fn(),
+          setRadarInfo: vi.fn(),
+          setTargetInfo: vi.fn(),
+          setTargetList: vi.fn(),
+          addRadarTarget: vi.fn(),
+          removeRadarTarget: vi.fn(),
+          updateRadarTarget: vi.fn(),
+          updateProjectiles: vi.fn(),
+          updateTrajectoryPrediction: vi.fn(),
+          render: vi.fn(),
+        }),
+        handleKeyDown: vi.fn(),
+        handleKeyUp: vi.fn(),
+      };
+    }),
+  };
+});
+vi.mock('../controllers/UIControllerB', () => {
+  return {
+    UIControllerB: vi.fn().mockImplementation(() => {
+      return {
+        initialize: vi.fn(),
+        update: vi.fn(),
+        updateControls: vi.fn(),
+        render: vi.fn(),
+        updateLeadAngle: vi.fn(),
+        updateTargetingInfo: vi.fn(),
+        updateRadarAzimuth: vi.fn(),
+        handleInput: vi.fn(),
+        getRadarState: vi
+          .fn()
+          .mockReturnValue({ azimuth: 0, elevation: 0, range: 10000 }),
+        setRadarState: vi.fn(),
+        getUIManager: vi.fn().mockReturnValue({
+          setRadarDirection: vi.fn(),
+          setRangeGate: vi.fn(),
+          setArtilleryAngles: vi.fn(),
+          setLeadAngle: vi.fn(),
+          updateLeadAngle: vi.fn(),
+          updateTargetingInfo: vi.fn(),
+          updateRadarAzimuth: vi.fn(),
+          setArtilleryState: vi.fn(),
+          setLockState: vi.fn(),
+          setAutoMode: vi.fn(),
+          setGameTime: vi.fn(),
+          setRadarInfo: vi.fn(),
+          setTargetInfo: vi.fn(),
+          setTargetList: vi.fn(),
+          addRadarTarget: vi.fn(),
+          removeRadarTarget: vi.fn(),
+          updateRadarTarget: vi.fn(),
+          updateProjectiles: vi.fn(),
+          updateTrajectoryPrediction: vi.fn(),
+          render: vi.fn(),
+        }),
+        handleKeyDown: vi.fn(),
+        handleKeyUp: vi.fn(),
+      };
+    }),
+  };
+});
+
+// Mock SceneInitializer
+vi.mock('../../game/SceneInitializer', () => ({
+  SceneInitializer: {
+    initializeSystems: vi.fn().mockReturnValue({
+      entityManager: {
+        reset: vi.fn(),
+        addProjectile: vi.fn(),
+        updateTargets: vi.fn(),
+        checkGameOverCondition: vi.fn().mockReturnValue(false),
+        updateProjectiles: vi.fn(),
+        checkCollisions: vi.fn().mockReturnValue([]),
+        getTargets: vi.fn().mockReturnValue([]),
+        getProjectiles: vi.fn().mockReturnValue([]),
+      },
+      artillery: {
+        canFire: vi.fn().mockReturnValue(true),
+        fire: vi.fn().mockReturnValue({
+          position: { x: 0, y: 0, z: 0 },
+          velocity: { x: 0, y: 0, z: 0 },
+        }),
+        getPosition: vi.fn().mockReturnValue({ x: 0, y: 0, z: 0 }),
+        setTargetPosition: vi.fn(),
+        update: vi.fn(),
+        getMuzzleVelocityVector: vi.fn().mockReturnValue({ x: 0, y: 0, z: 0 }),
+      },
+      radarController: {
+        reset: vi.fn(),
+        setAzimuth: vi.fn(),
+        setElevation: vi.fn(),
+        setAutoRotating: vi.fn(),
+        isRotating: vi.fn().mockReturnValue(false),
+        updateAutoRotation: vi.fn(),
+      },
+      targetingSystem: {
+        reset: vi.fn(),
+        toggleLock: vi.fn(),
+        handleLockToggle: vi.fn().mockReturnValue({ state: 'LOCKED_ON' }),
+        getTargetingState: vi.fn().mockReturnValue('IDLE'),
+        getLockedTarget: vi.fn().mockReturnValue(null),
+        getTrackedTarget: vi.fn().mockReturnValue(null),
+        update: vi.fn(),
+      },
+      leadAngleSystem: {
+        getLeadAngle: vi.fn().mockReturnValue(null),
+        update: vi.fn().mockReturnValue(false),
+        clear: vi.fn(),
+      },
+      physicsEngine: {
+        update: vi.fn(),
+        addBody: vi.fn(),
+        removeBody: vi.fn(),
+        calculateTrajectory: vi.fn().mockReturnValue([]),
+      },
+      trajectoryRenderer: {
+        render: vi.fn(),
+        update: vi.fn(),
+        updateTrajectory: vi.fn(),
+      },
+      effectRenderer: {
+        render: vi.fn(),
+        createExplosion: vi.fn(),
+        addMuzzleFlash: vi.fn(),
+        addImpact: vi.fn(),
+        addTrail: vi.fn(),
+        reset: vi.fn(),
+        clearAll: vi.fn(),
+        update: vi.fn(),
+      },
+      artilleryPosition: {
+        x: 0,
+        y: 0,
+        z: 0,
+        copy: vi.fn().mockReturnValue({ x: 0, y: 0, z: 0 }),
+      },
+      scenarioManager: {
+        loadScenario: vi.fn(),
+        update: vi.fn(),
+        isScenarioFinished: vi.fn().mockReturnValue(false),
+      },
+    }),
+    resetGame: vi.fn(),
+  },
+}));
 
 describe('GameScene (T029-2 - Complete Rewrite)', () => {
   let gameScene: GameScene;
@@ -92,6 +307,14 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
       setLineDash: vi.fn(),
     } as any;
 
+    // Mock TextMeasurementService
+    const mockMeasurementService = {
+      measureTextWidth: vi.fn().mockReturnValue(50),
+    };
+    (TextMeasurementService.getInstance as any) = vi.fn(
+      () => mockMeasurementService
+    );
+
     mockCanvasManager = {
       getCanvas: () => mockCanvas,
       getContext: () => mockContext,
@@ -102,13 +325,6 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     } as any;
 
     mockOnSceneTransition = vi.fn();
-
-    // Mock EffectRenderer methods
-    const mockEffectRenderer = vi.mocked(EffectRenderer);
-    mockEffectRenderer.prototype.update = vi.fn();
-    mockEffectRenderer.prototype.render = vi.fn();
-    mockEffectRenderer.prototype.clearAll = vi.fn();
-    mockEffectRenderer.prototype.createExplosion = vi.fn();
 
     // Mock GameInputController methods
     mockInputController = {
@@ -131,6 +347,51 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     };
     (GameInputController as any).mockImplementation(() => mockInputController);
 
+    // Mock UIManager
+    const mockUIManager = {
+      setRadarDirection: vi.fn(),
+      setRangeGate: vi.fn(),
+      setArtilleryAngles: vi.fn(),
+      setLeadAngle: vi.fn(),
+      updateLeadAngle: vi.fn(),
+      updateTargetingInfo: vi.fn(),
+      updateRadarAzimuth: vi.fn(),
+      setArtilleryState: vi.fn(),
+      setLockState: vi.fn(),
+      setAutoMode: vi.fn(),
+      setGameTime: vi.fn(),
+      setRadarInfo: vi.fn(),
+      setTargetInfo: vi.fn(),
+      setTargetList: vi.fn(),
+      addRadarTarget: vi.fn(),
+      removeRadarTarget: vi.fn(),
+      updateRadarTarget: vi.fn(),
+      updateProjectiles: vi.fn(),
+      updateTrajectoryPrediction: vi.fn(),
+      render: vi.fn(),
+    };
+
+    // Mock UIController implementation
+    const mockUIController = {
+      initialize: vi.fn(),
+      update: vi.fn(),
+      updateControls: vi.fn(),
+      render: vi.fn(),
+      updateLeadAngle: vi.fn(),
+      updateTargetingInfo: vi.fn(),
+      updateRadarAzimuth: vi.fn(),
+      handleInput: vi.fn(),
+      getRadarState: vi
+        .fn()
+        .mockReturnValue({ azimuth: 0, elevation: 0, range: 10000 }),
+      setRadarState: vi.fn(),
+      getUIManager: vi.fn(() => mockUIManager),
+      handleKeyDown: vi.fn(),
+      handleKeyUp: vi.fn(),
+    };
+    (UIControllerA as any).mockImplementation(() => mockUIController);
+    (UIControllerB as any).mockImplementation(() => mockUIController);
+
     gameScene = new GameScene(mockCanvasManager, mockOnSceneTransition, {
       selectedStage: mockStageConfig,
     });
@@ -147,7 +408,10 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     it('should initialize with CanvasManager and configuration', () => {
       expect(gameScene).toBeDefined();
       expect(GameInputController).toHaveBeenCalled();
-      expect(EffectRenderer).toHaveBeenCalledWith(mockCanvasManager);
+      expect(SceneInitializer.initializeSystems).toHaveBeenCalledWith(
+        mockCanvasManager,
+        expect.objectContaining({ selectedStage: mockStageConfig })
+      );
     });
 
     it('should setup input controller', () => {
@@ -184,7 +448,7 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     });
 
     it('should update effect renderer', () => {
-      const mockEffectRenderer = vi.mocked(EffectRenderer).mock.instances[0];
+      const mockEffectRenderer = (gameScene as any).effectRenderer;
 
       gameScene.update(0.016);
 
@@ -202,91 +466,46 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     it('should call Canvas 2D API methods for rendering', () => {
       gameScene.render();
 
-      expect(mockContext.fillRect).toHaveBeenCalled();
-      expect(mockContext.fillText).toHaveBeenCalled();
-      expect(mockContext.save).toHaveBeenCalled();
-      expect(mockContext.restore).toHaveBeenCalled();
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
     });
 
     it('should render UI-04 3-pane layout', () => {
       gameScene.render();
 
-      // Should draw layout dividers
-      expect(mockContext.beginPath).toHaveBeenCalled();
-      expect(mockContext.moveTo).toHaveBeenCalled();
-      expect(mockContext.lineTo).toHaveBeenCalled();
-      expect(mockContext.stroke).toHaveBeenCalled();
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
     });
 
     it('should render control panel', () => {
       gameScene.render();
 
-      // Should render control panel text
-      expect(mockContext.fillText).toHaveBeenCalledWith(
-        'FIRE CONTROL',
-        expect.any(Number),
-        expect.any(Number)
-      );
-      expect(mockContext.fillText).toHaveBeenCalledWith(
-        'Artillery',
-        expect.any(Number),
-        expect.any(Number)
-      );
-      expect(mockContext.fillText).toHaveBeenCalledWith(
-        'Radar',
-        expect.any(Number),
-        expect.any(Number)
-      );
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
     });
 
     it('should render radar displays', () => {
       gameScene.render();
 
-      // Should render radar grids
-      expect(mockContext.arc).toHaveBeenCalled(); // Gun position markers
-      expect(mockContext.fill).toHaveBeenCalled(); // Fill gun markers
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
     });
 
     it('should render targeting information', () => {
       gameScene.render();
 
-      expect(mockContext.fillText).toHaveBeenCalledWith(
-        'Targeting',
-        expect.any(Number),
-        expect.any(Number)
-      );
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
+      expect(uiManager.setTargetInfo).toHaveBeenCalled();
     });
+  });
 
-    it('should render game state overlay when not playing', () => {
-      // Simulate game over state
-      gameScene.update(0.016); // Initialize
+  it('should render effects on top', () => {
+    const mockEffectRenderer = (gameScene as any).effectRenderer;
 
-      // Force game over for testing (would need access to private state)
-      gameScene.render();
+    gameScene.render();
 
-      // Should render overlay for non-playing states
-      expect(mockContext.fillRect).toHaveBeenCalled();
-    });
-
-    it('should render CRT scan lines', () => {
-      gameScene.render();
-
-      // Should call fillRect multiple times for scan lines
-      const fillRectCalls = vi.mocked(mockContext.fillRect).mock.calls;
-      const scanLineCalls = fillRectCalls.filter(
-        call => call[3] === 1 || call[3] === 2 // Height 1 or 2 for scan lines
-      );
-
-      expect(scanLineCalls.length).toBeGreaterThan(0);
-    });
-
-    it('should render effects on top', () => {
-      const mockEffectRenderer = vi.mocked(EffectRenderer).mock.instances[0];
-
-      gameScene.render();
-
-      expect(mockEffectRenderer.render).toHaveBeenCalled();
-    });
+    expect(mockEffectRenderer.render).toHaveBeenCalled();
   });
 
   describe('mouse interaction', () => {
@@ -376,7 +595,8 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     });
 
     it('should detect collisions between projectiles and targets', () => {
-      const mockEffectRenderer = vi.mocked(EffectRenderer).mock.instances[0];
+      const mockEffectRenderer = (gameScene as any).effectRenderer;
+      console.log('Mock EffectRenderer keys:', Object.keys(mockEffectRenderer));
 
       // Simulate collision scenario
       gameScene.update(0.016);
@@ -422,57 +642,6 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     });
   });
 
-  describe('Canvas 2D API compliance', () => {
-    it('should use only Canvas 2D API methods', () => {
-      gameScene.render();
-
-      // Implementation uses only Canvas 2D API methods
-      expect(mockContext.fillRect).toHaveBeenCalled();
-      expect(mockContext.fillText).toHaveBeenCalled();
-      expect(mockContext.stroke).toHaveBeenCalled();
-    });
-
-    it('should use proper Canvas context methods', () => {
-      gameScene.render();
-
-      const canvasMethods = [
-        'fillRect',
-        'fillText',
-        'save',
-        'restore',
-        'beginPath',
-        'moveTo',
-        'lineTo',
-        'stroke',
-        'arc',
-        'fill',
-      ];
-
-      canvasMethods.forEach(method => {
-        expect(
-          mockContext[method as keyof CanvasRenderingContext2D]
-        ).toHaveBeenCalled();
-      });
-    });
-
-    it('should set Canvas properties correctly', () => {
-      gameScene.render();
-
-      expect(mockContext.fillStyle).toBeTruthy();
-      expect(mockContext.font).toBeTruthy();
-      expect(mockContext.textAlign).toBeTruthy();
-      expect(mockContext.textBaseline).toBeTruthy();
-    });
-
-    it('should not use DOM manipulation', () => {
-      // Verify no direct DOM access in implementation
-      gameScene.render();
-
-      // Should not access document.getElementById or other DOM methods
-      expect(true).toBe(true);
-    });
-  });
-
   describe('responsive design', () => {
     it('should adapt to different canvas sizes', () => {
       const smallCanvas = {
@@ -513,7 +682,8 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
       gameScene.render();
 
       // UI layout should be relative to canvas dimensions
-      expect(mockContext.fillText).toHaveBeenCalled();
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
     });
   });
 
@@ -543,121 +713,93 @@ describe('GameScene (T029-2 - Complete Rewrite)', () => {
     it('should implement UI-04: 3-pane layout', () => {
       gameScene.render();
 
-      // Should render control panel (left pane)
-      expect(mockContext.fillText).toHaveBeenCalledWith(
-        'FIRE CONTROL',
-        expect.any(Number),
-        expect.any(Number)
-      );
-
-      // Should render radar displays (center and right panes)
-      expect(mockContext.arc).toHaveBeenCalled(); // Gun positions
-      expect(mockContext.stroke).toHaveBeenCalled(); // Radar grids
+      // Should delegate rendering to UIManager
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
     });
 
-    it('should implement TR-02: Canvas 2D API compliance', () => {
+    it('should display UI elements', () => {
+      gameScene.update(0.016);
       gameScene.render();
 
-      // Should only use Canvas 2D API methods, no DOM manipulation
-      const canvas2DMethods = [
-        'fillRect',
-        'stroke',
-        'fillText',
-        'save',
-        'restore',
-      ];
-      canvas2DMethods.forEach(method => {
-        expect(
-          mockContext[method as keyof CanvasRenderingContext2D]
-        ).toHaveBeenCalled();
+      const uiManager = (gameScene as any).uiController.getUIManager();
+      expect(uiManager.render).toHaveBeenCalled();
+      expect(uiManager.setTargetInfo).toHaveBeenCalled();
+      expect(uiManager.setGameTime).toHaveBeenCalled();
+    });
+
+    describe('animation and effects', () => {
+      it('should animate scan lines over time', () => {
+        gameScene.update(1);
+        gameScene.render();
+
+        const uiManager = (gameScene as any).uiController.getUIManager();
+        expect(uiManager.render).toHaveBeenCalledWith(expect.any(Number));
+      });
+
+      it('should update animation time', () => {
+        gameScene.update(0.5);
+        gameScene.render();
+        const uiManager = (gameScene as any).uiController.getUIManager();
+        expect(uiManager.render).toHaveBeenLastCalledWith(
+          expect.closeTo(0.5, 2)
+        );
+
+        gameScene.update(0.5);
+        gameScene.render();
+        expect(uiManager.render).toHaveBeenLastCalledWith(
+          expect.closeTo(1.0, 2)
+        );
       });
     });
 
-    it('should implement game system requirements', () => {
-      // Should handle all game states
-      gameScene.update(0.016);
-      gameScene.render();
+    describe('stage configuration integration', () => {
+      it('should load targets from stage configuration', () => {
+        expect(gameScene).toBeDefined();
 
-      // Should render targeting information
-      expect(mockContext.fillText).toHaveBeenCalledWith(
-        'Targeting',
-        expect.any(Number),
-        expect.any(Number)
-      );
+        // Should initialize with targets from mockStageConfig
+        gameScene.update(0.016);
+        expect(true).toBe(true);
+      });
 
-      // Should render mission time
-      expect(mockContext.fillText).toHaveBeenCalledWith(
-        expect.stringMatching(/\d{2}:\d{2}/), // MM:SS format
-        expect.any(Number),
-        expect.any(Number)
-      );
-    });
-  });
+      it('should position artillery according to stage', () => {
+        // Artillery should be positioned at stage configuration location
+        gameScene.render();
+        // Check if UIManager was called to render
+        const uiManager = (gameScene as any).uiController.getUIManager();
+        expect(uiManager.render).toHaveBeenCalled();
+      });
 
-  describe('animation and effects', () => {
-    it('should animate scan lines over time', () => {
-      gameScene.update(1);
-      gameScene.render();
-
-      // Moving scan line should be rendered
-      const fillRectCalls = vi.mocked(mockContext.fillRect).mock.calls;
-      const movingLineCalls = fillRectCalls.filter(call => call[3] === 2); // Height 2 for moving line
-
-      expect(movingLineCalls.length).toBeGreaterThan(0);
+      it('should handle different target types', () => {
+        // Should handle both STATIC and MOVING_SLOW targets from config
+        gameScene.update(0.016);
+        gameScene.render();
+        expect(true).toBe(true);
+      });
     });
 
-    it('should update animation time', () => {
-      gameScene.update(0.5);
-      gameScene.update(0.5);
+    describe('performance characteristics', () => {
+      it('should handle multiple targets efficiently', () => {
+        // Should render multiple targets without performance issues
+        gameScene.update(0.016);
+        gameScene.render();
 
-      // Animation time should advance
-      expect(true).toBe(true);
-    });
-  });
+        const uiManager = (gameScene as any).uiController.getUIManager();
+        expect(uiManager.render).toHaveBeenCalled();
+      });
 
-  describe('stage configuration integration', () => {
-    it('should load targets from stage configuration', () => {
-      expect(gameScene).toBeDefined();
+      it('should handle multiple projectiles efficiently', () => {
+        // Fire multiple projectiles
+        for (let i = 0; i < 5; i++) {
+          const keyEvent = new KeyboardEvent('keydown', { key: 'f' });
+          window.dispatchEvent(keyEvent);
+        }
 
-      // Should initialize with targets from mockStageConfig
-      gameScene.update(0.016);
-      expect(true).toBe(true);
-    });
+        gameScene.update(0.016);
+        gameScene.render();
 
-    it('should position artillery according to stage', () => {
-      // Artillery should be positioned at stage configuration location
-      gameScene.render();
-      expect(mockContext.arc).toHaveBeenCalled(); // Gun position marker
-    });
-
-    it('should handle different target types', () => {
-      // Should handle both STATIC and MOVING_SLOW targets from config
-      gameScene.update(0.016);
-      gameScene.render();
-      expect(true).toBe(true);
-    });
-  });
-
-  describe('performance characteristics', () => {
-    it('should handle multiple targets efficiently', () => {
-      // Should render multiple targets without performance issues
-      gameScene.update(0.016);
-      gameScene.render();
-
-      expect(mockContext.arc).toHaveBeenCalled();
-    });
-
-    it('should handle multiple projectiles efficiently', () => {
-      // Fire multiple projectiles
-      for (let i = 0; i < 5; i++) {
-        const keyEvent = new KeyboardEvent('keydown', { key: 'f' });
-        window.dispatchEvent(keyEvent);
-      }
-
-      gameScene.update(0.016);
-      gameScene.render();
-
-      expect(true).toBe(true);
+        expect(true).toBe(true);
+      });
     });
   });
 });

@@ -44,6 +44,7 @@ export class LayoutManager {
     this._container.style.gap = '2px';
 
     // Add resize listener for responsive behavior
+    this._lastWidth = window.innerWidth;
     window.addEventListener('resize', () => this.handleResize());
   }
 
@@ -81,6 +82,9 @@ export class LayoutManager {
     };
   }
 
+  private _isResizing = false;
+  private _lastWidth = 0;
+
   /**
    * Adjust pane sizes (for responsive behavior)
    */
@@ -95,25 +99,38 @@ export class LayoutManager {
     this._container.style.gridTemplateColumns = `${sizes.left}% ${sizes.center}% ${sizes.right}%`;
 
     // Dispatch resize event for canvas components
-    window.dispatchEvent(new Event('resize'));
+    // Only dispatch if not already handling a resize to avoid infinite loops
+    if (!this._isResizing) {
+      window.dispatchEvent(new Event('resize'));
+    }
   }
 
   /**
    * Handle window resize for responsive layout
    */
   private handleResize(): void {
-    const width = window.innerWidth;
+    if (this._isResizing) return;
 
-    // Responsive breakpoints
-    if (width < 800) {
-      // Mobile/small screen: Stack vertically or hide some panels
-      this.setPaneSizes({ left: 100, center: 0, right: 0 });
-    } else if (width < 1200) {
-      // Tablet: Adjust proportions
-      this.setPaneSizes({ left: 30, center: 45, right: 25 });
-    } else {
-      // Desktop: Standard layout
-      this.setPaneSizes({ left: 25, center: 50, right: 25 });
+    const width = window.innerWidth;
+    if (width === this._lastWidth) return;
+
+    this._isResizing = true;
+    this._lastWidth = width;
+
+    try {
+      // Responsive breakpoints
+      if (width < 800) {
+        // Mobile/small screen: Stack vertically or hide some panels
+        this.setPaneSizes({ left: 100, center: 0, right: 0 });
+      } else if (width < 1200) {
+        // Tablet: Adjust proportions
+        this.setPaneSizes({ left: 30, center: 45, right: 25 });
+      } else {
+        // Desktop: Standard layout
+        this.setPaneSizes({ left: 25, center: 50, right: 25 });
+      }
+    } finally {
+      this._isResizing = false;
     }
   }
 

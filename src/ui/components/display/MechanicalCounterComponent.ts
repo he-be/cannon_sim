@@ -1,5 +1,6 @@
 import { UIComponent } from '../core/UIComponent';
 import { CRT_COLORS, FONTS } from '../../../data/Constants';
+import { TextMeasurementService } from '../../services/TextMeasurementService';
 
 export class MechanicalCounterComponent extends UIComponent {
   private value: number = 0;
@@ -66,17 +67,19 @@ export class MechanicalCounterComponent extends UIComponent {
 
   updateSize(): void {
     // Label width + spacing + (digits + decimals + dot) * digitWidth
-    const ctx = document.createElement('canvas').getContext('2d');
-    if (ctx) {
-      ctx.font = FONTS.DATA;
-      const labelWidth = ctx.measureText(this.label + ': ').width;
-      const totalDigits = this.digits + this.decimals;
-      const dotWidth = this.decimals > 0 ? 6 : 0;
+    const measurementService = TextMeasurementService.getInstance();
 
-      this.bounds.width =
-        labelWidth + totalDigits * this.digitWidth + dotWidth + 4;
-      this.bounds.height = this.digitHeight + 4;
-    }
+    const labelWidth = measurementService.measureTextWidth(
+      this.label + ': ',
+      FONTS.DATA
+    );
+
+    const totalDigits = this.digits + this.decimals;
+    const dotWidth = this.decimals > 0 ? 6 : 0;
+
+    this.bounds.width =
+      labelWidth + totalDigits * this.digitWidth + dotWidth + 4;
+    this.bounds.height = this.digitHeight + 4;
   }
 
   render(ctx: CanvasRenderingContext2D): void {

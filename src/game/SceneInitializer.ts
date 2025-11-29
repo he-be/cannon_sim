@@ -11,7 +11,7 @@ import { TrajectoryRenderer } from '../rendering/TrajectoryRenderer';
 import { EffectRenderer } from '../rendering/renderers/EffectRenderer';
 import { Vector3 } from '../math/Vector3';
 import { CRT_COLORS } from '../data/Constants';
-import { Target } from './entities/Target';
+import { ScenarioManager } from './scenario/ScenarioManager';
 
 export interface GameSystems {
   entityManager: EntityManager;
@@ -23,6 +23,7 @@ export interface GameSystems {
   trajectoryRenderer: TrajectoryRenderer;
   effectRenderer: EffectRenderer;
   artilleryPosition: Vector3;
+  scenarioManager: ScenarioManager;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class
@@ -44,6 +45,7 @@ export class SceneInitializer {
     const targetingSystem = new TargetingSystem();
     const leadAngleSystem = new LeadAngleSystem(artilleryPosition);
     const radarController = new RadarController();
+    const scenarioManager = new ScenarioManager(entityManager);
 
     const physicsEngine = new PhysicsEngine(
       StandardPhysics.accelerationFunction
@@ -74,38 +76,23 @@ export class SceneInitializer {
       trajectoryRenderer,
       effectRenderer,
       artilleryPosition,
+      scenarioManager,
     };
   }
 
   static resetGame(
     systems: GameSystems,
     config: GameSceneConfig,
-    gameTime: number
+    _gameTime: number
   ): void {
     // Reset radar
     systems.radarController.reset();
 
-    // Initialize targets
-    const targets = config.selectedStage.targets.map(
-      targetConfig =>
-        new Target(
-          new Vector3(
-            targetConfig.position.x,
-            targetConfig.position.y,
-            targetConfig.position.z
-          ),
-          targetConfig.type,
-          targetConfig.velocity
-            ? new Vector3(
-                targetConfig.velocity.x,
-                targetConfig.velocity.y,
-                targetConfig.velocity.z
-              )
-            : undefined,
-          gameTime + targetConfig.spawnDelay
-        )
-    );
-    systems.entityManager.initializeTargets(targets);
+    // Reset entity manager (clears targets and projectiles)
+    systems.entityManager.reset();
+
+    // Load scenario
+    systems.scenarioManager.loadScenario(config.selectedStage.scenario);
 
     // Clear effects
     systems.effectRenderer.clearAll();

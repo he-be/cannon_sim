@@ -10,6 +10,7 @@ import {
 } from './StageData';
 import { Vector3 } from '../math/Vector3';
 import { TargetType } from '../game/entities/Target';
+import { ScenarioEventType, SpawnEvent } from '../game/scenario/ScenarioEvent';
 
 describe('StageData (T026-2 - Complete Rewrite)', () => {
   describe('stage configuration constants', () => {
@@ -37,10 +38,14 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
       expect(stage1!.name).toBe('気球迎撃戦');
       expect(stage1!.difficultyLevel).toBe(1);
 
-      // All targets should be balloons
-      stage1!.targets.forEach(target => {
-        expect(target.type).toBe(TargetType.BALLOON);
-        expect(target.velocity).toBeUndefined();
+      // Check scenario for balloons
+      const spawnEvents = stage1!.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      expect(spawnEvents.length).toBeGreaterThan(0);
+      spawnEvents.forEach(event => {
+        expect(event.targetType).toBe(TargetType.BALLOON);
+        expect(event.velocity).toBeUndefined();
       });
     });
 
@@ -50,10 +55,14 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
       expect(stage2!.name).toBe('フリゲート迎撃戦');
       expect(stage2!.difficultyLevel).toBe(2);
 
-      // All targets should be frigates
-      stage2!.targets.forEach(target => {
-        expect(target.type).toBe(TargetType.FRIGATE);
-        expect(target.velocity).toBeInstanceOf(Vector3);
+      // Check scenario for frigates
+      const spawnEvents = stage2!.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      expect(spawnEvents.length).toBeGreaterThan(0);
+      spawnEvents.forEach(event => {
+        expect(event.targetType).toBe(TargetType.FRIGATE);
+        expect(event.velocity).toBeInstanceOf(Vector3);
       });
     });
 
@@ -64,10 +73,14 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
       expect(stage3!.difficultyLevel).toBe(3);
       expect(stage3!.timeLimit).toBe(300); // 5 minutes
 
-      // All targets should be cruisers
-      stage3!.targets.forEach(target => {
-        expect(target.type).toBe(TargetType.CRUISER);
-        expect(target.velocity).toBeInstanceOf(Vector3);
+      // Check scenario for cruisers
+      const spawnEvents = stage3!.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      expect(spawnEvents.length).toBeGreaterThan(0);
+      spawnEvents.forEach(event => {
+        expect(event.targetType).toBe(TargetType.CRUISER);
+        expect(event.velocity).toBeInstanceOf(Vector3);
       });
     });
   });
@@ -139,10 +152,10 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
       expect(validateStageConfig(invalidStage)).toBe(false);
     });
 
-    it('should reject stage with no targets', () => {
+    it('should reject stage with no scenario', () => {
       const invalidStage: StageConfig = {
         ...STAGES[0],
-        targets: [], // No targets
+        scenario: [], // No scenario
       };
 
       expect(validateStageConfig(invalidStage)).toBe(false);
@@ -160,28 +173,13 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
     it('should reject moving target without velocity', () => {
       const invalidStage: StageConfig = {
         ...STAGES[0],
-        targets: [
+        scenario: [
           {
+            type: ScenarioEventType.SPAWN,
+            targetType: TargetType.FRIGATE,
             position: new Vector3(100, 100, 0),
-            type: TargetType.FRIGATE,
-            // Missing velocity for moving target
-            spawnDelay: 0,
-          },
-        ],
-      };
-
-      expect(validateStageConfig(invalidStage)).toBe(false);
-    });
-
-    it('should reject target with negative spawn delay', () => {
-      const invalidStage: StageConfig = {
-        ...STAGES[0],
-        targets: [
-          {
-            position: new Vector3(100, 100, 0),
-            type: TargetType.BALLOON,
-            spawnDelay: -1, // Negative spawn delay
-          },
+            // Missing velocity
+          } as SpawnEvent,
         ],
       };
 
@@ -190,28 +188,14 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
   });
 
   describe('target configuration details', () => {
-    it('should have proper spawn delay progression', () => {
-      STAGES.forEach(stage => {
-        const delays = stage.targets
-          .map(t => t.spawnDelay)
-          .sort((a, b) => a - b);
-
-        // Delays should be non-negative
-        delays.forEach(delay => {
-          expect(delay).toBeGreaterThanOrEqual(0);
-        });
-
-        // Should have some variation in spawn timing
-        if (delays.length > 1) {
-          expect(delays[0]).toBeLessThan(delays[delays.length - 1]);
-        }
-      });
-    });
-
     it('should have targets positioned within reasonable range', () => {
       STAGES.forEach(stage => {
-        stage.targets.forEach(target => {
-          const distance = target.position
+        const spawnEvents = stage.scenario.filter(
+          e => e.type === ScenarioEventType.SPAWN
+        ) as SpawnEvent[];
+
+        spawnEvents.forEach(event => {
+          const distance = event.position
             .subtract(stage.artilleryPosition)
             .magnitude();
 
@@ -226,16 +210,22 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
       const stage2 = getStageById(2)!; // Slow moving
       const stage3 = getStageById(3)!; // Fast moving
 
-      stage2.targets.forEach(target => {
-        if (target.velocity) {
-          const speed = target.velocity.magnitude();
+      const stage2Spawns = stage2.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      stage2Spawns.forEach(event => {
+        if (event.velocity) {
+          const speed = event.velocity.magnitude();
           expect(speed).toBeLessThan(100); // Slow targets
         }
       });
 
-      stage3.targets.forEach(target => {
-        if (target.velocity) {
-          const speed = target.velocity.magnitude();
+      const stage3Spawns = stage3.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      stage3Spawns.forEach(event => {
+        if (event.velocity) {
+          const speed = event.velocity.magnitude();
           expect(speed).toBeGreaterThan(100); // Fast targets
         }
       });
@@ -249,17 +239,26 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
       const stage3 = getStageById(3)!;
 
       // Stage 1: Only static targets
-      expect(stage1.targets.every(t => t.type === TargetType.BALLOON)).toBe(
+      const s1Spawns = stage1.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      expect(s1Spawns.every(t => t.targetType === TargetType.BALLOON)).toBe(
         true
       );
 
       // Stage 2: Only slow moving targets
-      expect(stage2.targets.every(t => t.type === TargetType.FRIGATE)).toBe(
+      const s2Spawns = stage2.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      expect(s2Spawns.every(t => t.targetType === TargetType.FRIGATE)).toBe(
         true
       );
 
       // Stage 3: Only fast moving targets + time limit
-      expect(stage3.targets.every(t => t.type === TargetType.CRUISER)).toBe(
+      const s3Spawns = stage3.scenario.filter(
+        e => e.type === ScenarioEventType.SPAWN
+      ) as SpawnEvent[];
+      expect(s3Spawns.every(t => t.targetType === TargetType.CRUISER)).toBe(
         true
       );
       expect(stage3.timeLimit).toBeGreaterThan(0);
@@ -267,8 +266,11 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
 
     it('should have appropriate number of targets per stage', () => {
       STAGES.forEach(stage => {
-        expect(stage.targets.length).toBeGreaterThanOrEqual(3);
-        expect(stage.targets.length).toBeLessThanOrEqual(6);
+        const spawnCount = stage.scenario.filter(
+          e => e.type === ScenarioEventType.SPAWN
+        ).length;
+        expect(spawnCount).toBeGreaterThanOrEqual(3);
+        expect(spawnCount).toBeLessThanOrEqual(6);
       });
     });
 
@@ -278,7 +280,7 @@ describe('StageData (T026-2 - Complete Rewrite)', () => {
         expect(stage.name).toBeTruthy();
         expect(stage.description).toBeTruthy();
         expect(stage.artilleryPosition).toBeInstanceOf(Vector3);
-        expect(stage.targets).toBeInstanceOf(Array);
+        expect(stage.scenario).toBeInstanceOf(Array);
         expect(stage.winCondition).toBeTruthy();
         expect([1, 2, 3]).toContain(stage.difficultyLevel);
       });

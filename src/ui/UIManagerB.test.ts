@@ -6,11 +6,48 @@ import { Vector3 } from '../math/Vector3';
 import { RadarTarget } from './components/RadarRenderer';
 
 // Mock dependencies
+// Mock dependencies
 vi.mock('../rendering/CanvasManager');
-vi.mock('./components/ControlPanelRenderer');
-vi.mock('./components/CircularScopeRenderer');
-vi.mock('./components/AScopeRenderer');
-vi.mock('./components/TargetListRenderer');
+vi.mock('./components/ControlPanelRenderer', () => {
+  return {
+    ControlPanelRenderer: vi.fn().mockImplementation(() => {
+      return {
+        render: vi.fn(),
+        update: vi.fn(),
+      };
+    }),
+  };
+});
+vi.mock('./components/CircularScopeRenderer', () => {
+  return {
+    CircularScopeRenderer: vi.fn().mockImplementation(() => {
+      return {
+        render: vi.fn(),
+        update: vi.fn(),
+      };
+    }),
+  };
+});
+vi.mock('./components/AScopeRenderer', () => {
+  return {
+    AScopeRenderer: vi.fn().mockImplementation(() => {
+      return {
+        render: vi.fn(),
+        update: vi.fn(),
+      };
+    }),
+  };
+});
+vi.mock('./components/TargetListRenderer', () => {
+  return {
+    TargetListRenderer: vi.fn().mockImplementation(() => {
+      return {
+        render: vi.fn(),
+        update: vi.fn(),
+      };
+    }),
+  };
+});
 
 describe('UIManagerB', () => {
   let uiManager: UIManagerB;

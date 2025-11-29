@@ -5,6 +5,10 @@
 
 import { Vector3 } from '../math/Vector3';
 import { TargetType } from '../game/entities/Target';
+import {
+  ScenarioEvent,
+  ScenarioEventType,
+} from '../game/scenario/ScenarioEvent';
 
 export interface TargetConfig {
   position: Vector3;
@@ -21,7 +25,8 @@ export interface StageConfig {
   name: string;
   description: string;
   artilleryPosition: Vector3;
-  targets: TargetConfig[];
+  // targets: TargetConfig[]; // DEPRECATED: Replaced by scenario
+  scenario: ScenarioEvent[];
   timeLimit?: number; // seconds
   winCondition: 'destroy_all' | 'survive_time' | 'score_target';
   difficultyLevel: 1 | 2 | 3;
@@ -31,7 +36,7 @@ export interface StageConfig {
  * Stage configuration constants
  */
 const STAGE_CONSTANTS = {
-  ARTILLERY_POSITION: new Vector3(0, 0, 0), // Origin position - simplified coordinate system, // 8km south of origin
+  ARTILLERY_POSITION: new Vector3(0, 0, 0), // Origin position - simplified coordinate system
   TARGET_DISTANCES: {
     CLOSE: 10000, // 10km
     MEDIUM: 16000, // 16km
@@ -53,33 +58,54 @@ const STAGE_CONSTANTS = {
 /**
  * Stage 1: 気球ステージ - 固定目標訓練
  */
+const STAGE_1_SCENARIO: ScenarioEvent[] = [
+  // Target 1: Immediate
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.BALLOON,
+    position: new Vector3(1000, -10000, 1000),
+  },
+  // Wait 5s for Target 2
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 5,
+  },
+  // Target 2
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.BALLOON,
+    position: new Vector3(-3000, -4000, 900),
+  },
+  // Wait 5s for Target 3 (Total 10s)
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 5,
+  },
+  // Target 3
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.BALLOON,
+    position: new Vector3(5000, -7000, 1100),
+  },
+  // Wait 10s for Target 4 (Total 20s)
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 10,
+  },
+  // Target 4
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.BALLOON,
+    position: new Vector3(0, -12000, 1200),
+  },
+];
+
 const STAGE_1_CONFIG: StageConfig = {
   id: 1,
   name: '気球迎撃戦',
   description: '高高度に浮遊する気球を迎撃せよ',
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
-  targets: [
-    {
-      position: new Vector3(1000, -10000, 1000), // 15km北、高度1000mの気球
-      type: TargetType.BALLOON,
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
-    },
-    {
-      position: new Vector3(-3000, -4000, 900), // 北西、高度900m
-      type: TargetType.BALLOON,
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
-    },
-    {
-      position: new Vector3(5000, -7000, 1100), // 北東、高度1100m
-      type: TargetType.BALLOON,
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
-    },
-    {
-      position: new Vector3(0, -12000, 1200), // 8km北、高度1200m
-      type: TargetType.BALLOON,
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
-    },
-  ],
+  scenario: STAGE_1_SCENARIO,
   winCondition: 'destroy_all',
   difficultyLevel: 1,
 };
@@ -87,37 +113,58 @@ const STAGE_1_CONFIG: StageConfig = {
 /**
  * Stage 2: フリゲートステージ - 低速移動目標
  */
+const STAGE_2_SCENARIO: ScenarioEvent[] = [
+  // Target 1: Immediate
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.FRIGATE,
+    position: new Vector3(-10000, -1000, 800),
+    velocity: new Vector3(20, 0, 0),
+  },
+  // Wait 5s
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 5,
+  },
+  // Target 2
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.FRIGATE,
+    position: new Vector3(2000, -9000, 700),
+    velocity: new Vector3(-25, 0, 0),
+  },
+  // Wait 5s (Total 10s)
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 5,
+  },
+  // Target 3
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.FRIGATE,
+    position: new Vector3(0, -8000, 900),
+    velocity: new Vector3(0, 25, 0),
+  },
+  // Wait 10s (Total 20s)
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 10,
+  },
+  // Target 4
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.FRIGATE,
+    position: new Vector3(5000, 8000, 750),
+    velocity: new Vector3(10, 20, 0),
+  },
+];
+
 const STAGE_2_CONFIG: StageConfig = {
   id: 2,
   name: 'フリゲート迎撃戦',
   description: '低速で移動するフリゲート艦を迎撃せよ',
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
-  targets: [
-    {
-      position: new Vector3(-10000, -1000, 800), // 西から接近
-      type: TargetType.FRIGATE,
-      velocity: new Vector3(20, 0, 0), // 60m/s東進
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
-    },
-    {
-      position: new Vector3(2000, -9000, 700), // 東から接近
-      type: TargetType.FRIGATE,
-      velocity: new Vector3(-25, 0, 0), // 55m/s西進
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
-    },
-    {
-      position: new Vector3(0, -8000, 900), // 北方から南進
-      type: TargetType.FRIGATE,
-      velocity: new Vector3(0, 25, 0), // 65m/s南進
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
-    },
-    {
-      position: new Vector3(5000, 8000, 750), // 北西から斜め移動
-      type: TargetType.FRIGATE,
-      velocity: new Vector3(10, 20, 0), // 斜め移動
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
-    },
-  ],
+  scenario: STAGE_2_SCENARIO,
   winCondition: 'destroy_all',
   difficultyLevel: 2,
 };
@@ -125,37 +172,58 @@ const STAGE_2_CONFIG: StageConfig = {
 /**
  * Stage 3: 巡洋艦ステージ - 高速移動目標
  */
+const STAGE_3_SCENARIO: ScenarioEvent[] = [
+  // Target 1: Immediate
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.CRUISER,
+    position: new Vector3(-5000, -8000, 1200),
+    velocity: new Vector3(110, 30, 0),
+  },
+  // Wait 5s
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 5,
+  },
+  // Target 2
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.CRUISER,
+    position: new Vector3(5000, -8000, 1100),
+    velocity: new Vector3(-120, 25, 0),
+  },
+  // Wait 5s (Total 10s)
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 5,
+  },
+  // Target 3
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.CRUISER,
+    position: new Vector3(-3000, -12000, 1300),
+    velocity: new Vector3(85, 85, 0),
+  },
+  // Wait 10s (Total 20s)
+  {
+    type: ScenarioEventType.WAIT,
+    duration: 10,
+  },
+  // Target 4
+  {
+    type: ScenarioEventType.SPAWN,
+    targetType: TargetType.CRUISER,
+    position: new Vector3(0, -15000, 1000),
+    velocity: new Vector3(0, 130, 0),
+  },
+];
+
 const STAGE_3_CONFIG: StageConfig = {
   id: 3,
   name: '巡洋艦迎撃戦',
   description: '高速で機動する巡洋艦を迎撃せよ',
   artilleryPosition: STAGE_CONSTANTS.ARTILLERY_POSITION,
-  targets: [
-    {
-      position: new Vector3(-5000, -8000, 1200), // 遠距離から高速接近
-      type: TargetType.CRUISER,
-      velocity: new Vector3(110, 30, 0), // 110m/s東北東進
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.IMMEDIATE,
-    },
-    {
-      position: new Vector3(5000, -8000, 1100), // 東から高速接近
-      type: TargetType.CRUISER,
-      velocity: new Vector3(-120, 25, 0), // 120m/s西北西進
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.SHORT,
-    },
-    {
-      position: new Vector3(-3000, -12000, 1300), // 複雑な機動
-      type: TargetType.CRUISER,
-      velocity: new Vector3(85, 85, 0), // 斜め高速移動
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.MEDIUM,
-    },
-    {
-      position: new Vector3(0, -15000, 1000), // 超遠距離から直進
-      type: TargetType.CRUISER,
-      velocity: new Vector3(0, 130, 0), // 130m/s南進
-      spawnDelay: STAGE_CONSTANTS.SPAWN_DELAYS.LONG,
-    },
-  ],
+  scenario: STAGE_3_SCENARIO,
   timeLimit: 300, // 5 minutes time limit
   winCondition: 'destroy_all',
   difficultyLevel: 3,
@@ -190,23 +258,26 @@ export function getAllStages(): StageConfig[] {
 export function validateStageConfig(stage: StageConfig): boolean {
   if (!stage.id || stage.id < 1) return false;
   if (!stage.name || stage.name.trim() === '') return false;
-  if (!stage.targets || stage.targets.length === 0) return false;
+  if (!stage.scenario || stage.scenario.length === 0) return false;
   if (!stage.artilleryPosition) return false;
   if (stage.difficultyLevel < 1 || stage.difficultyLevel > 3) return false;
 
-  // Validate each target
-  return stage.targets.every(target => {
-    if (!target.position) return false;
-    if (!Object.values(TargetType).includes(target.type)) return false;
-    if (target.spawnDelay < 0) return false;
+  // Validate scenario events
+  return stage.scenario.every(event => {
+    if (!Object.values(ScenarioEventType).includes(event.type)) return false;
 
-    // Moving targets must have velocity
-    if (
-      (target.type === TargetType.FRIGATE ||
-        target.type === TargetType.CRUISER) &&
-      !target.velocity
-    ) {
-      return false;
+    if (event.type === ScenarioEventType.SPAWN) {
+      if (!event.position) return false;
+      if (!Object.values(TargetType).includes(event.targetType)) return false;
+
+      // Moving targets check
+      if (
+        (event.targetType === TargetType.FRIGATE ||
+          event.targetType === TargetType.CRUISER) &&
+        !event.velocity
+      ) {
+        return false;
+      }
     }
 
     return true;
