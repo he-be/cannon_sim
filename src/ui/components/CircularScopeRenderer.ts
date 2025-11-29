@@ -99,6 +99,9 @@ export class CircularScopeRenderer {
       this.renderProjectiles(projectiles, maxRange);
     }
 
+    // Render explosions
+    this.renderExplosions(maxRange, currentTime);
+
     ctx.restore();
   }
 
@@ -350,5 +353,86 @@ export class CircularScopeRenderer {
    */
   setBounds(bounds: CircularScopeBounds): void {
     this.bounds = bounds;
+  }
+
+  // ===== Explosion Effects =====
+
+  private explosions: Array<{
+    id: string;
+    position: Vector3;
+    startTime: number;
+    maxRadius: number;
+    duration: number;
+  }> = [];
+
+  /**
+   * Add an explosion effect
+   */
+  addExplosion(position: Vector3, currentTime: number): void {
+    this.explosions.push({
+      id: `exp-${Date.now()}-${Math.random()}`,
+      position,
+      startTime: currentTime,
+      maxRadius: 1000, // 1000m radius (doubled per user request)
+      duration: 1000, // 1 second duration
+    });
+  }
+
+  /**
+   * Render explosions
+   */
+  private renderExplosions(maxRange: number, currentTime: number): void {
+    const ctx = this.canvasManager.context;
+    const center = this.bounds.center;
+    const radius = this.bounds.radius;
+
+    // Filter out expired explosions
+    this.explosions = this.explosions.filter(
+      exp => currentTime - exp.startTime < exp.duration
+    );
+
+    this.explosions.forEach(exp => {
+      const age = currentTime - exp.startTime;
+      const progress = age / exp.duration;
+
+      // Calculate position on scope
+      // Note: Radar is at (0,0,0)
+      const distance = Math.sqrt(
+        exp.position.x * exp.position.x + exp.position.y * exp.position.y
+      );
+      const azimuth = Math.atan2(exp.position.x, exp.position.y);
+
+      // Map to scope coordinates
+      const r = Math.min((distance / maxRange) * radius, radius);
+      const x = center.x + r * Math.sin(azimuth);
+      const y = center.y - r * Math.cos(azimuth); // Y is inverted
+
+      // Calculate explosion visual radius (screen pixels)
+      // Map maxRadius (meters) to screen pixels based on current range scale
+      const maxRadiusPixels = (exp.maxRadius / maxRange) * radius;
+      // User said: "spreads out and thins out and disappears" -> Expanding
+      const expandingRadius = maxRadiusPixels * (1 - Math.pow(1 - progress, 3)); // Cubic ease out
+
+      // Alpha fade out
+      const alpha = 1.0 - progress;
+
+      ctx.strokeStyle = CRT_COLORS.PRIMARY_TEXT; // Same color as radar blips
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 2; // Thicker line for visibility
+
+      ctx.beginPath();
+      ctx.arc(x, y, expandingRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Optional: Draw a second, faster expanding ring for "shockwave" feel
+      if (progress < 0.5) {
+        const innerRadius = expandingRadius * 0.6;
+        ctx.beginPath();
+        ctx.arc(x, y, innerRadius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = 1.0;
+    });
   }
 }

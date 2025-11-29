@@ -721,9 +721,14 @@ export class GameScene {
    */
   private createExplosion(
     position: Vector3,
-    type: 'projectile_impact' | 'target_destruction' = 'projectile_impact'
+    _type: 'projectile_impact' | 'target_destruction' = 'projectile_impact'
   ): void {
-    this.effectRenderer.createExplosion(position, type);
+    // Render explosion on main view (optional, but keeping it for now as per plan)
+    // Disabled per user request to fix "wrong position" issue (old effect was 3D projected on 2D scope)
+    // this.effectRenderer.createExplosion(position, type);
+
+    // Render explosion on radar scope
+    this.uiController.addExplosion(position, this.animationTime);
   }
 
   /**

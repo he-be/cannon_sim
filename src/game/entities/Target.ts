@@ -48,6 +48,7 @@ export class Target {
   private _type: TargetType;
   private _state: TargetState = TargetState.ACTIVE;
   public spawnTime: number = 0;
+  public destructionTime: number = 0;
 
   constructor(
     position: Vector3,
@@ -143,7 +144,7 @@ export class Target {
   /**
    * Update target position based on movement
    */
-  update(deltaTime: number): void {
+  update(deltaTime: number, gameTime: number = 0): void {
     if (this._state === TargetState.DESTROYED) return;
 
     // Falling targets: apply gravity
@@ -162,6 +163,7 @@ export class Target {
       // Check if reached ground
       if (this._position.z <= 0) {
         this._state = TargetState.DESTROYED;
+        this.destructionTime = gameTime;
       }
       return;
     }
@@ -193,8 +195,9 @@ export class Target {
   /**
    * Destroy target immediately (for backward compatibility)
    */
-  destroy(): void {
+  destroy(gameTime: number = 0): void {
     this._state = TargetState.DESTROYED;
+    this.destructionTime = gameTime;
   }
 }
 

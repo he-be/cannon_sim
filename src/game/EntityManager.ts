@@ -74,7 +74,7 @@ export class EntityManager {
   updateTargets(deltaTime: number, currentTime: number): void {
     this.targets.forEach(target => {
       if (currentTime >= target.spawnTime) {
-        target.update(deltaTime);
+        target.update(deltaTime, currentTime);
       }
     });
   }

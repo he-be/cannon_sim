@@ -6,6 +6,7 @@
 import { UIManager } from '../UIManager';
 import { Target } from '../../game/entities/Target';
 import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
+import { Vector3 } from '../../math/Vector3';
 
 export interface RadarState {
   azimuth: number; // degrees
@@ -74,6 +75,13 @@ export interface UIController {
    * Get range gate setting (UI B only, optional)
    */
   getRangeGate?(): number;
+
+  /**
+   * Add explosion effect
+   * @param position World position of explosion
+   * @param time Current game/animation time
+   */
+  addExplosion(position: Vector3, time: number): void;
 
   /**
    * Cleanup resources

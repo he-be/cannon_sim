@@ -11,6 +11,7 @@ import { GAME_CONSTANTS } from '../../data/Constants';
 import { RadarController } from '../../game/RadarController';
 import { Target } from '../../game/entities/Target';
 import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
+import { Vector3 } from '../../math/Vector3';
 
 /**
  * UIControllerB implements the new UI behavior (UI B)
@@ -250,6 +251,13 @@ export class UIControllerB implements UIController {
    */
   getRangeGate(): number {
     return this.rangeGate;
+  }
+
+  /**
+   * Add explosion effect
+   */
+  addExplosion(position: Vector3, time: number): void {
+    this.uiManager.addExplosion(position, time);
   }
 
   /**

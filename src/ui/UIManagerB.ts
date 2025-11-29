@@ -187,7 +187,8 @@ export class UIManagerB {
       this.stateManager.radarRange,
       this.projectiles,
       this.stateManager.radarAzimuth,
-      this.stateManager.radarElevation
+      this.stateManager.radarElevation,
+      time
     );
 
     ctx.restore();
@@ -434,5 +435,16 @@ export class UIManagerB {
       pos.y >= bounds.y &&
       pos.y <= bounds.y + bounds.height
     );
+  }
+
+  /**
+   * Add explosion effect
+   */
+  addExplosion(position: Vector3, time: number): void {
+    const timeMs = time * 1000;
+    // Add to Circular Scope
+    this.circularScope.addExplosion(position, timeMs);
+    // Add to A-Scope (Disabled per user request)
+    // this.aScope.addExplosion(position, timeMs);
   }
 }

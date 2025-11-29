@@ -94,7 +94,12 @@ export class UIStateMapper {
     // Update target list
     const targetListData = state.entityManager
       .getTargets()
-      .filter(t => !t.isDestroyed && state.gameTime >= t.spawnTime)
+      .filter(t => {
+        if (state.gameTime < t.spawnTime) return false;
+        if (!t.isDestroyed) return true;
+        // Show destroyed targets for 2 seconds
+        return state.gameTime - t.destructionTime < 2.0;
+      })
       .map(target => {
         const relativePos = target.position.subtract(state.artilleryPosition);
         const distance = relativePos.magnitude();
@@ -117,6 +122,7 @@ export class UIStateMapper {
           distance: distance,
           altitude: target.position.z,
           isApproaching: isApproaching,
+          // TODO: Add isDestroyed flag to TargetListData if we want to show it differently
         };
       });
 
@@ -142,16 +148,25 @@ export class UIStateMapper {
   ): void {
     const uiManager = uiController.getUIManager();
 
-    // Remove destroyed targets
+    // Remove destroyed targets (only if older than 2 seconds)
     state.entityManager.getTargets().forEach(target => {
-      if (target.isDestroyed) {
+      if (
+        target.isDestroyed &&
+        state.gameTime - target.destructionTime >= 2.0
+      ) {
         uiManager.removeRadarTarget(target.id);
       }
     });
 
-    // Update active targets
+    // Update active targets (and recently destroyed ones)
     state.entityManager.getTargets().forEach(target => {
-      if (target.isDestroyed || state.gameTime < target.spawnTime) return;
+      if (state.gameTime < target.spawnTime) return;
+      if (
+        target.isDestroyed &&
+        state.gameTime - target.destructionTime >= 2.0
+      ) {
+        return;
+      }
 
       const dx = target.position.x - state.artilleryPosition.x;
       const dy = target.position.y - state.artilleryPosition.y;

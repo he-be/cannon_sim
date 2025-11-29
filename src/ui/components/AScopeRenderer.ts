@@ -44,7 +44,8 @@ export class AScopeRenderer {
     maxRange: number,
     projectiles?: Array<{ position: Vector3; isActive: boolean }>,
     radarAzimuth?: number,
-    radarElevation?: number
+    radarElevation?: number,
+    _currentTime: number = Date.now()
   ): void {
     const ctx = this.canvasManager.context;
 
@@ -72,6 +73,10 @@ export class AScopeRenderer {
         radarElevation || 0
       );
     }
+
+    // Render explosions
+    // Removed per user request due to persistent "green fill" bug
+    // this.renderExplosions(maxRange, currentTime);
 
     this.renderRangeGate(rangeGate, maxRange);
 
@@ -165,7 +170,6 @@ export class AScopeRenderer {
       ctx.stroke();
       ctx.restore();
       ctx.stroke();
-      ctx.restore();
     }
   }
 

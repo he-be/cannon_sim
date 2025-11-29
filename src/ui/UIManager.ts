@@ -537,4 +537,11 @@ export class UIManager {
   getBounds(): typeof this.bounds {
     return { ...this.bounds };
   }
+
+  /**
+   * Add explosion effect
+   */
+  addExplosion(_position: Vector3, _time: number): void {
+    // Override in subclasses
+  }
 }

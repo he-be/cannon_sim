@@ -9,6 +9,7 @@ import { UIController, RadarState } from './UIController';
 import { GAME_CONSTANTS } from '../../data/Constants';
 import { Target } from '../../game/entities/Target';
 import { ExtendedLeadAngle } from '../../game/LeadAngleSystem';
+import { Vector3 } from '../../math/Vector3';
 
 /**
  * UIControllerA implements the existing UI behavior (UI A)
@@ -197,6 +198,13 @@ export class UIControllerA implements UIController {
     // Update UI to reflect new radar state
     this.uiManager.setRadarDirection(this.radarAzimuth, this.radarElevation);
     this.uiManager.setRadarRange(this.radarRange);
+  }
+
+  /**
+   * Add explosion effect
+   */
+  addExplosion(position: Vector3, time: number): void {
+    this.uiManager.addExplosion(position, time);
   }
 
   /**
