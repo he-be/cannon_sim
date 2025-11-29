@@ -76,7 +76,7 @@ describe('CircularScopeRenderer', () => {
 
   test('should render targets within beam width', () => {
     const targets: CircularScopeTarget[] = [
-      { id: '1', azimuth: 0, distance: 5000, elevation: 0 }, // North, 0 deg elevation
+      { id: '1', azimuth: 0, distance: 5000, elevation: 0, strength: 1.0 }, // North, 0 deg elevation
     ];
 
     // Radar pointing North (0 degrees), 0 deg elevation
@@ -84,12 +84,12 @@ describe('CircularScopeRenderer', () => {
 
     // Should draw target (arc call)
     expect(mockContext.fill).toHaveBeenCalled();
-    expect(mockContext.arc).toHaveBeenCalledWith(100, 50, 4, 0, Math.PI * 2);
+    expect(mockContext.arc).toHaveBeenCalledWith(100, 50, 5, 0, Math.PI * 2);
   });
 
   test('should NOT render targets outside beam width (Azimuth)', () => {
     const targets: CircularScopeTarget[] = [
-      { id: '1', azimuth: 180, distance: 5000, elevation: 0 }, // South
+      { id: '1', azimuth: 180, distance: 5000, elevation: 0, strength: 1.0 }, // South
     ];
 
     // Radar pointing North (0 degrees), 0 deg elevation
@@ -107,7 +107,7 @@ describe('CircularScopeRenderer', () => {
 
   test('should NOT render targets outside beam width (Elevation)', () => {
     const targets: CircularScopeTarget[] = [
-      { id: '1', azimuth: 0, distance: 5000, elevation: 20 }, // 20 deg elevation
+      { id: '1', azimuth: 0, distance: 5000, elevation: 20, strength: 1.0 }, // 20 deg elevation
     ];
 
     // Radar pointing North (0 degrees), 0 deg elevation
@@ -126,7 +126,7 @@ describe('CircularScopeRenderer', () => {
 
   test('should render afterimage for recently scanned targets', () => {
     const targets: CircularScopeTarget[] = [
-      { id: '1', azimuth: 0, distance: 5000, elevation: 0 },
+      { id: '1', azimuth: 0, distance: 5000, elevation: 0, strength: 1.0 },
     ];
     const now = Date.now();
 
@@ -149,7 +149,7 @@ describe('CircularScopeRenderer', () => {
 
   test('should NOT render afterimage after persistence duration', () => {
     const targets: CircularScopeTarget[] = [
-      { id: '1', azimuth: 0, distance: 5000, elevation: 0 },
+      { id: '1', azimuth: 0, distance: 5000, elevation: 0, strength: 1.0 },
     ];
     const now = Date.now();
 

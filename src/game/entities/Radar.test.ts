@@ -20,7 +20,7 @@ describe('Radar (spec-compliant)', () => {
 
   describe('target detection (UI-04)', () => {
     it('should detect targets within range', () => {
-      const target1 = new Target(new Vector3(500, 0, 10), TargetType.STATIC);
+      const target1 = new Target(new Vector3(0, 500, 10), TargetType.STATIC);
       const target2 = new Target(new Vector3(2000, 0, 10), TargetType.STATIC); // Out of range
       const targets = [target1, target2];
 
@@ -32,7 +32,7 @@ describe('Radar (spec-compliant)', () => {
     });
 
     it('should not detect destroyed targets', () => {
-      const target = new Target(new Vector3(500, 0, 10), TargetType.STATIC);
+      const target = new Target(new Vector3(0, 500, 10), TargetType.STATIC);
       target.destroy();
 
       radar.scan([target]);
@@ -44,7 +44,7 @@ describe('Radar (spec-compliant)', () => {
 
   describe('target selection (UI-05)', () => {
     it('should allow selecting detected target', () => {
-      const target = new Target(new Vector3(500, 0, 10), TargetType.STATIC);
+      const target = new Target(new Vector3(0, 500, 10), TargetType.STATIC);
       radar.scan([target]);
 
       radar.selectTarget(target);
@@ -62,9 +62,9 @@ describe('Radar (spec-compliant)', () => {
   describe('radar information (UI-18)', () => {
     it('should provide target information', () => {
       const target = new Target(
-        new Vector3(1000, 500, 20),
+        new Vector3(0, 1000, 20),
         TargetType.MOVING_SLOW,
-        new Vector3(10, 0, 0)
+        new Vector3(0, 10, 0)
       );
       radar.scan([target]);
       radar.selectTarget(target);
@@ -81,18 +81,18 @@ describe('Radar (spec-compliant)', () => {
 
   describe('radar display (UI-13-1)', () => {
     it('should provide radar display data', () => {
-      const target1 = new Target(new Vector3(500, 0, 10), TargetType.STATIC);
+      const target1 = new Target(new Vector3(0, 500, 10), TargetType.STATIC);
       const target2 = new Target(
-        new Vector3(800, 600, 15),
+        new Vector3(0, 800, 15),
         TargetType.MOVING_SLOW
       );
       radar.scan([target1, target2]);
 
       const displayData = radar.getRadarDisplayData();
 
-      expect(displayData.detectedTargets).toHaveLength(2);
+      expect(displayData.detections).toHaveLength(2);
       expect(displayData.centerPosition.equals(radarPosition)).toBe(true);
-      expect(displayData.maxRange).toBe(1500); // Default range
+      expect(displayData.maxRange).toBe(15000); // Default range
     });
   });
 });

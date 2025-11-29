@@ -17,6 +17,7 @@ export class RadarTargetFilter {
       azimuth: target.bearing,
       distance: target.distance,
       elevation: target.elevation,
+      strength: target.strength,
     };
   }
 

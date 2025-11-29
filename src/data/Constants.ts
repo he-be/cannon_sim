@@ -76,6 +76,7 @@ export const VESSEL_CHARACTERISTICS = {
     maxSpeed: 0,
     altitude: 0,
     displayName: 'Static Target',
+    rcs: 100,
   },
   moving_slow: {
     size: 50,
@@ -83,6 +84,7 @@ export const VESSEL_CHARACTERISTICS = {
     maxSpeed: 50,
     altitude: 0,
     displayName: 'Slow Target',
+    rcs: 10,
   },
   moving_fast: {
     size: 50,
@@ -90,6 +92,7 @@ export const VESSEL_CHARACTERISTICS = {
     maxSpeed: 100,
     altitude: 0,
     displayName: 'Fast Target',
+    rcs: 5,
   },
 
   // 空中戦艦タイプ
@@ -99,6 +102,7 @@ export const VESSEL_CHARACTERISTICS = {
     maxSpeed: 0, // 静止
     altitude: 1000, // 1000m高度
     displayName: '気球',
+    rcs: 50,
   },
   frigate: {
     size: 160, // 中程度の当たり判定
@@ -106,6 +110,7 @@ export const VESSEL_CHARACTERISTICS = {
     maxSpeed: 70, // 70m/s
     altitude: 800, // 800m高度
     displayName: 'フリゲート',
+    rcs: 20,
   },
   cruiser: {
     size: 200, // 大きいが高速
@@ -113,6 +118,7 @@ export const VESSEL_CHARACTERISTICS = {
     maxSpeed: 120, // 120m/s
     altitude: 1200, // 1200m高度
     displayName: '巡洋艦',
+    rcs: 50,
   },
 } as const;
 

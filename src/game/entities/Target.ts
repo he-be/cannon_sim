@@ -24,6 +24,8 @@ export enum TargetState {
   DESTROYED = 'destroyed',
 }
 
+import { IRadarTarget } from '../systems/RadarSystem';
+
 /**
  * 艦船特性インターフェース
  * 各艦船タイプの物理的特性を定義
@@ -34,13 +36,14 @@ export interface VesselCharacteristics {
   maxSpeed: number; // 最大速度 (m/s)
   altitude: number; // 標準高度 (m)
   displayName: string; // UI表示名
+  rcs: number; // Radar Cross Section (m^2)
 }
 
 /**
  * Target entity representing destructible targets with movement
  * Implements target types as per UI-02 specification
  */
-export class Target {
+export class Target implements IRadarTarget {
   private static nextTrackId = 1;
   private _trackId: number;
   private _position: Vector3;
@@ -61,6 +64,10 @@ export class Target {
     this._type = type;
     this._velocity = velocity ? velocity.copy() : new Vector3(0, 0, 0);
     this.spawnTime = spawnTime;
+  }
+
+  get rcs(): number {
+    return this.vesselCharacteristics.rcs;
   }
 
   get id(): string {

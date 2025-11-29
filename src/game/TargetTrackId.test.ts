@@ -159,7 +159,30 @@ vi.mock('./SceneInitializer', () => {
             clear: vi.fn(),
             getLeadAngle: vi.fn().mockReturnValue(null),
           },
-          radarController: { update: vi.fn(), updateAutoRotation: vi.fn() },
+          radarController: {
+            update: vi.fn(),
+            updateAutoRotation: vi.fn(),
+            getState: vi.fn().mockReturnValue({
+              azimuth: 0,
+              elevation: 0,
+              currentRange: 10000,
+              maxRange: 10000,
+              rangeCursor: 0.5,
+              isActive: true,
+              isTracking: false,
+              sweepAngle: 30,
+              position: { x: 0, y: 0, z: 0 },
+            }),
+          },
+          radar: {
+            setDirection: vi.fn(),
+            scan: vi.fn(),
+            getRadarDisplayData: vi.fn().mockReturnValue({
+              detections: [],
+              centerPosition: { x: 0, y: 0, z: 0 },
+              maxRange: 10000,
+            }),
+          },
           effectRenderer: { update: vi.fn(), render: vi.fn() },
           artilleryPosition: { x: 0, y: 0, z: 0 },
           scenarioManager: {

@@ -25,6 +25,7 @@ import { UIControllerA } from '../controllers/UIControllerA';
 import { UIControllerB } from '../controllers/UIControllerB';
 import { EntityManager } from '../../game/EntityManager';
 import { Artillery } from '../../game/entities/Artillery';
+import { Radar } from '../../game/entities/Radar';
 import { RadarController } from '../../game/RadarController';
 import { TargetingSystem, TargetingState } from '../../game/TargetingSystem';
 import { LeadAngleSystem } from '../../game/LeadAngleSystem';
@@ -40,7 +41,7 @@ import { ScenarioManager } from '../../game/scenario/ScenarioManager';
 
 export type GameSceneConfig = GameConfig;
 
-interface ProjectileState {
+export interface ProjectileState {
   id: string;
   position: Vector3;
   velocity: Vector3;
@@ -70,51 +71,25 @@ export class GameScene {
   private gameState: GameState = GameState.PLAYING;
   private gameTime: number = 0;
   private startTime: number = 0;
+  private animationTime: number = 0;
 
   // Game entities
   private entityManager: EntityManager;
-  // targets and projectiles are now managed by entityManager
   private artillery: Artillery;
   private artilleryPosition: Vector3;
+  private radar: Radar;
 
   // Targeting system
   private targetingSystem: TargetingSystem;
   // Auto mode for automatic artillery control
   private isAutoMode: boolean = false;
 
-  // Artillery controls
-  // Artillery controls
-  // Removed: azimuthAngle and elevationAngle are now managed by Artillery entity
-
   // Radar controls managed by UIController
-  // Radar state is now accessed via uiController.getRadarState()
+  private radarController: RadarController;
   private maxRadarRange: number = GAME_CONSTANTS.MAX_RADAR_RANGE;
 
-  // Mouse control is now handled by UIManager
-
-  // UI interaction is now handled by UIManager
-
   // Lead angle calculation (GS-07)
-
   private leadAngleSystem: LeadAngleSystem;
-
-  // Animation
-  private animationTime: number = 0;
-
-  // Radar state (independent from artillery)
-  // Radar state is now managed by RadarController
-  private radarController: RadarController;
-  // private radarAzimuth: number = 0;
-  // private radarElevation: number = 45;
-  // private isRadarAutoRotating: boolean = false;
-  // private readonly RADAR_ROTATION_SPEED = 30;
-
-  // Keyboard state for game controls (arrow keys handled by UIController)
-  // Removed: ArrowLeft, ArrowRight, ArrowUp, ArrowDown - now in UIController
-
-  // Radar control speeds moved to UIController
-
-  // UI Layout is now handled by UIManager
 
   constructor(
     canvasManager: CanvasManager,
@@ -137,6 +112,7 @@ export class GameScene {
     this.entityManager = systems.entityManager;
     this.artilleryPosition = systems.artilleryPosition;
     this.artillery = systems.artillery;
+    this.radar = systems.radar;
     this.targetingSystem = systems.targetingSystem;
     this.leadAngleSystem = systems.leadAngleSystem;
     this.radarController = systems.radarController;
@@ -208,6 +184,7 @@ export class GameScene {
         entityManager: this.entityManager,
         artillery: this.artillery,
         radarController: this.radarController,
+        radar: this.radar,
         targetingSystem: this.targetingSystem,
         leadAngleSystem: this.leadAngleSystem,
         physicsEngine: this.physicsEngine,
@@ -249,7 +226,6 @@ export class GameScene {
     this.scenarioManager.update(deltaTime);
 
     // Handle radar auto-rotation
-    // Handle radar auto-rotation
     if (this.targetingSystem.getTargetingState() !== TargetingState.LOCKED_ON) {
       const newState = this.radarController.updateAutoRotation(deltaTime);
       if (newState) {
@@ -257,6 +233,11 @@ export class GameScene {
         this.uiController.setRadarState(newState);
       }
     }
+
+    // Update radar physics
+    const radarState = this.radarController.getState();
+    this.radar.setDirection(radarState.azimuth, radarState.elevation);
+    this.radar.scan(this.entityManager.getTargets());
 
     // Update targets
     this.updateTargets(deltaTime);
@@ -318,6 +299,7 @@ export class GameScene {
       isAutoMode: this.isAutoMode,
       artilleryPosition: this.artilleryPosition,
       physicsEngine: this.physicsEngine,
+      radar: this.radar,
     });
   }
 
@@ -341,9 +323,6 @@ export class GameScene {
   /**
    * Cleanup resources
    */
-  /**
-   * Cleanup resources
-   */
   destroy(): void {
     this.inputController.detach();
     this.mouseHandler.destroy();
@@ -356,7 +335,6 @@ export class GameScene {
     // Delegate update to EntityManager
     this.entityManager.updateTargets(deltaTime, this.gameTime);
 
-    // Check game over conditions
     // Check game over conditions
     if (
       this.entityManager.checkGameOverCondition(
@@ -396,9 +374,6 @@ export class GameScene {
     );
   }
 
-  /**
-   * Check collisions
-   */
   /**
    * Check collisions
    */
@@ -451,56 +426,6 @@ export class GameScene {
       }
     }
   }
-
-  /**
-   * Render control panel (left pane)
-   */
-  // REMOVED: renderControlPanel() - now handled by UIManager
-
-  /**
-   * Render horizontal radar (center full area)
-   */
-  // REMOVED: renderHorizontalRadar() - now handled by UIManager
-
-  /**
-   * Render vertical radar (right pane - upper portion)
-   */
-  // REMOVED: renderVerticalRadar() - now handled by UIManager
-
-  /**
-   * Draw range cursor during radar range adjustment (horizontal line)
-   */
-  // REMOVED: drawRangeCursor() - now handled by UIManager
-
-  /**
-   * Render target information panel (right pane bottom)
-   */
-  // REMOVED: renderTargetInfoPanel() - now handled by UIManager
-
-  /**
-   * Draw radar grid (horizontal or vertical)
-   */
-  // REMOVED: drawRadarGrid() - now handled by UIManager
-
-  /**
-   * Draw targets on radar
-   */
-  // REMOVED: drawTargetsOnRadar() - now handled by UIManager
-
-  /**
-   * Draw projectiles on radar
-   */
-  // REMOVED: drawProjectilesOnRadar() - now handled by UIManager
-
-  /**
-   * Convert world position to radar screen coordinates
-   */
-  // REMOVED: worldToRadarScreen() - now handled by UIManager
-
-  /**
-   * Render CRT scan lines effect (static only)
-   */
-  // REMOVED: renderScanLines() - now handled by UIManager
 
   /**
    * Fire a projectile
@@ -619,42 +544,6 @@ export class GameScene {
   }
 
   /**
-    }
-  }
-
-  /**
-   * Get vessel symbol size based on target type
-   */
-  // REMOVED: getVesselSymbolSize() - now handled by UIManager
-
-  /**
-   * Draw vessel-specific symbol
-   */
-  // REMOVED: drawVesselSymbol() - now handled by UIManager
-
-  /**
-   * Handle keyboard events
-   */
-  /**
-   * Handle keyboard key down events
-   */
-
-  /**
-   * Render trajectory prediction on horizontal radar (T048)
-   */
-  // REMOVED: renderTrajectoryPrediction() - now handled by UIManager
-
-  /**
-   * Render vertical trajectory prediction on vertical radar (T049)
-   */
-  // REMOVED: renderVerticalTrajectoryPrediction() - now handled by UIManager
-
-  /**
-   * Calculate vertical trajectory projection (T049)
-   */
-  // REMOVED: calculateVerticalTrajectory() - now handled by UIManager
-
-  /**
    * Toggle radar auto-rotation
    */
   private toggleRadarAutoRotation(): void {
@@ -730,9 +619,4 @@ export class GameScene {
     // Render explosion on radar scope
     this.uiController.addExplosion(position, this.animationTime);
   }
-
-  /**
-   * Render lead angle visualization on horizontal radar (GS-07)
-   */
-  // REMOVED: renderLeadAngleVisualization() - now handled by UIManager
 }

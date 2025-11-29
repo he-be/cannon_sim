@@ -7,6 +7,7 @@ import { Vector3 } from '../math/Vector3';
 import { TargetType } from '../game/entities/Target';
 import { PhysicsEngine } from '../physics/PhysicsEngine';
 import { PHYSICS_CONSTANTS } from '../data/Constants';
+import { Radar } from '../game/entities/Radar';
 
 export interface GameStateData {
   artillery: Artillery;
@@ -17,6 +18,7 @@ export interface GameStateData {
   isAutoMode: boolean;
   artilleryPosition: Vector3;
   physicsEngine: PhysicsEngine;
+  radar: Radar;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class
@@ -158,6 +160,15 @@ export class UIStateMapper {
       }
     });
 
+    // Get detections from physics-based radar
+    const displayData = state.radar.getRadarDisplayData();
+
+    // Create a map of detections for quick lookup
+    const detectionMap = new Map<string, number>();
+    displayData.detections.forEach(d => {
+      detectionMap.set(d.target.id, d.signalStrength);
+    });
+
     // Update active targets (and recently destroyed ones)
     state.entityManager.getTargets().forEach(target => {
       if (state.gameTime < target.spawnTime) return;
@@ -167,6 +178,14 @@ export class UIStateMapper {
       ) {
         return;
       }
+
+      // Check if detected by radar
+      const signalStrength = detectionMap.get(target.id) || 0;
+
+      // If not detected and not destroyed, don't show on radar?
+      // Or show with 0 strength (invisible)?
+      // UI might expect all targets but strength 0 means invisible.
+      // But let's pass 0 strength if not detected.
 
       const dx = target.position.x - state.artilleryPosition.x;
       const dy = target.position.y - state.artilleryPosition.y;
@@ -180,16 +199,12 @@ export class UIStateMapper {
       const distance = Math.sqrt(dx * dx + dy * dy);
       const elevation = Math.atan2(dz, distance) * (180 / Math.PI);
 
-      // Simple signal strength based on distance
-      const maxRange = 20000;
-      const strength = Math.max(0, 1 - distance / maxRange);
-
       uiManager.updateRadarTarget({
         id: target.id,
         bearing: bearing,
         distance: distance,
         elevation: elevation,
-        strength: strength,
+        strength: signalStrength, // Use physics-based signal strength
         position: target.position,
         velocity: target.velocity,
         type: target.type,

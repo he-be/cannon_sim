@@ -68,6 +68,13 @@ describe('UIStateMapper', () => {
       physicsEngine: {
         calculateTrajectory: (): any[] => [],
       },
+      radar: {
+        getRadarDisplayData: vi.fn().mockReturnValue({
+          detections: [],
+          centerPosition: new Vector3(0, 0, 0),
+          maxRange: 10000,
+        }),
+      },
     };
   });
 

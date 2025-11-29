@@ -13,10 +13,13 @@ import { Vector3 } from '../math/Vector3';
 import { CRT_COLORS } from '../data/Constants';
 import { ScenarioManager } from './scenario/ScenarioManager';
 
+import { Radar } from './entities/Radar';
+
 export interface GameSystems {
   entityManager: EntityManager;
   artillery: Artillery;
   radarController: RadarController;
+  radar: Radar; // Added Radar entity
   targetingSystem: TargetingSystem;
   leadAngleSystem: LeadAngleSystem;
   physicsEngine: PhysicsEngine;
@@ -45,6 +48,7 @@ export class SceneInitializer {
     const targetingSystem = new TargetingSystem();
     const leadAngleSystem = new LeadAngleSystem(artilleryPosition);
     const radarController = new RadarController();
+    const radar = new Radar(artilleryPosition); // Initialize Radar entity
     const scenarioManager = new ScenarioManager(entityManager);
 
     const physicsEngine = new PhysicsEngine(
@@ -70,6 +74,7 @@ export class SceneInitializer {
       entityManager,
       artillery,
       radarController,
+      radar,
       targetingSystem,
       leadAngleSystem,
       physicsEngine,

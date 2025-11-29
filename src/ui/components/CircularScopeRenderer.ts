@@ -13,6 +13,7 @@ export interface CircularScopeTarget {
   azimuth: number; // Azimuth in degrees (0 = North)
   distance: number; // Distance in meters
   elevation: number;
+  strength: number; // Signal strength (0-1)
 }
 
 export interface CircularScopeBounds {
@@ -45,7 +46,7 @@ export class CircularScopeRenderer {
    */
   private targetHistory: Map<
     string,
-    { azimuth: number; distance: number; timestamp: number }
+    { azimuth: number; distance: number; strength: number; timestamp: number }
   > = new Map();
   private readonly BEAM_WIDTH = 10; // degrees (wider for better visibility)
   private readonly PERSISTENCE_DURATION = 2500; // ms
@@ -229,6 +230,7 @@ export class CircularScopeRenderer {
         this.targetHistory.set(target.id, {
           azimuth: targetAz,
           distance: target.distance,
+          strength: target.strength,
           timestamp: currentTime,
         });
       }
@@ -244,8 +246,15 @@ export class CircularScopeRenderer {
         return;
       }
 
-      // Calculate opacity based on age
-      const alpha = 1.0 - age / this.PERSISTENCE_DURATION;
+      // Calculate opacity based on age AND signal strength
+      // Base alpha from persistence
+      const persistenceAlpha = 1.0 - age / this.PERSISTENCE_DURATION;
+
+      // Combine with signal strength (weaker signals are more transparent)
+      // Ensure minimum visibility for weak signals if they are fresh
+      const strengthAlpha = 0.3 + data.strength * 0.7;
+
+      const alpha = persistenceAlpha * strengthAlpha;
 
       // Convert azimuth to radians
       const angleRad = ((data.azimuth - 90) * Math.PI) / 180;
@@ -260,16 +269,20 @@ export class CircularScopeRenderer {
       ctx.globalAlpha = alpha;
 
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      // Size also influenced slightly by strength
+      const dotSize = 3 + data.strength * 2;
+      ctx.arc(x, y, dotSize, 0, Math.PI * 2);
       ctx.fill();
 
-      // Add glow effect
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.5;
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      // Add glow effect for strong signals
+      if (data.strength > 0.5) {
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.beginPath();
+        ctx.arc(x, y, dotSize * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     });
 
     ctx.globalAlpha = 1.0; // Reset alpha
